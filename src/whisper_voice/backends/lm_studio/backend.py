@@ -10,9 +10,9 @@ from urllib.parse import urlparse
 import requests
 
 from ..base import GrammarBackend
+from ..prompts import get_lm_studio_messages
 from ...config import get_config
 from ...utils import log, SERVICE_CHECK_TIMEOUT
-from .prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
 
 
 class LMStudioBackend(GrammarBackend):
@@ -188,8 +188,6 @@ class LMStudioBackend(GrammarBackend):
         config = get_config()
 
         try:
-            user_prompt = USER_PROMPT_TEMPLATE.replace("{text}", text)
-
             # Use shared timeout helper
             timeout = self._get_timeout(config.lm_studio.timeout)
 
@@ -202,10 +200,7 @@ class LMStudioBackend(GrammarBackend):
             # Build request payload (OpenAI chat format)
             payload = {
                 "model": model_id,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt}
-                ],
+                "messages": get_lm_studio_messages(text),
                 "temperature": 0.2,
                 "max_tokens": config.lm_studio.max_tokens if config.lm_studio.max_tokens > 0 else 2048,
                 "stream": False

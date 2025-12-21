@@ -77,7 +77,7 @@ def test_full_flow():
 
     if not whisper.running():
         log("WhisperKit not running at localhost:50060", "ERR")
-        log("Start with: whisperkit-cli serve --model whisper-medium.en", "WARN")
+        log("Start with: whisperkit-cli serve --model large-v3-v20240930_turbo", "WARN")
         errors.append("WhisperKit not running")
     else:
         log("WhisperKit server ready", "OK")

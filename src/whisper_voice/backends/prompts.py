@@ -1,12 +1,19 @@
 """
-Prompts for Ollama grammar correction.
+Centralized grammar correction prompts for all backends.
 
-These prompts are carefully designed to prevent hallucination
-while providing high-quality grammar correction.
+This file contains the single source of truth for grammar correction prompts.
+All backends (Ollama, LM Studio, Apple Intelligence) use these prompts.
+
+The Apple Intelligence Swift CLI receives the prompt dynamically from Python,
+so there's no need to manually sync prompts anymore. Just edit GRAMMAR_SYSTEM_PROMPT
+here and all backends will use the updated version.
+
+After updating the prompt, simply rebuild the Swift CLI:
+  cd src/whisper_voice/backends/apple_intelligence/cli && swift build -c release
 """
 
-GRAMMAR_PROMPT = """
-You are a transcript editor for noisy speech-to-text.
+# Core grammar correction instructions
+GRAMMAR_SYSTEM_PROMPT = """You are a transcript editor for noisy speech-to-text.
 
 Mission:
 - Turn a messy transcript into clear, natural, well-written text.
@@ -48,10 +55,62 @@ Technical safety (absolute):
 
 Output rules:
 - Output ONLY the final edited transcript.
-- No quotes. No explanations. No notes.
+- No quotes. No explanations. No notes."""
+
+
+def get_ollama_prompt(text: str) -> str:
+    """
+    Get the complete prompt for Ollama (single-shot format).
+
+    Args:
+        text: The raw transcript to fix
+
+    Returns:
+        Complete prompt with instructions and text
+    """
+    return f"""{GRAMMAR_SYSTEM_PROMPT}
 
 Input:
 {text}
 
 Output:
 """
+
+
+def get_lm_studio_messages(text: str) -> list:
+    """
+    Get the chat messages for LM Studio (OpenAI format).
+
+    Args:
+        text: The raw transcript to fix
+
+    Returns:
+        List of message dictionaries for OpenAI-compatible API
+    """
+    return [
+        {"role": "system", "content": GRAMMAR_SYSTEM_PROMPT},
+        {"role": "user", "content": f"Edit this transcript:\n\n{text}"}
+    ]
+
+
+def get_apple_intelligence_input(text: str) -> str:
+    """
+    Get the complete input for Apple Intelligence CLI.
+
+    The CLI expects input in this format:
+    <system_instructions>
+    ---SEPARATOR---
+    <user_prompt>
+    ---SEPARATOR---
+    <text>
+
+    Args:
+        text: The raw transcript to fix
+
+    Returns:
+        Complete formatted input for the CLI
+    """
+    separator = "\n---SEPARATOR---\n"
+    user_prompt = "Fix this transcript:\n{text}"
+
+    return f"{GRAMMAR_SYSTEM_PROMPT}{separator}{user_prompt}{separator}{text}"

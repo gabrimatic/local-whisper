@@ -23,7 +23,7 @@ Choose your preferred grammar correction engine at startup:
 |---------|--------------|-------------|
 | **Apple Intelligence** | macOS 26+, Apple Silicon, Apple Intelligence enabled | On-device, fastest, best quality |
 | **Ollama** | Ollama installed and running | Local LLM server, works on any Mac |
-| **LM Studio** | LM Studio installed with a model loaded | OpenAI-compatible, works on any Mac |
+| **LM Studio** | LM Studio with model loaded + server started | OpenAI-compatible, works on any Mac |
 | **None** | - | Transcription only, no grammar correction |
 
 ## Privacy
@@ -98,10 +98,14 @@ If you want to use LM Studio as your grammar backend:
 
 1. Download LM Studio from [lmstudio.ai](https://lmstudio.ai)
 2. Install and open LM Studio
-3. Search for and download a model (e.g., `gemma-2-2b-it`)
+3. Search for and download a model (e.g., `google/gemma-3-4b`)
 4. Load the model
-5. Go to **Developer** section and click **Start Server**
-6. The server runs on `http://localhost:1234` by default
+5. **Start the local server** (this step is required!):
+   - Go to the **Developer** tab in the left sidebar
+   - Click **Start Server**
+   - You should see "Server running on port 1234"
+
+> ⚠️ **Important**: Loading a model in LM Studio does NOT automatically start the API server. You must explicitly start it from the Developer tab, or the app will report "LM Studio not running".
 
 ## Usage
 
@@ -212,7 +216,7 @@ timeout = 0  # no limit
 [lm_studio]
 url = "http://localhost:1234/v1/chat/completions"
 check_url = "http://localhost:1234/"
-model = ""  # empty = use first loaded model
+model = "google/gemma-3-4b"
 max_chars = 0  # no limit
 max_tokens = 0  # no limit
 timeout = 0  # no limit
@@ -377,9 +381,17 @@ Make sure:
 
 Make sure:
 1. LM Studio is installed from [lmstudio.ai](https://lmstudio.ai)
-2. A model is loaded in LM Studio
-3. Server is running: Developer > Start Server
+2. A model is downloaded and loaded in LM Studio
+3. **The local server is running** (most common issue):
+   - Go to Developer tab → click "Start Server"
+   - Look for "Server running on port 1234" in LM Studio
+   - Loading a model does NOT start the server automatically
 4. Server is accessible at `http://localhost:1234`
+
+You can test the server manually:
+```bash
+curl http://localhost:1234/v1/models
+```
 
 ### "CLI not built" error
 
@@ -393,7 +405,7 @@ This is done automatically by `./setup.sh`.
 
 ### Transcription slow
 
-First run downloads the Whisper model (~200MB). Subsequent runs are faster.
+First run downloads the Whisper model (~632MB for default model). Subsequent runs are faster.
 
 ### Empty transcription
 
@@ -411,13 +423,15 @@ Models are provided by [Argmax](https://github.com/argmaxinc/WhisperKit) and run
 
 | Model | Size | Notes |
 |-------|------|-------|
-| `openai_whisper-tiny` | ~39MB | Fastest, lowest accuracy |
-| `openai_whisper-tiny.en` | ~39MB | English-only |
-| `openai_whisper-base` | ~74MB | |
-| `openai_whisper-base.en` | ~74MB | English-only |
-| `openai_whisper-small` | ~244MB | |
-| `openai_whisper-small.en` | ~244MB | English-only |
-| `openai_whisper-large-v3-v20240930_turbo_632MB` | ~632MB | **Recommended** |
+| `tiny` | ~39MB | Fastest, lowest accuracy |
+| `tiny.en` | ~39MB | English-only |
+| `base` | ~74MB | |
+| `base.en` | ~74MB | English-only |
+| `small` | ~244MB | |
+| `small.en` | ~244MB | English-only |
+| `large-v3-v20240930_turbo` | ~632MB | **Recommended** (default) |
+
+Use the model name in your config (e.g., `model = "large-v3-v20240930_turbo"`).
 
 ## Credits
 

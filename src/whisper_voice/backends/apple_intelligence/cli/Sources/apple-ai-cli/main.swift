@@ -3,76 +3,85 @@ import FoundationModels
 
 /// Apple Intelligence CLI for grammar correction
 /// Usage:
-///   apple-ai-cli check     - Check if Apple Intelligence is available
-///   apple-ai-cli fix       - Read text from stdin, output corrected text to stdout
+///   apple-ai-cli check   - Check if Apple Intelligence is available
+///   apple-ai-cli serve   - Start long-lived server mode for grammar correction
+///
+/// Server mode protocol (JSONL over stdin/stdout):
+///   Request:  {"system": "...", "user_prompt": "...", "text": "..."}
+///   Response: {"success": true, "result": "..."} or {"success": false, "error": "..."}
 ///
 /// Exit codes:
 ///   0 - Success
 ///   1 - Apple Intelligence unavailable
-///   2 - Model error
-///   3 - Invalid arguments
+///   2 - Invalid arguments
 
-// MARK: - Grammar Fixer with Session Instructions
+// MARK: - Grammar Fixer
 
 /// Grammar fixer using Apple Intelligence with session-level instructions
 final class GrammarFixer {
     private let session: LanguageModelSession
 
-    init() {
-        // Set instructions at session creation (best practice from Apple docs)
+    init(instructions: String) {
         session = LanguageModelSession {
-            """
-            You are a transcript editor for noisy speech-to-text.
-
-            Mission:
-            - Turn a messy transcript into clear, natural, well-written text.
-            - Fix grammar, spelling, punctuation, and formatting.
-            - Break run-on sentences into proper sentences with correct punctuation.
-            - Fix words when the transcript obviously misheard words (example: feature vs future).
-            - Preserve what the speaker intended. Do not invent new information.
-
-            What you are allowed to do:
-            1) Correct grammar and writing issues - reorder words and restructure sentences.
-            2) Remove noise - filler words (um, uh, like, you know), stutters, repeats, false starts.
-            3) Meaning-based corrections - replace wrong words if context strongly indicates a transcription error.
-            4) Formatting - split into paragraphs, use bullet points for lists.
-
-            Hard safety rules:
-            - Do NOT add new facts, names, numbers, dates, or details.
-            - Do NOT guess missing content. Keep unclear wording as-is.
-            - Do NOT complete cut-off text.
-            - NEVER change technical tokens: file paths, URLs, commands, code, API keys, model names, hotkeys, numbers, units.
-
-            Output rules:
-            - Output ONLY the final edited transcript.
-            - No quotes. No explanations. No notes.
-            """
+            instructions
         }
     }
 
-    func fix(_ text: String) async throws -> String {
-        // Check if already processing (serialize requests)
+    /// Prewarm the session to load resources and cache instructions
+    func prewarm() {
+        session.prewarm()
+    }
+
+    func fix(prompt: String) async throws -> String {
         guard !session.isResponding else {
             throw GrammarError.sessionBusy
         }
-
-        // Send just the text to fix - instructions are already set
-        let response = try await session.respond(to: "Fix this transcript:\n\(text)")
+        let response = try await session.respond(to: prompt)
         return response.content
     }
 }
 
 enum GrammarError: Error, LocalizedError {
     case sessionBusy
-    case unavailable(String)
 
     var errorDescription: String? {
         switch self {
         case .sessionBusy:
             return "Session is busy processing another request"
-        case .unavailable(let reason):
-            return "Apple Intelligence unavailable: \(reason)"
         }
+    }
+}
+
+// MARK: - JSON Protocol Types
+
+struct FixRequest: Codable {
+    let system: String
+    let userPrompt: String
+    let text: String
+
+    enum CodingKeys: String, CodingKey {
+        case system
+        case userPrompt = "user_prompt"
+        case text
+    }
+
+    /// Build the full prompt by substituting {text} placeholder
+    var fullPrompt: String {
+        userPrompt.replacingOccurrences(of: "{text}", with: text)
+    }
+}
+
+struct FixResponse: Codable {
+    let success: Bool
+    let result: String?
+    let error: String?
+
+    static func ok(_ result: String) -> FixResponse {
+        FixResponse(success: true, result: result, error: nil)
+    }
+
+    static func fail(_ error: String) -> FixResponse {
+        FixResponse(success: false, result: nil, error: error)
     }
 }
 
@@ -85,86 +94,128 @@ struct AppleAICLI {
 
         guard args.count >= 2 else {
             printUsage()
-            exit(3)
+            exit(2)
         }
 
-        let command = args[1]
-
-        switch command {
+        switch args[1] {
         case "check":
-            checkAvailability()
-        case "fix":
-            await fixGrammar()
+            await checkAvailability()
+        case "serve":
+            await startServer()
         default:
             printUsage()
-            exit(3)
+            exit(2)
         }
     }
 
-    /// Check if Apple Intelligence is available (using isAvailable shorthand)
-    static func checkAvailability() {
+    // MARK: - Commands
+
+    /// Check if Apple Intelligence is available
+    static func checkAvailability() async {
         let model = SystemLanguageModel.default
 
-        // Use isAvailable for quick check
-        guard !model.isAvailable else {
-            print("available")
-            exit(0)
+        guard model.isAvailable else {
+            let reason: String
+            switch model.availability {
+            case .unavailable(let r):
+                switch r {
+                case .appleIntelligenceNotEnabled:
+                    reason = "apple_intelligence_not_enabled"
+                case .deviceNotEligible:
+                    reason = "device_not_eligible"
+                case .modelNotReady:
+                    reason = "model_not_ready"
+                @unknown default:
+                    reason = "unknown_reason"
+                }
+            default:
+                reason = "unknown_state"
+            }
+            fputs("unavailable:\(reason)\n", stderr)
+            exit(1)
         }
 
-        // Get detailed reason for unavailability
-        switch model.availability {
-        case .available:
-            print("available")
-            exit(0)
-        case .unavailable(let reason):
-            switch reason {
-            case .appleIntelligenceNotEnabled:
-                fputs("unavailable:apple_intelligence_not_enabled\n", stderr)
-            case .deviceNotEligible:
-                fputs("unavailable:device_not_eligible\n", stderr)
-            case .modelNotReady:
-                fputs("unavailable:model_not_ready\n", stderr)
-            @unknown default:
-                fputs("unavailable:unknown_reason\n", stderr)
+        print("available")
+        exit(0)
+    }
+
+    /// Start long-lived server mode for efficient repeated calls
+    static func startServer() async {
+        guard SystemLanguageModel.default.isAvailable else {
+            printJSON(FixResponse.fail("Apple Intelligence not available"))
+            exit(1)
+        }
+
+        // Signal ready to parent process
+        fputs("READY\n", stderr)
+        fflush(stderr)
+
+        var currentFixer: GrammarFixer?
+        var currentSystemPrompt = ""
+        let decoder = JSONDecoder()
+
+        // Process requests until stdin closes
+        while let line = readLine(strippingNewline: true) {
+            guard !line.isEmpty else { continue }
+
+            // Parse request
+            guard let data = line.data(using: .utf8) else {
+                printJSON(FixResponse.fail("Invalid UTF-8 input"))
+                continue
             }
-            exit(1)
-        @unknown default:
-            fputs("unavailable:unknown_state\n", stderr)
-            exit(1)
+
+            let request: FixRequest
+            do {
+                request = try decoder.decode(FixRequest.self, from: data)
+            } catch {
+                printJSON(FixResponse.fail("Invalid JSON: \(error.localizedDescription)"))
+                continue
+            }
+
+            // Validate required fields
+            guard !request.system.isEmpty else {
+                printJSON(FixResponse.fail("System prompt cannot be empty"))
+                continue
+            }
+            guard !request.text.isEmpty else {
+                printJSON(FixResponse.fail("Text cannot be empty"))
+                continue
+            }
+
+            // Create or reuse fixer based on system prompt
+            if currentFixer == nil || currentSystemPrompt != request.system {
+                currentSystemPrompt = request.system
+                currentFixer = GrammarFixer(instructions: request.system)
+                currentFixer?.prewarm()
+            }
+
+            // Process the request
+            guard let fixer = currentFixer else {
+                printJSON(FixResponse.fail("Failed to initialize fixer"))
+                continue
+            }
+
+            do {
+                let result = try await fixer.fix(prompt: request.fullPrompt)
+                printJSON(FixResponse.ok(result))
+            } catch {
+                printJSON(FixResponse.fail(error.localizedDescription))
+            }
         }
     }
 
-    /// Fix grammar - read text from stdin, output corrected text to stdout
-    static func fixGrammar() async {
-        // Quick availability check
-        guard SystemLanguageModel.default.isAvailable else {
-            fputs("ERROR:Apple Intelligence not available\n", stderr)
-            exit(1)
-        }
+    // MARK: - Helpers
 
-        // Read all input from stdin
-        var inputLines: [String] = []
-        while let line = readLine(strippingNewline: false) {
-            inputLines.append(line)
+    static func printJSON(_ value: FixResponse) {
+        let encoder = JSONEncoder()
+        guard let data = try? encoder.encode(value),
+              let json = String(data: data, encoding: .utf8) else {
+            fputs("{\"success\":false,\"error\":\"JSON encoding failed\"}\n", stdout)
+            fflush(stdout)
+            return
         }
-        let input = inputLines.joined().trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !input.isEmpty else {
-            fputs("ERROR:No input provided\n", stderr)
-            exit(2)
-        }
-
-        // Create fixer and process
-        let fixer = GrammarFixer()
-
-        do {
-            let corrected = try await fixer.fix(input)
-            // Output the response content (no trailing newline, let the caller handle it)
-            print(corrected, terminator: "")
-        } catch {
-            fputs("ERROR:\(error.localizedDescription)\n", stderr)
-            exit(2)
-        }
+        print(json)
+        fflush(stdout)
     }
 
     static func printUsage() {
@@ -173,13 +224,13 @@ struct AppleAICLI {
 
         Commands:
           check   Check if Apple Intelligence is available
-          fix     Read text from stdin, output corrected text to stdout
+          serve   Start server mode (recommended)
 
-        The 'fix' command reads raw text from stdin and outputs
-        grammar-corrected text to stdout. Instructions are built-in.
+        Server mode uses JSONL protocol over stdin/stdout:
+          Request:  {"system": "...", "user_prompt": "...", "text": "..."}
+          Response: {"success": true, "result": "..."} or {"success": false, "error": "..."}
 
-        Example:
-          echo "um so like I want to test this" | apple-ai-cli fix
+        The server keeps the LanguageModelSession warm for efficient repeated calls.
 
         """, stderr)
     }

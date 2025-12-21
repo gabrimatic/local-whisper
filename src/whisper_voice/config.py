@@ -98,8 +98,8 @@ timeout = 0
 url = "http://localhost:1234/v1/chat/completions"
 check_url = "http://localhost:1234/"
 
-# Model to use (leave empty to use first loaded model)
-model = ""
+# Model to use (recommended: google/gemma-3-4b)
+model = "google/gemma-3-4b"
 
 # Maximum characters per grammar chunk (0 = no limit)
 max_chars = 0
@@ -187,7 +187,7 @@ class LMStudioConfig:
     """LM Studio-specific grammar settings."""
     url: str = "http://localhost:1234/v1/chat/completions"
     check_url: str = "http://localhost:1234/"
-    model: str = ""  # Empty = use first loaded model
+    model: str = "google/gemma-3-4b"
     max_chars: int = 0
     max_tokens: int = 0
     timeout: int = 0

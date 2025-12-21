@@ -10,9 +10,9 @@ from urllib.parse import urlparse
 import requests
 
 from ..base import GrammarBackend
+from ..prompts import get_ollama_prompt
 from ...config import get_config
 from ...utils import log, SERVICE_CHECK_TIMEOUT
-from .prompts import GRAMMAR_PROMPT
 
 
 class OllamaBackend(GrammarBackend):
@@ -123,7 +123,7 @@ class OllamaBackend(GrammarBackend):
 
     def _build_prompt(self, text: str) -> str:
         """Build the grammar correction prompt."""
-        return GRAMMAR_PROMPT.replace("{text}", text)
+        return get_ollama_prompt(text)
 
     def _predict_length(self, text: str, max_predict: int) -> int:
         """Estimate output length for the model."""

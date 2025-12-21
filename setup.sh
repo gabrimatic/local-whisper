@@ -178,6 +178,62 @@ fi
 log_ok "WhisperKit CLI ready"
 
 # ============================================================================
+# Ollama Model Setup (if Ollama is installed)
+# ============================================================================
+
+echo ""
+log_step "Checking Ollama..."
+
+OLLAMA_MODEL="gemma3:4b-it-qat"
+
+if command -v ollama &> /dev/null; then
+    log_ok "Ollama installed"
+
+    # Check if model is already downloaded
+    if ollama list 2>/dev/null | grep -q "$OLLAMA_MODEL"; then
+        log_ok "Model $OLLAMA_MODEL already downloaded"
+    else
+        log_info "Downloading grammar model: $OLLAMA_MODEL"
+        log_info "This may take a few minutes..."
+        if ollama pull "$OLLAMA_MODEL" 2>&1 | grep -E "pulling|success|already"; then
+            log_ok "Model $OLLAMA_MODEL ready"
+        else
+            log_warn "Failed to download model (you can do this later with: ollama pull $OLLAMA_MODEL)"
+        fi
+    fi
+else
+    log_info "Ollama not installed (optional - download from https://ollama.ai)"
+fi
+
+# ============================================================================
+# LM Studio Model Setup (if LM Studio CLI is installed)
+# ============================================================================
+
+echo ""
+log_step "Checking LM Studio..."
+
+LMSTUDIO_MODEL="google/gemma-3-4b"
+
+if command -v lms &> /dev/null; then
+    log_ok "LM Studio CLI installed"
+
+    # Check if model is already downloaded
+    if lms ls 2>/dev/null | grep -q "gemma-3-4b"; then
+        log_ok "Model $LMSTUDIO_MODEL already downloaded"
+    else
+        log_info "Downloading grammar model: $LMSTUDIO_MODEL"
+        log_info "This may take a few minutes..."
+        if lms get "$LMSTUDIO_MODEL" -y --quiet 2>&1; then
+            log_ok "Model $LMSTUDIO_MODEL ready"
+        else
+            log_warn "Failed to download model (you can do this later in LM Studio)"
+        fi
+    fi
+else
+    log_info "LM Studio not installed (optional - download from https://lmstudio.ai)"
+fi
+
+# ============================================================================
 # Build Apple Intelligence CLI Helper
 # ============================================================================
 
@@ -235,13 +291,14 @@ echo -e "     - Enable in System Settings → Apple Intelligence & Siri"
 echo ""
 echo -e "  ${CYAN}Ollama${NC} (alternative):"
 echo -e "     - Download from ${DIM}https://ollama.ai${NC}"
-echo -e "     ${DIM}ollama pull gemma3:4b-it-qat${NC}"
-echo -e "     ${DIM}ollama serve${NC}"
+echo -e "     - Model auto-downloaded if Ollama was installed"
+echo -e "     - Run: ${DIM}ollama serve${NC}"
 echo ""
 echo -e "  ${CYAN}LM Studio${NC} (alternative):"
 echo -e "     - Download from ${DIM}https://lmstudio.ai${NC}"
-echo -e "     - Load a model in LM Studio"
-echo -e "     - Developer → Start Server"
+echo -e "     - Model auto-downloaded if LM Studio CLI was installed"
+echo -e "     - ${YELLOW}Developer → Start Server${NC} (required!)"
+echo -e "     ${DIM}Note: Loading a model does NOT auto-start the server${NC}"
 echo ""
 echo -e "${BOLD}Next steps:${NC}"
 echo ""
@@ -257,7 +314,7 @@ echo -e "  3. ${CYAN}Or run directly:${NC}"
 echo -e "     ${DIM}$VENV_DIR/bin/wh${NC}"
 echo ""
 echo -e "  4. ${CYAN}Select grammar backend:${NC}"
-echo -e "     Choose Apple Intelligence, Ollama, or None at startup"
+echo -e "     Choose Apple Intelligence, Ollama, LM Studio, or None at startup"
 echo ""
 echo -e "  5. ${CYAN}Use it:${NC}"
 echo -e "     Double-tap ${YELLOW}Right Option (⌥)${NC} → speak → tap to stop"
