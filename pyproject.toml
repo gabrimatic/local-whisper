@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "local-whisper"
+version = "1.0.0"
+description = "Local voice transcription with grammar correction for macOS"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [
+    { name = "Soroush" }
+]
+keywords = ["voice", "transcription", "whisper", "macos", "local", "privacy"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: MacOS X",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+    "rumps>=0.4.0",
+    "sounddevice>=0.4.0",
+    "numpy>=1.20.0",
+    "requests>=2.25.0",
+    "pynput>=1.7.0",
+    "pyobjc-framework-Cocoa>=8.0",
+    "pyobjc-framework-Quartz>=8.0",
+    "tomli>=2.0.0; python_version < '3.11'",
+]
+
+[project.scripts]
+wh = "whisper_voice:main"
+
+[project.urls]
+Homepage = "https://github.com/gabrimatic/local-whisper"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/whisper_voice"]
+include = ["src/whisper_voice/assets/*.png"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/README.md",
+    "/setup.sh",
+    "/src/whisper_voice/assets/*.png",
+]
