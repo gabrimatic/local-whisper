@@ -49,7 +49,7 @@ Everything runs on your Mac:
 - **Apple Intelligence enabled** in System Settings
 
 ### For Ollama backend:
-- **Ollama** installed (`brew install ollama`)
+- **Ollama** installed (download from [ollama.ai](https://ollama.ai))
 - A grammar model pulled (e.g., `ollama pull gemma3:4b-it-qat`)
 - Ollama server running (`ollama serve`)
 
@@ -81,10 +81,10 @@ The setup script automatically:
 
 If you want to use Ollama as your grammar backend:
 
-```bash
-# Install Ollama
-brew install ollama
+1. Download and install Ollama from [ollama.ai](https://ollama.ai)
+2. Pull a grammar model and start the server:
 
+```bash
 # Pull a grammar model
 ollama pull gemma3:4b-it-qat
 
@@ -369,7 +369,7 @@ Make sure:
 ### Ollama not working
 
 Make sure:
-1. Ollama is installed: `brew install ollama`
+1. Ollama is installed (download from [ollama.ai](https://ollama.ai))
 2. A model is pulled: `ollama pull gemma3:4b-it-qat`
 3. Server is running: `ollama serve`
 
