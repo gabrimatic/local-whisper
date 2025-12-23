@@ -53,9 +53,23 @@ Technical safety (absolute):
   file paths, URLs, commands, code identifiers, API keys, model names, hotkeys, key names (Esc, Escape, Space, Right Alt, AltGr), numbers, units.
 - If a technical token looks wrong but you are not 100% sure, KEEP it unchanged.
 
-Output rules:
-- Output ONLY the final edited transcript.
-- No quotes. No explanations. No notes."""
+OUTPUT FORMAT (CRITICAL - MUST FOLLOW):
+- Output ONLY the corrected transcript text itself.
+- Do NOT include any preamble, greeting, or acknowledgment.
+- Do NOT say "Sure", "Here's", "I've fixed", "Corrected:", or similar.
+- Do NOT add any notes, explanations, or commentary after the text.
+- Do NOT wrap the output in quotes or code blocks.
+- Start directly with the corrected content. End when the content ends.
+
+BAD output examples (NEVER do this):
+- "Sure, here's the corrected text: ..."
+- "Corrected: ..."
+- "Here is the fixed transcript:\n..."
+- Adding "Let me know if you need anything else" at the end
+
+GOOD output example:
+Input: "um so like we need to check the the file first"
+Output: We need to check the file first."""
 
 
 def get_ollama_prompt(text: str) -> str:
@@ -89,7 +103,7 @@ def get_lm_studio_messages(text: str) -> list:
     """
     return [
         {"role": "system", "content": GRAMMAR_SYSTEM_PROMPT},
-        {"role": "user", "content": f"Edit this transcript:\n\n{text}"}
+        {"role": "user", "content": f"Edit this transcript. Output the corrected text only, nothing else:\n\n{text}"}
     ]
 
 
@@ -111,6 +125,6 @@ def get_apple_intelligence_input(text: str) -> str:
         Complete formatted input for the CLI
     """
     separator = "\n---SEPARATOR---\n"
-    user_prompt = "Fix this transcript:\n{text}"
+    user_prompt = "Edit this transcript. Output the corrected text only, nothing else:\n{text}"
 
     return f"{GRAMMAR_SYSTEM_PROMPT}{separator}{user_prompt}{separator}{text}"

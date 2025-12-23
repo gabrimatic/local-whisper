@@ -180,12 +180,101 @@ class GrammarBackend(ABC):
         return text
 
     def _clean_result(self, result: str) -> str:
-        """Clean common artifacts from model output."""
+        """
+        Clean common artifacts from model output.
+
+        Removes conversational prefixes, meta-commentary, and formatting
+        artifacts that models sometimes add despite instructions.
+        """
         result = result.strip()
         result = result.strip('"\'')
 
-        # Remove "Corrected:" prefix some models add
-        if result.lower().startswith("corrected:"):
-            result = result[10:].strip()
+        # ─────────────────────────────────────────────────────────────────
+        # Pattern 1: Remove label prefixes (case-insensitive)
+        # Examples: "Corrected:", "Output:", "Fixed text:", "Here is the corrected text:"
+        # ─────────────────────────────────────────────────────────────────
+        label_patterns = [
+            r'^corrected(?:\s+text)?:\s*',
+            r'^output:\s*',
+            r'^fixed(?:\s+text)?:\s*',
+            r'^edited(?:\s+text)?:\s*',
+            r'^result:\s*',
+            r'^here(?:\s+is|\s+are|\'s)\s+(?:the\s+)?(?:corrected|fixed|edited)(?:\s+text)?:\s*',
+            r'^the\s+corrected(?:\s+text)?\s+is:\s*',
+        ]
+
+        for pattern in label_patterns:
+            result = re.sub(pattern, '', result, flags=re.IGNORECASE)
+
+        # ─────────────────────────────────────────────────────────────────
+        # Pattern 2: Remove conversational openers at the start
+        # Examples: "Sure!", "Sure, I'll fix this.", "I've corrected...", "Share, I will fix..."
+        # ─────────────────────────────────────────────────────────────────
+        conversational_openers = [
+            # "Sure" variants - only match when followed by conversational patterns
+            r'^sure[,!.]\s+(?:i\'ll|i will|let me|here\'s|here is)[^.!?\n]*[.!?]?\s*',
+            r'^sure[,!]\s*$',  # Just "Sure!" or "Sure,"
+            r'^sure[,!]\s+',   # "Sure, " followed by anything (remove just the prefix)
+
+            # "I'll/I will/I've" variants - only match specific helper phrases
+            r'^i\'ll\s+(?:fix|correct|edit|help|clean)[^.!?\n]*[.!?]\s*',
+            r'^i will\s+(?:fix|correct|edit|help|clean)[^.!?\n]*[.!?]\s*',
+            r'^i\'ve\s+(?:corrected|fixed|edited|cleaned)[^.!?\n]*[.!?]\s*',
+            r'^i have\s+(?:corrected|fixed|edited|cleaned)[^.!?\n]*[.!?]\s*',
+
+            # "Here" variants
+            r'^here\'s\s+(?:the\s+)?(?:corrected|fixed|edited|cleaned)[^:]*:\s*',
+            r'^here is\s+(?:the\s+)?(?:corrected|fixed|edited|cleaned|text)[^:]*:\s*',
+            r'^here you go[,!.]?\s*',
+
+            # "Let me" variants - only match specific helper phrases
+            r'^let me\s+(?:fix|correct|edit|help|clean)[^.!?\n]*[.!?]\s*',
+
+            # "Of course" / "Certainly" variants
+            r'^of course[,!.]?\s*',
+            r'^certainly[,!.]?\s*',
+            r'^absolutely[,!.]?\s*',
+
+            # "Share" typo (ASR artifact for "Sure")
+            r'^share,?\s+(?:i\'ll|i will|let me)[^.!?\n]*[.!?]?\s*',
+
+            # Generic acknowledgment patterns
+            r'^(?:okay|ok)[,!.]\s+(?:here\'s|here is|i\'ll|let me)[^.!?\n]*[.!?]?\s*',
+            r'^(?:alright|all right)[,!.]?\s+(?:here|i\'ll|let me)[^.!?\n]*[.!?]?\s*',
+        ]
+
+        for pattern in conversational_openers:
+            result = re.sub(pattern, '', result, flags=re.IGNORECASE)
+
+        # ─────────────────────────────────────────────────────────────────
+        # Pattern 3: Remove trailing meta-commentary
+        # Examples: "Let me know if you need more changes.", "I hope this helps!"
+        # ─────────────────────────────────────────────────────────────────
+        trailing_patterns = [
+            r'\s*let me know if[^.!?\n]*[.!?]?\s*$',
+            r'\s*i hope this helps[.!?]?\s*$',
+            r'\s*feel free to[^.!?\n]*[.!?]?\s*$',
+            r'\s*is there anything else[^.!?\n]*[.!?]?\s*$',
+            r'\s*please let me know[^.!?\n]*[.!?]?\s*$',
+        ]
+
+        for pattern in trailing_patterns:
+            result = re.sub(pattern, '', result, flags=re.IGNORECASE)
+
+        # ─────────────────────────────────────────────────────────────────
+        # Pattern 4: Handle markdown code block wrapper
+        # Sometimes models wrap output in ```text ... ``` or similar
+        # ─────────────────────────────────────────────────────────────────
+        code_block_match = re.match(
+            r'^```(?:text|plain|markdown)?\s*\n?(.*?)\n?```\s*$',
+            result,
+            re.DOTALL | re.IGNORECASE
+        )
+        if code_block_match:
+            result = code_block_match.group(1).strip()
+
+        # Final cleanup
+        result = result.strip()
+        result = result.strip('"\'')
 
         return result

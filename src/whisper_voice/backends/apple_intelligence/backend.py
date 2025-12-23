@@ -287,7 +287,7 @@ class AppleIntelligenceBackend(GrammarBackend):
         # Build request for server mode
         request = {
             "system": GRAMMAR_SYSTEM_PROMPT,
-            "user_prompt": "Fix this transcript:\n{text}",
+            "user_prompt": "Edit this transcript. Output the corrected text only, nothing else:\n{text}",
             "text": text
         }
 
