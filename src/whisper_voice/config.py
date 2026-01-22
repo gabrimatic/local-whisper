@@ -45,7 +45,7 @@ url = "http://localhost:50060/v1/audio/transcriptions"
 check_url = "http://localhost:50060/"
 
 # Whisper model to use
-model = "large-v3-v20240930_turbo"
+model = "large-v3-v20240930_626MB"
 
 # Language code (en, fa, es, fr, de, etc. or "auto" for detection)
 language = "en"
@@ -149,7 +149,7 @@ class HotkeyConfig:
 class WhisperConfig:
     url: str = "http://localhost:50060/v1/audio/transcriptions"
     check_url: str = "http://localhost:50060/"
-    model: str = "large-v3-v20240930_turbo"
+    model: str = "large-v3-v20240930_626MB"
     language: str = "en"
     timeout: int = 0
 

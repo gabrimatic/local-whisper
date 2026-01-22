@@ -124,22 +124,27 @@ class Whisper:
             self._session.close()
         except Exception:
             pass
+
+        log("Killing WhisperKit server...", "INFO")
+
+        # First try to kill tracked process if we have one
         if self._process and self._process.poll() is None:
-            log("Killing WhisperKit server...", "INFO")
             try:
-                # Use SIGKILL to ensure immediate termination
                 self._process.kill()
                 self._process.wait(timeout=3)
                 log("WhisperKit server killed", "OK")
             except Exception as e:
-                log(f"Failed to kill WhisperKit: {e}", "ERR")
-                # Try to kill via pkill as fallback
-                try:
-                    import subprocess
-                    subprocess.run(['pkill', '-9', '-f', 'whisperkit-cli'],
-                                   timeout=2, capture_output=True)
-                    log("WhisperKit killed via pkill", "OK")
-                except Exception:
-                    pass
+                log(f"Failed to kill tracked process: {e}", "WARN")
             finally:
                 self._process = None
+
+        # Always use pkill to ensure any whisperkit-cli process is killed
+        # (covers cases where server was already running before app started)
+        try:
+            import subprocess
+            result = subprocess.run(['pkill', '-9', '-f', 'whisperkit-cli'],
+                                   timeout=2, capture_output=True)
+            if result.returncode == 0:
+                log("WhisperKit server killed via pkill", "OK")
+        except Exception:
+            pass

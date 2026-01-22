@@ -193,7 +193,7 @@ key = "alt_r"
 double_tap_threshold = 0.4  # seconds
 
 [whisper]
-model = "large-v3-v20240930_turbo"
+model = "large-v3-v20240930_626MB"
 language = "en"  # e.g. "fa" or "auto" for detection
 timeout = 0  # no limit
 
@@ -429,9 +429,9 @@ Models are provided by [Argmax](https://github.com/argmaxinc/WhisperKit) and run
 | `base.en` | ~74MB | English-only |
 | `small` | ~244MB | |
 | `small.en` | ~244MB | English-only |
-| `large-v3-v20240930_turbo` | ~632MB | **Recommended** (default) |
+| `large-v3-v20240930_626MB` | ~626MB | **Recommended** (default) |
 
-Use the model name in your config (e.g., `model = "large-v3-v20240930_turbo"`).
+Use the model name in your config (e.g., `model = "large-v3-v20240930_626MB"`).
 
 ## Credits
 
