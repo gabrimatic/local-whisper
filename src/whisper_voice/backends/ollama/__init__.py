@@ -1,5 +1,5 @@
 """
-Ollama backend for grammar correction.
+Ollama backend for proofreading.
 
 Uses local Ollama server with configurable LLM models.
 """

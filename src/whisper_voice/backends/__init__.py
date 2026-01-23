@@ -1,5 +1,5 @@
 """
-Grammar correction backends for Local Whisper.
+Proofreading backends for Local Whisper.
 
 To add a new backend:
 1. Create a new folder under backends/ with __init__.py and backend.py
@@ -10,7 +10,7 @@ Usage:
 
     backend = create_backend("ollama")
     if backend.start():
-        corrected, error = backend.fix("some text")
+        proofread, error = backend.fix("some text")
 """
 
 from dataclasses import dataclass
@@ -21,7 +21,7 @@ from .base import GrammarBackend
 
 @dataclass
 class BackendInfo:
-    """Metadata for a grammar backend."""
+    """Metadata for a proofreading backend."""
     id: str                    # Config identifier (e.g., "ollama")
     name: str                  # Display name (e.g., "Ollama")
     description: str           # Short description for menu
@@ -70,7 +70,7 @@ BACKEND_REGISTRY: Dict[str, BackendInfo] = {
 
 def create_backend(backend_type: str) -> GrammarBackend:
     """
-    Factory function to create a grammar backend instance.
+    Factory function to create a proofreading backend instance.
 
     Args:
         backend_type: Backend ID from BACKEND_REGISTRY

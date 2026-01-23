@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "local-whisper"
 version = "1.0.0"
-description = "Local voice transcription with grammar correction for macOS"
+description = "Local voice transcription with proofreading for macOS"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"

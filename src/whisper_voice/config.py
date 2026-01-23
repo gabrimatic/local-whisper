@@ -23,7 +23,7 @@ from typing import Optional, Literal
 CONFIG_DIR = Path.home() / ".whisper"
 CONFIG_FILE = CONFIG_DIR / "config.toml"
 
-# Available grammar backends
+# Available proofreading backends
 GRAMMAR_BACKENDS = ("ollama", "apple_intelligence", "lm_studio")
 GrammarBackendType = Literal["ollama", "apple_intelligence", "lm_studio"]
 
@@ -54,10 +54,10 @@ language = "en"
 timeout = 0
 
 [grammar]
-# Grammar correction backend: "apple_intelligence" or "ollama"
+# Proofreading backend: "apple_intelligence", "ollama", or "lm_studio"
 backend = "apple_intelligence"
 
-# Enable/disable grammar correction
+# Enable/disable proofreading
 enabled = true
 
 [ollama]
@@ -65,7 +65,7 @@ enabled = true
 url = "http://localhost:11434/api/generate"
 check_url = "http://localhost:11434/"
 
-# Model for grammar correction
+# Model for proofreading
 model = "gemma3:4b-it-qat"
 
 # Maximum characters per grammar chunk (0 = no limit)
@@ -80,17 +80,17 @@ num_ctx = 0
 # Keep model hot in memory between requests (e.g. "30s", "5m", "1h", "-1" for indefinite)
 keep_alive = "60m"
 
-# Grammar correction timeout in seconds (0 = no limit)
+# Proofreading timeout in seconds (0 = no limit)
 timeout = 0
 
 # Unload model from memory when app exits (false keeps Ollama hot for other uses)
 unload_on_exit = false
 
 [apple_intelligence]
-# Maximum characters per grammar chunk (0 = no limit)
+# Maximum characters per chunk (0 = no limit)
 max_chars = 0
 
-# Grammar correction timeout in seconds (0 = no limit)
+# Proofreading timeout in seconds (0 = no limit)
 timeout = 0
 
 [lm_studio]
@@ -101,13 +101,13 @@ check_url = "http://localhost:1234/"
 # Model to use (recommended: google/gemma-3-4b)
 model = "google/gemma-3-4b"
 
-# Maximum characters per grammar chunk (0 = no limit)
+# Maximum characters per chunk (0 = no limit)
 max_chars = 0
 
 # Maximum tokens to generate (0 = no limit, uses default 2048)
 max_tokens = 0
 
-# Grammar correction timeout in seconds (0 = no limit)
+# Proofreading timeout in seconds (0 = no limit)
 timeout = 0
 
 [audio]
@@ -156,14 +156,14 @@ class WhisperConfig:
 
 @dataclass
 class GrammarConfig:
-    """Grammar correction settings."""
+    """Proofreading settings."""
     backend: GrammarBackendType = "apple_intelligence"
     enabled: bool = True
 
 
 @dataclass
 class OllamaConfig:
-    """Ollama-specific grammar settings."""
+    """Ollama-specific proofreading settings."""
     url: str = "http://localhost:11434/api/generate"
     check_url: str = "http://localhost:11434/"
     model: str = "gemma3:4b-it-qat"
@@ -177,14 +177,14 @@ class OllamaConfig:
 
 @dataclass
 class AppleIntelligenceConfig:
-    """Apple Intelligence-specific grammar settings."""
+    """Apple Intelligence-specific proofreading settings."""
     max_chars: int = 0
     timeout: int = 0
 
 
 @dataclass
 class LMStudioConfig:
-    """LM Studio-specific grammar settings."""
+    """LM Studio-specific proofreading settings."""
     url: str = "http://localhost:1234/v1/chat/completions"
     check_url: str = "http://localhost:1234/"
     model: str = "google/gemma-3-4b"
@@ -375,9 +375,9 @@ def _validate_config(config: Config):
         print(f"Config warning: Invalid lm_studio check_url '{config.lm_studio.check_url}', using default", file=sys.stderr)
         config.lm_studio.check_url = "http://localhost:1234/"
 
-    # Grammar backend validation
+    # Proofreading backend validation
     if config.grammar.backend not in GRAMMAR_BACKENDS:
-        print(f"Config warning: Invalid grammar backend '{config.grammar.backend}', using 'apple_intelligence'", file=sys.stderr)
+        print(f"Config warning: Invalid proofreading backend '{config.grammar.backend}', using 'apple_intelligence'", file=sys.stderr)
         config.grammar.backend = "apple_intelligence"
 
     # Hotkey validation

@@ -1,15 +1,16 @@
 """
-Whisper - 100% Local Voice Transcription + Grammar Correction
+Whisper - 100% Local Voice Transcription + Proofreading
 
 Double-tap Right Option (⌥) to start recording, single tap to stop.
-Transcribed and polished text is copied to clipboard.
+Transcribed and proofread text is copied to clipboard.
 
 Architecture:
-    Voice -> WhisperKit (localhost:50060) -> Grammar Backend -> Clipboard
+    Voice -> WhisperKit (localhost:50060) -> Proofreading Backend -> Clipboard
 
-Supported grammar backends:
-    - apple_intelligence: Apple's on-device Foundation Models (macOS 15+)
+Supported proofreading backends:
+    - apple_intelligence: Apple's on-device Foundation Models (macOS 26+)
     - ollama: Local Ollama server with configurable LLM models
+    - lm_studio: LM Studio with OpenAI-compatible API
 
 Privacy: All processing on-device. No internet. No cloud. No tracking.
 """
@@ -130,10 +131,10 @@ class App(rumps.App):
             self._dock_hidden = True
 
     def _get_grammar_menu_text(self) -> str:
-        """Get the grammar status text for the menu."""
+        """Get the proofreading status text for the menu."""
         if not self.config.grammar.enabled or self.grammar is None:
-            return "Grammar: Disabled"
-        return f"Grammar: {self.grammar.name}"
+            return "Proofreading: Disabled"
+        return f"Proofreading: {self.grammar.name}"
 
     def _set(self, icon: str, text: str):
         """Update menu bar icon and status text."""
@@ -199,7 +200,7 @@ class App(rumps.App):
             return
         self._ready = True
 
-        # Check grammar backend - required if enabled
+        # Check proofreading backend - required if enabled
         if self.config.grammar.enabled and self.grammar is not None:
             self._grammar_ready = self.grammar.start()
             if not self._grammar_ready:
@@ -208,7 +209,7 @@ class App(rumps.App):
                 self._exit_app()
                 return
         else:
-            log("Grammar correction disabled", "INFO")
+            log("Proofreading disabled", "INFO")
 
         self._set(ICON_IDLE, "Ready")
         key_name = self.config.hotkey.key.upper().replace("_", " ")
@@ -450,7 +451,7 @@ class App(rumps.App):
             self.backup.save_raw(raw_text)
             log(f"Raw: {truncate(raw_text, LOG_TRUNCATE)}", "OK")
 
-            # 3. Grammar correction (lazy reconnect)
+            # 3. Proofreading (lazy reconnect)
             self._check_grammar_connection()
             final_text = self._apply_grammar(raw_text)
 
@@ -523,27 +524,27 @@ class App(rumps.App):
             return False
 
     def _check_grammar_connection(self):
-        """Check and update grammar backend availability (lazy reconnect)."""
+        """Check and update proofreading backend availability (lazy reconnect)."""
         if not self.config.grammar.enabled or self.grammar is None:
             return
         backend_now = self.grammar.running()
         if backend_now and not self._grammar_ready:
-            log(f"{self.grammar.name} connected! Grammar correction enabled", "OK")
+            log(f"{self.grammar.name} connected! Proofreading enabled", "OK")
             self._grammar_ready = True
         elif not backend_now and self._grammar_ready:
             log(f"{self.grammar.name} disconnected", "WARN")
             self._grammar_ready = False
 
     def _apply_grammar(self, raw_text: str) -> str:
-        """Apply grammar correction if available. Returns final text."""
+        """Apply proofreading if available. Returns final text."""
         if not self.config.grammar.enabled or not self._grammar_ready or self.grammar is None:
             return raw_text
 
-        self._set(ICON_PROCESSING, "Polishing...")
-        log("Polishing text...", "AI")
+        self._set(ICON_PROCESSING, "Proofreading...")
+        log("Proofreading...", "AI")
         final_text, g_err = self.grammar.fix(raw_text)
         if g_err:
-            log(f"Grammar fix skipped: {g_err}", "WARN")
+            log(f"Proofreading skipped: {g_err}", "WARN")
             return raw_text
         return final_text
 
@@ -588,7 +589,7 @@ class App(rumps.App):
                     self._show_error(err, f"Failed: {err}")
                     return
 
-                # Grammar correction (lazy reconnect)
+                # Proofreading (lazy reconnect)
                 self._check_grammar_connection()
                 final_text = self._apply_grammar(raw_text)
 
@@ -670,12 +671,12 @@ class App(rumps.App):
         except Exception:
             pass
 
-        # Clean up grammar resources
+        # Clean up proofreading resources
         if self.grammar is not None:
             try:
                 self.grammar.close()
             except Exception as e:
-                log(f"Error closing grammar: {e}", "WARN")
+                log(f"Error closing proofreading: {e}", "WARN")
 
         # Kill WhisperKit server (this logs its own messages)
         try:
@@ -688,7 +689,7 @@ class App(rumps.App):
 
 def _select_backend() -> tuple:
     """
-    Prompt user to select a grammar backend at startup.
+    Prompt user to select a proofreading backend at startup.
 
     Returns:
         Tuple of (backend_id, display_name) or ("none", "Disabled")
@@ -698,12 +699,12 @@ def _select_backend() -> tuple:
     max_choice = len(backends) + 1  # +1 for "None" option
 
     print()
-    print(f"  {C_BOLD}Select Grammar Backend:{C_RESET}")
+    print(f"  {C_BOLD}Select Proofreading Backend:{C_RESET}")
     print()
 
     for i, info in enumerate(backends, start=1):
         print(f"  {C_CYAN}[{i}]{C_RESET} {info.name} ({info.description})")
-    print(f"  {C_CYAN}[{max_choice}]{C_RESET} None (transcription only, no grammar)")
+    print(f"  {C_CYAN}[{max_choice}]{C_RESET} None (transcription only, no proofreading)")
     print()
 
     while True:
@@ -741,7 +742,7 @@ def main():
 
     print()
     print(f"  {C_BOLD}╭────────────────────────────────────────╮{C_RESET}")
-    print(f"  {C_BOLD}│{C_RESET}  {C_CYAN}Whisper{C_RESET} · Voice → Text + Grammar     {C_BOLD}│{C_RESET}")
+    print(f"  {C_BOLD}│{C_RESET}  {C_CYAN}Whisper{C_RESET} · Voice → Text + Proofread   {C_BOLD}│{C_RESET}")
     print(f"  {C_BOLD}│{C_RESET}  {C_GREEN}100% Local{C_RESET} · No Cloud · Private      {C_BOLD}│{C_RESET}")
     print(f"  {C_BOLD}├────────────────────────────────────────┤{C_RESET}")
     print(f"  {C_BOLD}│{C_RESET}  Double-tap {C_YELLOW}{key_name}{C_RESET} to start       {C_BOLD}│{C_RESET}")
@@ -749,7 +750,7 @@ def main():
     print(f"  {C_BOLD}╰────────────────────────────────────────╯{C_RESET}")
     print()
     print(f"  {C_DIM}Whisper:{C_RESET} {config.whisper.check_url}")
-    print(f"  {C_DIM}Grammar:{C_RESET} {grammar_info}")
+    print(f"  {C_DIM}Proofreading:{C_RESET} {grammar_info}")
     print(f"  {C_DIM}Config:{C_RESET}  {CONFIG_FILE}")
     print(f"  {C_DIM}Backup:{C_RESET}  {config.backup.path}")
     print()

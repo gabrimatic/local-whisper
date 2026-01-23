@@ -1,7 +1,7 @@
 """
-Local Whisper - Local voice transcription with grammar correction for macOS
+Local Whisper - Local voice transcription with proofreading for macOS
 
-Double-tap Right Option (⌥) -> speak -> tap to stop -> polished text copied to clipboard.
+Double-tap Right Option (⌥) -> speak -> tap to stop -> proofread text copied to clipboard.
 All processing runs locally. No internet. No cloud. No tracking.
 """
 

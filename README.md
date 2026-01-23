@@ -1,30 +1,30 @@
 # Local Whisper
 
-**Local voice transcription with grammar correction for macOS**
+**Local voice transcription with proofreading for macOS**
 
-Double-tap a key, speak, tap to stop (Esc cancels) — polished text copied to clipboard. No cloud. No internet. No tracking.
+Double-tap a key, speak, tap to stop (Esc cancels) — proofread text copied to clipboard. No cloud. No internet. No tracking.
 
 ## What It Does
 
-1. **Run the app** — choose your grammar backend
+1. **Run the app** — choose your proofreading backend
 2. **Double-tap Right Option** to start recording
-3. **Speak** naturally (filler words like "um", "uh", "like" are OK)
+3. **Speak** naturally
 4. **Tap once** (Right Option or Space) to stop
 5. **Press Esc** to cancel recording (no save, no transcription)
 6. **WhisperKit** transcribes your speech locally
-7. **Grammar backend** fixes grammar and removes filler words
+7. **Proofreading backend** fixes punctuation and grammar errors
 8. **Text copied** to clipboard — just paste anywhere
 
-## Grammar Backends
+## Proofreading Backends
 
-Choose your preferred grammar correction engine at startup:
+Choose your preferred proofreading engine at startup:
 
 | Backend | Requirements | Description |
 |---------|--------------|-------------|
 | **Apple Intelligence** | macOS 26+, Apple Silicon, Apple Intelligence enabled | On-device, fastest, best quality |
 | **Ollama** | Ollama installed and running | Local LLM server, works on any Mac |
 | **LM Studio** | LM Studio with model loaded + server started | OpenAI-compatible, works on any Mac |
-| **None** | - | Transcription only, no grammar correction |
+| **None** | - | Transcription only, no proofreading |
 
 ## Privacy
 
@@ -33,9 +33,9 @@ Everything runs on your Mac:
 | Component | Purpose | Location |
 |-----------|---------|----------|
 | WhisperKit | Speech-to-text | localhost:50060 |
-| Apple Intelligence | Grammar correction | On-device (built-in) |
-| Ollama | Grammar correction | localhost:11434 |
-| LM Studio | Grammar correction | localhost:1234 |
+| Apple Intelligence | Proofreading | On-device (built-in) |
+| Ollama | Proofreading | localhost:11434 |
+| LM Studio | Proofreading | localhost:1234 |
 | Config file | Your settings | ~/.whisper/config.toml |
 | Audio backup | Recovery if needed | ~/.whisper/ |
 
@@ -50,7 +50,7 @@ Everything runs on your Mac:
 
 ### For Ollama backend:
 - **Ollama** installed (download from [ollama.ai](https://ollama.ai))
-- A grammar model pulled (e.g., `ollama pull gemma3:4b-it-qat`)
+- A model pulled (e.g., `ollama pull gemma3:4b-it-qat`)
 - Ollama server running (`ollama serve`)
 
 ### For LM Studio backend:
@@ -79,13 +79,13 @@ The setup script automatically:
 
 ### Installing Ollama (optional)
 
-If you want to use Ollama as your grammar backend:
+If you want to use Ollama as your proofreading backend:
 
 1. Download and install Ollama from [ollama.ai](https://ollama.ai)
-2. Pull a grammar model and start the server:
+2. Pull a model and start the server:
 
 ```bash
-# Pull a grammar model
+# Pull a model
 ollama pull gemma3:4b-it-qat
 
 # Start the server (keep running in background)
@@ -94,7 +94,7 @@ ollama serve
 
 ### Installing LM Studio (optional)
 
-If you want to use LM Studio as your grammar backend:
+If you want to use LM Studio as your proofreading backend:
 
 1. Download LM Studio from [lmstudio.ai](https://lmstudio.ai)
 2. Install and open LM Studio
@@ -123,12 +123,12 @@ wh
 You'll see a backend selection menu:
 
 ```
-Select Grammar Backend:
+Select Proofreading Backend:
 
 [1] Apple Intelligence (On-device, macOS 26+)
 [2] Ollama (Local LLM server)
 [3] LM Studio (OpenAI-compatible local server)
-[4] None (transcription only, no grammar)
+[4] None (transcription only, no proofreading)
 
 Enter choice (1-4):
 ```
@@ -150,7 +150,7 @@ A floating overlay window shows recording status and duration.
 | Menu Item | Description |
 |-----------|-------------|
 | Status | Current state (Ready, Recording, etc.) |
-| Grammar: [Backend] | Shows active grammar backend |
+| Proofreading: [Backend] | Shows active proofreading backend |
 | Retry Last | Re-transcribe the last recording |
 | Copy Last | Copy last transcription again |
 | History | Open all saved session transcripts |
@@ -166,7 +166,7 @@ A floating overlay window shows recording status and duration.
 - **Tap to stop** — Right Option or Space for precise control
 - **Real-time duration** display while recording
 - **Floating overlay** — minimal pill showing status (recording, processing, copied)
-- **Automatic grammar correction** — removes filler words, fixes punctuation
+- **Automatic proofreading** — fixes punctuation and grammar errors
 - **Clipboard integration** — text ready to paste immediately
 
 ### Reliability
@@ -200,7 +200,7 @@ timeout = 0  # no limit
 [grammar]
 # Backend: "apple_intelligence", "ollama", or "lm_studio"
 backend = "apple_intelligence"
-# Enable grammar correction (overridden by startup selection)
+# Enable proofreading (overridden by startup selection)
 enabled = true
 
 [ollama]
@@ -255,13 +255,12 @@ sounds_enabled = true
                              │
                              ▼
 ┌───────────────────────────────────────────────────────────┐
-│  Grammar Backend (selected at startup)                    │
+│  Proofreading Backend (selected at startup)               │
 │                                                           │
 │  Apple Intelligence  │  Ollama       │  LM Studio         │
 │  On-device Swift     │  Local LLM    │  OpenAI-compatible │
 │                                                           │
-│  Removes: um, uh, like, you know, basically               │
-│  Fixes: grammar, punctuation, capitalization              │
+│  Fixes: punctuation, grammar errors, capitalization       │
 └───────────────────────────────────────────────────────────┘
                              │
                              ▼
@@ -290,11 +289,11 @@ local-whisper/
         ├── audio.py            # Audio recording
         ├── backup.py           # File backup manager
         ├── config.py           # Configuration management
-        ├── grammar.py          # Grammar backend factory
+        ├── grammar.py          # Proofreading backend factory
         ├── overlay.py          # Floating window UI
         ├── transcriber.py      # WhisperKit integration
         ├── utils.py            # Logging and helpers
-        └── backends/           # Grammar correction backends
+        └── backends/           # Proofreading backends
             ├── __init__.py     # Backend registry
             ├── base.py         # Abstract base class
             ├── ollama/         # Ollama backend
@@ -309,9 +308,9 @@ Data is stored in `~/.whisper/`:
 ~/.whisper/
 ├── config.toml           # Your settings
 ├── last_recording.wav    # Audio file
-├── last_raw.txt          # Before grammar fix
+├── last_raw.txt          # Before proofreading
 ├── last_transcription.txt # Final text
-└── history/              # All session transcripts (RAW + FIXED)
+└── history/              # All session transcripts (RAW + PROOFREAD)
 ```
 
 ## Development
@@ -335,11 +334,11 @@ wh
 # Or run as module
 python -m whisper_voice
 
-# Run tests (requires WhisperKit + grammar backend)
+# Run tests (requires WhisperKit + proofreading backend)
 python tests/test_flow.py
 ```
 
-### Adding a New Grammar Backend
+### Adding a New Proofreading Backend
 
 1. Create folder under `backends/` with `__init__.py` and `backend.py`
 2. Implement `GrammarBackend` abstract class
@@ -374,7 +373,7 @@ Make sure:
 
 Make sure:
 1. Ollama is installed (download from [ollama.ai](https://ollama.ai))
-2. A model is pulled: `ollama pull gemma3:4b-it-qat`
+2. A model is pulled (e.g., `ollama pull gemma3:4b-it-qat`)
 3. Server is running: `ollama serve`
 
 ### LM Studio not working

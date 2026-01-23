@@ -1,7 +1,7 @@
 """
-Ollama backend implementation for grammar correction.
+Ollama backend implementation for proofreading.
 
-Handles grammar correction via local Ollama server.
+Handles proofreading via local Ollama server.
 """
 
 from typing import Tuple, Optional
@@ -16,7 +16,7 @@ from ...utils import log, SERVICE_CHECK_TIMEOUT
 
 
 class OllamaBackend(GrammarBackend):
-    """Grammar correction backend using local Ollama server."""
+    """Proofreading backend using local Ollama server."""
 
     def __init__(self):
         self._session = requests.Session()
@@ -122,7 +122,7 @@ class OllamaBackend(GrammarBackend):
         return host in ("localhost", "127.0.0.1", "::1")
 
     def _build_prompt(self, text: str) -> str:
-        """Build the grammar correction prompt."""
+        """Build the proofreading prompt."""
         return get_ollama_prompt(text)
 
     def _predict_length(self, text: str, max_predict: int) -> int:
