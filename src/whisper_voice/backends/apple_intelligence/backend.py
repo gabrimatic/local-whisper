@@ -1,5 +1,5 @@
 """
-Apple Intelligence backend implementation for proofreading.
+Apple Intelligence backend implementation for grammar correction.
 
 Uses Apple's on-device Foundation Models via a Swift CLI helper.
 The CLI runs in server mode, keeping the LanguageModelSession warm
@@ -30,7 +30,7 @@ SERVER_STARTUP_TIMEOUT = 10
 
 class AppleIntelligenceBackend(GrammarBackend):
     """
-    Proofreading backend using Apple Intelligence.
+    Grammar correction backend using Apple Intelligence.
 
     Uses a long-lived Swift CLI process in server mode to keep the
     LanguageModelSession warm, avoiding repeated model loading.
@@ -287,7 +287,7 @@ class AppleIntelligenceBackend(GrammarBackend):
         # Build request for server mode
         request = {
             "system": GRAMMAR_SYSTEM_PROMPT,
-            "user_prompt": "Proofread this transcript. Output the proofread text only, nothing else:\n{text}",
+            "user_prompt": "Edit this transcript. Output the corrected text only, nothing else:\n{text}",
             "text": text
         }
 

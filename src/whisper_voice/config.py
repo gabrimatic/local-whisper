@@ -27,8 +27,14 @@ CONFIG_FILE = CONFIG_DIR / "config.toml"
 GRAMMAR_BACKENDS = ("ollama", "apple_intelligence", "lm_studio")
 GrammarBackendType = Literal["ollama", "apple_intelligence", "lm_studio"]
 
+# Default transcription prompt (English). This is only sent when language is "en".
+DEFAULT_WHISPER_PROMPT = (
+    "Okay, let's review the API endpoints, database schema, and deployment plan. "
+    "We'll check logs, metrics, and error reports."
+)
+
 # Default configuration
-DEFAULT_CONFIG = """# Local Whisper Configuration
+DEFAULT_CONFIG = f"""# Local Whisper Configuration
 # Edit this file to customize behavior
 
 [hotkey]
@@ -56,7 +62,9 @@ timeout = 0
 # Context prompt to guide transcription style and vocabulary.
 # This helps Whisper recognize technical terms and use proper punctuation.
 # The model will follow the punctuation style shown in this text.
-prompt = "Hello, this is a professional discussion. We're reviewing the project status, technical requirements, and implementation details. Let me explain: first, we need to check the API endpoints. Second, the database schema requires updates. Finally, what are your thoughts on the deployment timeline?"
+# Default prompt is English and only applied when language is "en".
+# Set to empty string ("") to disable, or set your own prompt for other languages.
+prompt = "{DEFAULT_WHISPER_PROMPT}"
 
 [grammar]
 # Proofreading backend: "apple_intelligence", "ollama", or "lm_studio"
@@ -157,7 +165,7 @@ class WhisperConfig:
     model: str = "large-v3-v20240930_626MB"
     language: str = "en"
     timeout: int = 0
-    prompt: str = "Hello, this is a professional discussion. We're reviewing the project status, technical requirements, and implementation details. Let me explain: first, we need to check the API endpoints. Second, the database schema requires updates. Finally, what are your thoughts on the deployment timeline?"
+    prompt: str = DEFAULT_WHISPER_PROMPT
 
 
 @dataclass

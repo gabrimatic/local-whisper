@@ -2,7 +2,7 @@
 """
 End-to-end test for Local Whisper flow.
 
-Tests: Audio file → WhisperKit transcription → Proofreading
+Tests: Audio file → WhisperKit transcription → Grammar correction
 
 Usage:
     cd local-whisper
@@ -10,7 +10,7 @@ Usage:
 
 Requirements:
     - WhisperKit server running (localhost:50060)
-    - Proofreading backend available (Apple Intelligence, Ollama, or LM Studio)
+    - Grammar backend available (Apple Intelligence or Ollama)
 """
 
 import sys
@@ -39,7 +39,7 @@ EXPECTED_PATTERNS = ["test", "bottle", "desk"]
 
 
 def test_full_flow():
-    """Test complete flow: audio → transcription → proofreading."""
+    """Test complete flow: audio → transcription → grammar correction."""
 
     print("\n" + "=" * 60)
     print("  LOCAL WHISPER - END-TO-END TEST")
@@ -135,22 +135,22 @@ def test_full_flow():
         return False
 
     # -------------------------------------------------------------------------
-    # Step 4: Proofreading
+    # Step 4: Grammar correction
     # -------------------------------------------------------------------------
-    log(f"Applying proofreading with {grammar.name}...", "INFO")
+    log(f"Applying grammar correction with {grammar.name}...", "INFO")
     fixed_text, g_err = grammar.fix(raw_text)
 
     if g_err:
-        log(f"Proofreading failed: {g_err}", "ERR")
-        errors.append(f"Proofreading error: {g_err}")
+        log(f"Grammar correction failed: {g_err}", "ERR")
+        errors.append(f"Grammar error: {g_err}")
     elif not fixed_text:
-        log("Proofreading returned empty", "ERR")
-        errors.append("Empty proofreading result")
+        log("Grammar correction returned empty", "ERR")
+        errors.append("Empty grammar result")
     else:
-        log(f"Proofread transcription: {fixed_text}", "OK")
+        log(f"Fixed transcription: {fixed_text}", "OK")
 
     if errors:
-        log(f"Proofreading failed with {len(errors)} error(s)", "ERR")
+        log(f"Grammar correction failed with {len(errors)} error(s)", "ERR")
         return False
 
     # -------------------------------------------------------------------------
@@ -186,15 +186,15 @@ def test_full_flow():
         log(f"All expected patterns found: {EXPECTED_PATTERNS}", "OK")
 
     # -------------------------------------------------------------------------
-    # Step 6: Validate proofreading
+    # Step 6: Validate grammar correction
     # -------------------------------------------------------------------------
-    log("Validating proofreading...", "INFO")
+    log("Validating grammar correction...", "INFO")
 
-    # Check text is different (proofreading was applied)
+    # Check text is different (grammar was applied)
     if raw_text.strip() == fixed_text.strip():
-        log("Proofreading made no changes (raw == fixed)", "WARN")
+        log("Grammar made no changes (raw == fixed)", "WARN")
     else:
-        log("Proofreading modified the text", "OK")
+        log("Grammar correction modified the text", "OK")
 
     # Check fixed output matches expected
     if fixed_text.strip() == expected_fixed_text:
@@ -218,7 +218,7 @@ def test_full_flow():
     else:
         log(f"Output length: {len(fixed_text)} chars", "OK")
 
-    # Check proofreading actually improved something (punctuation, etc.)
+    # Check grammar actually improved something (punctuation, etc.)
     raw_punct = sum(1 for c in raw_text if c in '.,;:!?')
     fixed_punct = sum(1 for c in fixed_text if c in '.,;:!?')
     if fixed_punct >= raw_punct:

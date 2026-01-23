@@ -1,7 +1,7 @@
 """
-LM Studio backend implementation for proofreading.
+LM Studio backend implementation for grammar correction.
 
-Handles proofreading via LM Studio's OpenAI-compatible API.
+Handles grammar correction via LM Studio's OpenAI-compatible API.
 """
 
 from typing import Tuple, Optional
@@ -16,7 +16,7 @@ from ...utils import log, SERVICE_CHECK_TIMEOUT
 
 
 class LMStudioBackend(GrammarBackend):
-    """Proofreading backend using LM Studio's OpenAI-compatible API."""
+    """Grammar correction backend using LM Studio's OpenAI-compatible API."""
 
     def __init__(self):
         self._session = requests.Session()
@@ -194,7 +194,7 @@ class LMStudioBackend(GrammarBackend):
             # Get model ID
             model_id = self._get_model_id()
             if not model_id:
-                log("LM Studio: No model available for proofreading", "WARN")
+                log("LM Studio: No model available for grammar correction", "WARN")
                 return text, "No model available"
 
             # Build request payload (OpenAI chat format)

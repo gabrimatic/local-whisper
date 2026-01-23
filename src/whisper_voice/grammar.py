@@ -1,20 +1,19 @@
 """
-Proofreading module for Local Whisper.
+Grammar correction module for Local Whisper.
 
-This module provides a unified interface to proofreading backends.
+This module provides a unified interface to grammar correction backends.
 The backend is selected based on the [grammar] configuration.
 
 Supported backends:
-- apple_intelligence: Apple's on-device Foundation Models (macOS 26+)
+- apple_intelligence: Apple's on-device Foundation Models (macOS 15+)
 - ollama: Local Ollama server with configurable LLM models
-- lm_studio: LM Studio with OpenAI-compatible API
 
 Usage:
     from whisper_voice.grammar import Grammar
 
     grammar = Grammar()
     if grammar.start():
-        proofread, error = grammar.fix("some text")
+        corrected, error = grammar.fix("some text")
     grammar.close()
 """
 
@@ -27,7 +26,7 @@ from .utils import log
 
 class Grammar:
     """
-    Unified proofreading interface.
+    Unified grammar correction interface.
 
     Wraps the configured backend and provides a consistent API.
     """
@@ -38,7 +37,7 @@ class Grammar:
             self._backend: GrammarBackend = create_backend(config.grammar.backend)
             log(f"Grammar backend: {self._backend.name}", "INFO")
         except ValueError as e:
-            log(f"Failed to create proofreading backend '{config.grammar.backend}': {e}", "ERR")
+            log(f"Failed to create grammar backend '{config.grammar.backend}': {e}", "ERR")
             raise
 
     def close(self) -> None:
@@ -46,7 +45,7 @@ class Grammar:
         self._backend.close()
 
     def running(self) -> bool:
-        """Check if the proofreading backend is available."""
+        """Check if the grammar backend is available."""
         return self._backend.running()
 
     def start(self) -> bool:
@@ -55,13 +54,13 @@ class Grammar:
 
     def fix(self, text: str) -> Tuple[str, Optional[str]]:
         """
-        Proofread the given text.
+        Fix grammar in the given text.
 
         Args:
-            text: The text to proofread.
+            text: The text to correct.
 
         Returns:
-            Tuple of (proofread_text, error_message).
+            Tuple of (corrected_text, error_message).
             On success, error_message is None.
             On error, returns original text with error description.
         """

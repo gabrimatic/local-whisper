@@ -22,7 +22,7 @@ print_header() {
     echo ""
     echo -e "${BOLD}╭────────────────────────────────────────╮${NC}"
     echo -e "${BOLD}│${NC}  ${CYAN}Local Whisper${NC} · Setup               ${BOLD}│${NC}"
-    echo -e "${BOLD}│${NC}  ${DIM}Voice Transcription + Proofreading${NC}    ${BOLD}│${NC}"
+    echo -e "${BOLD}│${NC}  ${DIM}Voice Transcription + Grammar Fix${NC}     ${BOLD}│${NC}"
     echo -e "${BOLD}╰────────────────────────────────────────╯${NC}"
     echo ""
 }
@@ -86,7 +86,7 @@ MACOS_MAJOR=$(echo "$MACOS_VERSION" | cut -d'.' -f1)
 if [[ "$MACOS_MAJOR" -lt 26 ]]; then
     log_warn "macOS $MACOS_VERSION detected"
     log_warn "Apple Intelligence Foundation Models require macOS 26 (Tahoe) or later"
-    log_warn "Proofreading will not work until you upgrade"
+    log_warn "Grammar correction will not work until you upgrade"
 else
     log_ok "macOS $MACOS_VERSION (supports Apple Intelligence)"
 fi
@@ -193,7 +193,7 @@ if command -v ollama &> /dev/null; then
     if ollama list 2>/dev/null | grep -q "$OLLAMA_MODEL"; then
         log_ok "Model $OLLAMA_MODEL already downloaded"
     else
-        log_info "Downloading model: $OLLAMA_MODEL"
+        log_info "Downloading grammar model: $OLLAMA_MODEL"
         log_info "This may take a few minutes..."
         if ollama pull "$OLLAMA_MODEL" 2>&1 | grep -E "pulling|success|already"; then
             log_ok "Model $OLLAMA_MODEL ready"
@@ -221,7 +221,7 @@ if command -v lms &> /dev/null; then
     if lms ls 2>/dev/null | grep -q "gemma-3-4b"; then
         log_ok "Model $LMSTUDIO_MODEL already downloaded"
     else
-        log_info "Downloading model: $LMSTUDIO_MODEL"
+        log_info "Downloading grammar model: $LMSTUDIO_MODEL"
         log_info "This may take a few minutes..."
         if lms get "$LMSTUDIO_MODEL" -y --quiet 2>&1; then
             log_ok "Model $LMSTUDIO_MODEL ready"
@@ -264,7 +264,7 @@ if [[ -d "$SWIFT_CLI_DIR" ]]; then
         else
             log_warn "Failed to build Apple Intelligence CLI"
             log_warn "This requires macOS 26+ and Xcode 26+"
-            log_warn "Proofreading will not be available"
+            log_warn "Grammar correction will not be available"
         fi
     fi
 
@@ -282,7 +282,7 @@ echo -e "${GREEN}${BOLD}╭─────────────────�
 echo -e "${GREEN}${BOLD}│${NC}  ${GREEN}✓ Setup complete!${NC}                     ${GREEN}${BOLD}│${NC}"
 echo -e "${GREEN}${BOLD}╰────────────────────────────────────────╯${NC}"
 echo ""
-echo -e "${BOLD}Proofreading Backends:${NC}"
+echo -e "${BOLD}Grammar Backends:${NC}"
 echo ""
 echo -e "  ${CYAN}Apple Intelligence${NC} (recommended):"
 echo -e "     - macOS 26 (Tahoe) or later"
@@ -313,7 +313,7 @@ echo ""
 echo -e "  3. ${CYAN}Or run directly:${NC}"
 echo -e "     ${DIM}$VENV_DIR/bin/wh${NC}"
 echo ""
-echo -e "  4. ${CYAN}Select proofreading backend:${NC}"
+echo -e "  4. ${CYAN}Select grammar backend:${NC}"
 echo -e "     Choose Apple Intelligence, Ollama, LM Studio, or None at startup"
 echo ""
 echo -e "  5. ${CYAN}Use it:${NC}"

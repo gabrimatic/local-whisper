@@ -1,10 +1,10 @@
 import Foundation
 import FoundationModels
 
-/// Apple Intelligence CLI for proofreading
+/// Apple Intelligence CLI for grammar correction
 /// Usage:
 ///   apple-ai-cli check   - Check if Apple Intelligence is available
-///   apple-ai-cli serve   - Start long-lived server mode for proofreading
+///   apple-ai-cli serve   - Start long-lived server mode for grammar correction
 ///
 /// Server mode protocol (JSONL over stdin/stdout):
 ///   Request:  {"system": "...", "user_prompt": "...", "text": "..."}
@@ -15,9 +15,9 @@ import FoundationModels
 ///   1 - Apple Intelligence unavailable
 ///   2 - Invalid arguments
 
-// MARK: - Proofreader
+// MARK: - Grammar Fixer
 
-/// Proofreader using Apple Intelligence with session-level instructions
+/// Grammar fixer using Apple Intelligence with session-level instructions
 final class GrammarFixer {
     private let session: LanguageModelSession
 

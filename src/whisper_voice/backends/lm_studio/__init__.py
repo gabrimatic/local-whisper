@@ -1,4 +1,4 @@
-"""LM Studio backend for proofreading."""
+"""LM Studio backend for grammar correction."""
 
 from .backend import LMStudioBackend
 

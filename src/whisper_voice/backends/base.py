@@ -1,7 +1,7 @@
 """
-Base proofreading backend interface for Local Whisper.
+Base grammar backend interface for Local Whisper.
 
-All proofreading backends must inherit from GrammarBackend
+All grammar correction backends must inherit from GrammarBackend
 and implement the required methods.
 """
 
@@ -16,10 +16,10 @@ DEFAULT_CONNECT_TIMEOUT = 10  # Default connection timeout in seconds
 
 class GrammarBackend(ABC):
     """
-    Abstract base class for proofreading backends.
+    Abstract base class for grammar correction backends.
 
     Provides common text processing utilities and defines the interface
-    that all proofreading backends must implement.
+    that all grammar backends must implement.
     """
 
     @property
@@ -50,13 +50,13 @@ class GrammarBackend(ABC):
     @abstractmethod
     def fix(self, text: str) -> Tuple[str, Optional[str]]:
         """
-        Proofread the given text.
+        Fix grammar in the given text.
 
         Args:
-            text: The text to proofread.
+            text: The text to correct.
 
         Returns:
-            Tuple of (proofread_text, error_message).
+            Tuple of (corrected_text, error_message).
             On success, error_message is None.
             On error, returns original text with error description.
         """

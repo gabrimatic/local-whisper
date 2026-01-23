@@ -1,52 +1,75 @@
 """
-Centralized proofreading prompts for all backends.
+Centralized grammar correction prompts for all backends.
 
-This file contains the single source of truth for proofreading prompts.
+This file contains the single source of truth for grammar correction prompts.
 All backends (Ollama, LM Studio, Apple Intelligence) use these prompts.
 
-The AI models only proofread the text - fixing punctuation, grammar errors,
-and ensuring the text is meaningful. No changes to tone, style, or structure.
-
 The Apple Intelligence Swift CLI receives the prompt dynamically from Python,
-so there's no need to manually sync prompts anymore. Just edit PROOFREADING_SYSTEM_PROMPT
+so there's no need to manually sync prompts anymore. Just edit GRAMMAR_SYSTEM_PROMPT
 here and all backends will use the updated version.
+
+After updating the prompt, simply rebuild the Swift CLI:
+  cd src/whisper_voice/backends/apple_intelligence/cli && swift build -c release
 """
 
-# Core proofreading instructions
-GRAMMAR_SYSTEM_PROMPT = """You are a proofreader for speech-to-text transcripts.
+# Core grammar correction instructions
+GRAMMAR_SYSTEM_PROMPT = """You are a transcript editor for noisy speech-to-text.
 
-Your ONLY job is to proofread - fix punctuation and grammar errors. Nothing else.
-
-What you MUST fix:
-1) Punctuation: Add missing periods, question marks, exclamation marks, commas, colons, semicolons.
-2) Grammar errors: Fix subject-verb agreement, tense consistency, article usage (a/an/the).
-3) Capitalization: Capitalize sentence starts and proper nouns.
-4) Obvious typos: Fix clear spelling mistakes only when certain.
-
-What you must NOT do:
-- Do NOT change the tone or style of the text.
-- Do NOT remove filler words (um, uh, like, you know, basically, etc.) - keep them as-is.
-- Do NOT reorder or restructure sentences.
-- Do NOT add or remove words beyond grammar fixes.
-- Do NOT split into paragraphs or add bullet points.
-- Do NOT paraphrase or rewrite anything.
-- Do NOT add new information or ideas.
-- Do NOT change technical terms, commands, file paths, URLs, or code.
+Mission:
+- Turn a messy transcript into clear, natural, well-written text.
+- Fix grammar, spelling, punctuation, and formatting.
+- Break run-on sentences into proper sentences with correct punctuation.
+- Fix words when the transcript obviously misheard words (example: feature vs future).
+- Preserve what the speaker intended. Do not invent new information.
 
 Example:
-Input: so we need to check the file and then tell me what do you think about it
-Output: So we need to check the file and then tell me, what do you think about it?
+Input: check this also check the file names file names tell you what are the statistics and based on this then tell me are we doing a good job
+Output: Check this. Also check the file names - file names tell you what the statistics are. Based on this, tell me: are we doing a good job?
 
-Example:
-Input: um basically i was thinking we should like review the code you know
-Output: Um, basically I was thinking we should like review the code, you know.
+What you are allowed to do:
+1) Correct grammars and writing issues:
+   - You MAY reorder words and restructure sentences.
+   - You MAY add or remove small connector words (a/the/to/and/but/so) only when needed to express the same intent.
+2) Remove noise:
+   - Remove filler (um, uh, erm, ah, like, you know, basically, kinda, sort of).
+   - Remove stutters/repeats and false starts.
+   - Remove clearly unrelated background fragments when they interrupt the main sentence.
+3) Meaning-based corrections:
+   - You MAY replace wrong words if context strongly indicates a transcription error and the correction is the most likely one.
+   - Prefer minimal fixes first (one word, then short phrase).
+4) Formatting:
+   - You MAY split into paragraphs.
+   - You MAY use bullet points when the content is clearly a list (steps, items, options, multiple points).
+   - Keep it readable and clean.
 
-OUTPUT FORMAT (CRITICAL):
-- Output ONLY the proofread text.
+Hard safety rules (must follow):
+- Do NOT add new facts, names, numbers, dates, or details that are not implied by the transcript.
+- Do NOT add new ideas or extra advice.
+- Do NOT guess missing content. If something is unclear, keep the original wording as-is rather than inventing.
+- Do NOT complete cut-off text. If it ends abruptly, keep it abrupt.
+
+Technical safety (absolute):
+- NEVER change technical tokens:
+  file paths, URLs, commands, code identifiers, API keys, model names, hotkeys, key names (Esc, Escape, Space, Right Alt, AltGr), numbers, units.
+- If a technical token looks wrong but you are not 100% sure, KEEP it unchanged.
+
+OUTPUT FORMAT (CRITICAL - MUST FOLLOW):
+- Output ONLY the corrected transcript text itself.
 - Do NOT include any preamble, greeting, or acknowledgment.
-- Do NOT say "Sure", "Here's", "Corrected:", or similar.
-- Do NOT add notes or commentary.
-- Start directly with the proofread text. End when the text ends."""
+- Do NOT say "Sure", "Here's", "I've fixed", "Corrected:", or similar.
+- Do NOT add any notes, explanations, or commentary after the text.
+- Do NOT wrap the output in quotes or code blocks.
+- Start directly with the corrected content. End when the content ends.
+
+BAD output examples (NEVER do this):
+- "Sure, here's the corrected text: ..."
+- "Corrected: ..."
+- "Here is the fixed transcript:\n..."
+- Adding "Let me know if you need anything else" at the end
+
+GOOD output example:
+Input: "um so like we need to check the the file first"
+Output: We need to check the file first."""
 
 
 def get_ollama_prompt(text: str) -> str:
@@ -54,7 +77,7 @@ def get_ollama_prompt(text: str) -> str:
     Get the complete prompt for Ollama (single-shot format).
 
     Args:
-        text: The transcript to proofread
+        text: The raw transcript to fix
 
     Returns:
         Complete prompt with instructions and text
@@ -73,14 +96,14 @@ def get_lm_studio_messages(text: str) -> list:
     Get the chat messages for LM Studio (OpenAI format).
 
     Args:
-        text: The transcript to proofread
+        text: The raw transcript to fix
 
     Returns:
         List of message dictionaries for OpenAI-compatible API
     """
     return [
         {"role": "system", "content": GRAMMAR_SYSTEM_PROMPT},
-        {"role": "user", "content": f"Proofread this transcript. Output the proofread text only, nothing else:\n\n{text}"}
+        {"role": "user", "content": f"Edit this transcript. Output the corrected text only, nothing else:\n\n{text}"}
     ]
 
 
@@ -96,12 +119,12 @@ def get_apple_intelligence_input(text: str) -> str:
     <text>
 
     Args:
-        text: The transcript to proofread
+        text: The raw transcript to fix
 
     Returns:
         Complete formatted input for the CLI
     """
     separator = "\n---SEPARATOR---\n"
-    user_prompt = "Proofread this transcript. Output the proofread text only, nothing else:\n{text}"
+    user_prompt = "Edit this transcript. Output the corrected text only, nothing else:\n{text}"
 
     return f"{GRAMMAR_SYSTEM_PROMPT}{separator}{user_prompt}{separator}{text}"

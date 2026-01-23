@@ -1,8 +1,8 @@
 """
-Apple Intelligence backend for proofreading.
+Apple Intelligence backend for grammar correction.
 
 Uses Apple's on-device Foundation Models via a Swift CLI helper.
-Requires macOS 26+ with Apple Intelligence enabled.
+Requires macOS 15+ with Apple Intelligence enabled.
 """
 
 from .backend import AppleIntelligenceBackend
