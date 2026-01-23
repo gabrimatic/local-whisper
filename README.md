@@ -196,6 +196,10 @@ double_tap_threshold = 0.4  # seconds
 model = "large-v3-v20240930_626MB"
 language = "en"  # e.g. "fa" or "auto" for detection
 timeout = 0  # no limit
+# Context prompt guides transcription style and vocabulary (professional/technical default)
+# Default prompt is English and only applied when language is "en".
+# Set to empty string ("") to disable, or set your own prompt for other languages.
+prompt = "Okay, let's review the API endpoints, database schema, and deployment plan. We'll check logs, metrics, and error reports."
 
 [grammar]
 # Backend: "apple_intelligence", "ollama", or "lm_studio"

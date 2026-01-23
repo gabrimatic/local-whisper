@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from .config import get_config
+from .config import get_config, DEFAULT_WHISPER_PROMPT
 from .utils import log, TRANSCRIBE_CHECK_TIMEOUT
 
 # Startup timeout for WhisperKit server
@@ -97,6 +97,15 @@ class Whisper:
                 data = {'model': config.whisper.model}
                 if config.whisper.language and config.whisper.language != "auto":
                     data['language'] = config.whisper.language
+                # Add prompt for vocabulary/style guidance if configured
+                prompt = config.whisper.prompt
+                if prompt and prompt.strip():
+                    lang = (config.whisper.language or "").strip().lower()
+                    if prompt == DEFAULT_WHISPER_PROMPT:
+                        if lang.startswith("en"):
+                            data['prompt'] = prompt
+                    else:
+                        data['prompt'] = prompt
                 # timeout=0 means unlimited read, but keep reasonable connect timeout
                 if config.whisper.timeout > 0:
                     timeout = config.whisper.timeout
