@@ -27,11 +27,9 @@ CONFIG_FILE = CONFIG_DIR / "config.toml"
 GRAMMAR_BACKENDS = ("ollama", "apple_intelligence", "lm_studio")
 GrammarBackendType = Literal["ollama", "apple_intelligence", "lm_studio"]
 
-# Default transcription prompt (English). This is only sent when language is "en".
-DEFAULT_WHISPER_PROMPT = (
-    "Okay, let's review the API endpoints, database schema, and deployment plan. "
-    "We'll check logs, metrics, and error reports."
-)
+# Default transcription prompt. Empty by default to avoid confusing Whisper.
+# Whisper's prompt parameter is meant for vocabulary hints only, not conversational context.
+DEFAULT_WHISPER_PROMPT = ""
 
 # Default configuration
 DEFAULT_CONFIG = f"""# Local Whisper Configuration
@@ -59,12 +57,11 @@ language = "en"
 # Transcription timeout in seconds (no limit)
 timeout = 0
 
-# Context prompt to guide transcription style and vocabulary.
-# This helps Whisper recognize technical terms and use proper punctuation.
-# The model will follow the punctuation style shown in this text.
-# Default prompt is English and only applied when language is "en".
-# Set to empty string ("") to disable, or set your own prompt for other languages.
-prompt = "{DEFAULT_WHISPER_PROMPT}"
+# Optional vocabulary hint for transcription.
+# Whisper's prompt parameter is meant for vocabulary hints (technical terms, names)
+# NOT conversational context. Using conversational prompts causes truncated or empty results.
+# Leave empty unless you need to hint specific vocabulary.
+prompt = ""
 
 [grammar]
 # Grammar correction backend: "apple_intelligence", "ollama", or "lm_studio"
