@@ -97,6 +97,9 @@ class Whisper:
                 data = {'model': config.whisper.model}
                 if config.whisper.language and config.whisper.language != "auto":
                     data['language'] = config.whisper.language
+                # Add prompt for vocabulary/style guidance if configured
+                if config.whisper.prompt:
+                    data['prompt'] = config.whisper.prompt
                 # timeout=0 means unlimited read, but keep reasonable connect timeout
                 if config.whisper.timeout > 0:
                     timeout = config.whisper.timeout

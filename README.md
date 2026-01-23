@@ -196,6 +196,8 @@ double_tap_threshold = 0.4  # seconds
 model = "large-v3-v20240930_626MB"
 language = "en"  # e.g. "fa" or "auto" for detection
 timeout = 0  # no limit
+# Context prompt guides transcription style and vocabulary (professional/technical default)
+prompt = "Hello, this is a professional discussion. We're reviewing the project status..."
 
 [grammar]
 # Backend: "apple_intelligence", "ollama", or "lm_studio"

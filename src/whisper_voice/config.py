@@ -53,6 +53,11 @@ language = "en"
 # Transcription timeout in seconds (no limit)
 timeout = 0
 
+# Context prompt to guide transcription style and vocabulary.
+# This helps Whisper recognize technical terms and use proper punctuation.
+# The model will follow the punctuation style shown in this text.
+prompt = "Hello, this is a professional discussion. We're reviewing the project status, technical requirements, and implementation details. Let me explain: first, we need to check the API endpoints. Second, the database schema requires updates. Finally, what are your thoughts on the deployment timeline?"
+
 [grammar]
 # Proofreading backend: "apple_intelligence", "ollama", or "lm_studio"
 backend = "apple_intelligence"
@@ -152,6 +157,7 @@ class WhisperConfig:
     model: str = "large-v3-v20240930_626MB"
     language: str = "en"
     timeout: int = 0
+    prompt: str = "Hello, this is a professional discussion. We're reviewing the project status, technical requirements, and implementation details. Let me explain: first, we need to check the API endpoints. Second, the database schema requires updates. Finally, what are your thoughts on the deployment timeline?"
 
 
 @dataclass
@@ -267,6 +273,7 @@ def load_config() -> Config:
             model=data['whisper'].get('model', config.whisper.model),
             language=data['whisper'].get('language', config.whisper.language),
             timeout=data['whisper'].get('timeout', config.whisper.timeout),
+            prompt=data['whisper'].get('prompt', config.whisper.prompt),
         )
 
     # Grammar settings
