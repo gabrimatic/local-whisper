@@ -243,7 +243,7 @@ class RecordingOverlay:
         _perform_on_main_thread(_update, wait=True)
 
     def set_status(self, status: str):
-        """Update overlay: 'processing', 'done', 'error'."""
+        """Update overlay: 'listening', 'processing', 'done', 'error'."""
         config = get_config()
         if not config.ui.show_overlay:
             return
@@ -257,7 +257,16 @@ class RecordingOverlay:
                 if self._duration_field is None:
                     return
 
-                if status == "processing":
+                if status == "listening":
+                    text = "Listening..."
+                    self._duration_field.setStringValue_(text)
+                    self._layout_row(text)
+                    self._duration_field.setTextColor_(
+                        _AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.5, 0.8, 1.0, 1.0)
+                    )
+                    if self._wave_view:
+                        self._wave_view.setImage_(_AppKit.NSImage.alloc().initWithContentsOfFile_(OVERLAY_WAVE_FRAMES[0]))
+                elif status == "processing":
                     text = "···"
                     self._duration_field.setStringValue_(text)
                     self._layout_row(text)

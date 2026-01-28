@@ -19,6 +19,7 @@ import signal
 import time
 import threading
 import warnings
+from typing import Optional
 
 import rumps
 from pynput import keyboard
@@ -40,6 +41,7 @@ from .transcriber import Whisper
 from .grammar import Grammar
 from .overlay import get_overlay
 from .backends import BACKEND_REGISTRY
+from .wakeword import WakeWordDetector, create_engine
 
 warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
 
@@ -103,9 +105,15 @@ class App(rumps.App):
         self._keyboard_listener = None
         self._key_pressed = False  # Track if hotkey is currently held down
 
+        # Wake word detection
+        self._wake_detector: Optional[WakeWordDetector] = None
+        self._wake_enabled: bool = False
+        self._wake_listening: bool = False
+
         # Build menu
         self.status = rumps.MenuItem("Starting...")
         self.grammar_status = rumps.MenuItem(self._get_grammar_menu_text())
+        self.wake_status = rumps.MenuItem("")  # Will be populated if enabled
         self.menu = [
             self.status,
             self.grammar_status,
@@ -214,6 +222,9 @@ class App(rumps.App):
         key_name = self.config.hotkey.key.upper().replace("_", " ")
         log(f"Double-tap {key_name} to record, tap to stop", "OK")
 
+        # Initialize wake word detection if enabled
+        self._init_wake_word()
+
         # Start keyboard listener
         self._start_keyboard_listener()
 
@@ -254,6 +265,72 @@ class App(rumps.App):
         print()
         print(f"  {C_DIM}Tip: You can also run: open x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility{C_RESET}")
         print()
+
+    def _init_wake_word(self) -> None:
+        """Initialize wake word detection if enabled."""
+        if not self.config.wakeword.enabled:
+            return
+
+        try:
+            engine = create_engine("openwakeword")
+            if not engine.load_model(self.config.wakeword.wake_phrase):
+                log(
+                    f"Failed to load wake word model '{self.config.wakeword.wake_phrase}'. "
+                    "Wake word detection disabled.",
+                    "WARN"
+                )
+                return
+
+            self._wake_detector = WakeWordDetector(
+                engine,
+                threshold=self.config.wakeword.threshold,
+                sensitivity=self.config.wakeword.sensitivity,
+                cooldown=self.config.wakeword.cooldown,
+                buffer_seconds=self.config.wakeword.buffer_seconds,
+                on_wake=self._on_wake_detected,
+            )
+
+            if self._wake_detector.start():
+                self._wake_enabled = True
+                self._wake_listening = True
+                log("Wake word detection enabled", "OK")
+
+                # Add wake word status to menu
+                self.wake_status.title = f"Wake: {self.config.wakeword.wake_phrase}"
+                self.wake_status.set_callback(None)  # Non-clickable
+                self.menu.insert(2, self.wake_status)
+            else:
+                log("Failed to start wake word detection", "WARN")
+                self._wake_detector = None
+
+        except Exception as e:
+            log(f"Wake word initialization failed: {e}", "WARN")
+            self._wake_detector = None
+
+    def _on_wake_detected(self, model_name: str) -> None:
+        """Callback when wake word is detected.
+
+        Args:
+            model_name: Name of the detected wake word model
+        """
+        log(f"Wake word detected: {model_name}", "OK")
+
+        # Don't activate if busy or already recording
+        if self._busy or self.recorder.recording:
+            log("Ignoring wake word - busy or recording", "DEBUG")
+            return
+
+        # Pause wake detection and start recording
+        if self._wake_detector:
+            self._wake_detector.pause()
+            self._wake_listening = False
+
+        # Play activation sound
+        if self.config.ui.sounds_enabled:
+            play_sound("Pop")
+
+        # Start recording (same as hotkey activation)
+        self._start_recording()
 
     def _on_key_press(self, key):
         """Handle key press events for double-tap / single-tap detection."""
@@ -302,6 +379,11 @@ class App(rumps.App):
         self._set(ICON_IDLE, "Ready")
         self._set_icon(ICON_IMAGE)
         self.overlay.hide()
+
+        # Resume wake word detection if enabled
+        if self._wake_enabled and self._wake_detector:
+            self._wake_detector.resume()
+            self._wake_listening = True
 
     def _start_recording(self):
         """Start audio recording."""
@@ -470,6 +552,11 @@ class App(rumps.App):
         finally:
             with self._state_lock:
                 self._busy = False
+
+            # Resume wake word detection if enabled
+            if self._wake_enabled and self._wake_detector:
+                self._wake_detector.resume()
+                self._wake_listening = True
 
     def _reset(self, seconds: float):
         """Reset icon to idle after delay."""
@@ -641,6 +728,14 @@ class App(rumps.App):
     def _cleanup(self):
         """Clean up all resources before exit."""
         log("Shutting down...", "INFO")
+
+        # Stop wake word detection
+        if self._wake_detector:
+            try:
+                self._wake_detector.stop()
+                log("Wake word detection stopped", "OK")
+            except Exception as e:
+                log(f"Error stopping wake word detection: {e}", "WARN")
 
         # Cancel any running timer
         if self._max_timer:

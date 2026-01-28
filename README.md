@@ -7,13 +7,14 @@ Double-tap a key, speak, tap to stop (Esc cancels) — polished text copied to c
 ## What It Does
 
 1. **Run the app** — choose your grammar backend
-2. **Double-tap Right Option** to start recording
-3. **Speak** naturally (filler words like "um", "uh", "like" are OK)
-4. **Tap once** (Right Option or Space) to stop
-5. **Press Esc** to cancel recording (no save, no transcription)
-6. **WhisperKit** transcribes your speech locally
-7. **Grammar backend** fixes grammar and removes filler words
-8. **Text copied** to clipboard — just paste anywhere
+2. **Wake word detection** (optional) — say "hey jarvis" to start listening
+3. **Double-tap Right Option** to start recording (or just speak if wake word enabled)
+4. **Speak** naturally (filler words like "um", "uh", "like" are OK)
+5. **Tap once** (Right Option or Space) to stop
+6. **Press Esc** to cancel recording (no save, no transcription)
+7. **WhisperKit** transcribes your speech locally
+8. **Grammar backend** fixes grammar and removes filler words
+9. **Text copied** to clipboard — just paste anywhere
 
 ## Grammar Backends
 
@@ -182,6 +183,43 @@ A floating overlay window shows recording status and duration.
 - **Overlay states** — `0.0` recording, `...` processing, `Copied` done, `Failed` error
 - **Console logging** with timestamps and colors
 
+## Wake Word Detection
+
+Wake word detection allows hands-free operation by automatically starting recording when you say the wake phrase.
+
+### Enabling Wake Word
+
+By default, wake word detection is **disabled**. To enable it:
+
+1. Edit `~/.whisper/config.toml`
+2. Set `enabled = true` under `[wakeword]`
+3. Restart the app
+
+### Wake Word Configuration
+
+The app includes a pre-trained model for "hey jarvis". When enabled:
+- Listen for the wake phrase before the microphone activates
+- Processing is entirely on-device (no cloud dependency)
+- Sensitivity can be tuned to reduce false positives/negatives
+
+### Configuration Options
+
+```toml
+[wakeword]
+enabled = false                    # Enable/disable wake word detection
+wake_phrase = "hey_jarvis"         # Pre-trained model: "hey_jarvis"
+sensitivity = 0.5                  # Detection threshold (0.0-1.0, higher = stricter)
+threshold = 0.8                    # Confidence threshold (0.0-1.0)
+cooldown = 2.0                     # Seconds between detections
+buffer_seconds = 3.0               # Audio buffer duration
+```
+
+Optional stop phrase (experimental):
+```toml
+stop_phrase = ""                   # Not yet implemented
+stop_detection_enabled = false     # Not yet implemented
+```
+
 ## Configuration
 
 Settings are stored in `~/.whisper/config.toml`. Edit via menu bar (Config) or directly:
@@ -191,6 +229,16 @@ Settings are stored in `~/.whisper/config.toml`. Edit via menu bar (Config) or d
 # Key options: alt_r, alt_l, ctrl_r, ctrl_l, cmd_r, cmd_l, shift_r, shift_l, caps_lock, f1-f12
 key = "alt_r"
 double_tap_threshold = 0.4  # seconds
+
+[wakeword]
+enabled = false
+wake_phrase = "hey_jarvis"
+stop_phrase = ""
+stop_detection_enabled = false
+sensitivity = 0.5
+threshold = 0.8
+cooldown = 2.0
+buffer_seconds = 3.0
 
 [whisper]
 model = "large-v3-v20240930_626MB"

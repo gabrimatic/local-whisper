@@ -178,6 +178,21 @@ fi
 log_ok "WhisperKit CLI ready"
 
 # ============================================================================
+# OpenWakeword Setup (Optional - Wake Word Detection)
+# ============================================================================
+
+echo ""
+log_step "Setting up OpenWakeword (optional wake word detection)..."
+
+if pip list 2>/dev/null | grep -q "openwakeword"; then
+    log_ok "OpenWakeword installed"
+else
+    log_warn "OpenWakeword not found"
+    log_info "Wake word detection is optional - the app works without it"
+    log_info "To enable: pip install openwakeword>=0.6.0"
+fi
+
+# ============================================================================
 # Ollama Model Setup (if Ollama is installed)
 # ============================================================================
 

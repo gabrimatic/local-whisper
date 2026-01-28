@@ -229,6 +229,19 @@ class BackupConfig:
 
 
 @dataclass
+class WakeWordConfig:
+    """Wake word detection configuration."""
+    enabled: bool = False
+    wake_phrase: str = "hey_jarvis"  # Pre-trained model name
+    stop_phrase: str = ""  # Empty = disabled (manual stop only)
+    stop_detection_enabled: bool = False  # Future: voice stop
+    sensitivity: float = 0.5  # 0.0-1.0, affects detection threshold
+    threshold: float = 0.8  # Activation probability threshold
+    cooldown: float = 2.0  # Seconds between activations
+    buffer_seconds: float = 3.0  # Circular buffer size
+
+
+@dataclass
 class Config:
     hotkey: HotkeyConfig = field(default_factory=HotkeyConfig)
     whisper: WhisperConfig = field(default_factory=WhisperConfig)
@@ -239,6 +252,7 @@ class Config:
     audio: AudioConfig = field(default_factory=AudioConfig)
     ui: UIConfig = field(default_factory=UIConfig)
     backup: BackupConfig = field(default_factory=BackupConfig)
+    wakeword: WakeWordConfig = field(default_factory=WakeWordConfig)
 
 
 def load_config() -> Config:
@@ -343,6 +357,19 @@ def load_config() -> Config:
             directory=data['backup'].get('directory', config.backup.directory),
         )
 
+    # Wake word settings
+    if 'wakeword' in data:
+        config.wakeword = WakeWordConfig(
+            enabled=data['wakeword'].get('enabled', config.wakeword.enabled),
+            wake_phrase=data['wakeword'].get('wake_phrase', config.wakeword.wake_phrase),
+            stop_phrase=data['wakeword'].get('stop_phrase', config.wakeword.stop_phrase),
+            stop_detection_enabled=data['wakeword'].get('stop_detection_enabled', config.wakeword.stop_detection_enabled),
+            sensitivity=data['wakeword'].get('sensitivity', config.wakeword.sensitivity),
+            threshold=data['wakeword'].get('threshold', config.wakeword.threshold),
+            cooldown=data['wakeword'].get('cooldown', config.wakeword.cooldown),
+            buffer_seconds=data['wakeword'].get('buffer_seconds', config.wakeword.buffer_seconds),
+        )
+
     # Validate and sanitize config values
     _validate_config(config)
 
@@ -433,6 +460,23 @@ def _validate_config(config: Config):
     if not 0.0 <= config.ui.overlay_opacity <= 1.0:
         print("Config warning: overlay_opacity must be between 0.0 and 1.0, using 0.92", file=sys.stderr)
         config.ui.overlay_opacity = 0.92
+
+    # Wake word validation
+    if not 0.0 <= config.wakeword.sensitivity <= 1.0:
+        print("Config warning: wakeword.sensitivity must be between 0.0 and 1.0, using 0.5", file=sys.stderr)
+        config.wakeword.sensitivity = 0.5
+
+    if not 0.0 <= config.wakeword.threshold <= 1.0:
+        print("Config warning: wakeword.threshold must be between 0.0 and 1.0, using 0.8", file=sys.stderr)
+        config.wakeword.threshold = 0.8
+
+    if config.wakeword.cooldown < 0:
+        print("Config warning: wakeword.cooldown must be non-negative, using 2.0", file=sys.stderr)
+        config.wakeword.cooldown = 2.0
+
+    if config.wakeword.buffer_seconds <= 0:
+        print("Config warning: wakeword.buffer_seconds must be positive, using 3.0", file=sys.stderr)
+        config.wakeword.buffer_seconds = 3.0
 
 
 # Global config instance with thread-safe initialization
