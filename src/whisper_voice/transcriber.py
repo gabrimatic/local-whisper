@@ -25,11 +25,20 @@ class Whisper:
     def __init__(self):
         self._session = requests.Session()
         self._process = None
+        self._last_request_time: float = 0
         atexit.register(self.close)
 
     def _is_local_url(self, url: str) -> bool:
         host = urlparse(url).hostname
         return host in ("localhost", "127.0.0.1", "::1")
+
+    def _ensure_fresh_session(self) -> None:
+        """Refresh session if idle too long to prevent connection staleness."""
+        idle_time = time.time() - self._last_request_time
+        if self._last_request_time > 0 and idle_time > 300:  # 5 minutes
+            log(f"Session idle {idle_time:.0f}s, refreshing")
+            self._session.close()
+            self._session = requests.Session()
 
     def running(self) -> bool:
         """Check if WhisperKit server is running."""
@@ -110,16 +119,30 @@ class Whisper:
                 if config.whisper.timeout > 0:
                     timeout = config.whisper.timeout
                 else:
-                    timeout = (10, None)  # (connect_timeout, read_timeout=unlimited)
-                r = self._session.post(
-                    config.whisper.url,
-                    files={'file': (path.name, f, 'audio/wav')},
-                    data=data,
-                    timeout=timeout
-                )
-                r.raise_for_status()
-                text = r.json().get('text', '').strip()
-                return (text, None) if text else (None, "Empty")
+                    timeout = (10, 120)  # (connect_timeout=10s, read_timeout=120s)
+
+                # Retry with session refresh on connection errors
+                for attempt in range(2):
+                    try:
+                        self._ensure_fresh_session()
+                        r = self._session.post(
+                            config.whisper.url,
+                            files={'file': (path.name, f, 'audio/wav')},
+                            data=data,
+                            timeout=timeout
+                        )
+                        self._last_request_time = time.time()
+                        r.raise_for_status()
+                        text = r.json().get('text', '').strip()
+                        return (text, None) if text else (None, "Empty")
+                    except requests.exceptions.ConnectionError as e:
+                        if attempt == 0:
+                            log(f"Connection error, refreshing session: {e}")
+                            self._session.close()
+                            self._session = requests.Session()
+                            f.seek(0)  # Reset file position for retry
+                            continue
+                        raise
         except requests.exceptions.ConnectionError:
             return None, "Whisper not responding"
         except requests.exceptions.Timeout:
