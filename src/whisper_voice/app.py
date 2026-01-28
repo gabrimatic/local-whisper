@@ -554,6 +554,7 @@ class App(rumps.App):
         raw_text, err = self.whisper.transcribe(path)
 
         if err:
+            log(f"Transcription failed: {err}", "ERR")
             return None, err
 
         cleaned_text, stripped = strip_hallucination_lines(raw_text)
