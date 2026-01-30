@@ -146,6 +146,21 @@ sounds_enabled = true
 [backup]
 # Backup directory
 directory = "~/.whisper"
+
+[shortcuts]
+# Enable/disable keyboard shortcuts for text transformation
+enabled = true
+
+# Shortcut for proofreading (fix spelling, grammar, punctuation only)
+# Note: Use ctrl+shift instead of alt+shift because Option+Shift+letter
+# produces special characters on macOS (e.g., Opt+Shift+G types ˝)
+proofread = "ctrl+shift+g"
+
+# Shortcut for rewriting (improve readability while preserving meaning)
+rewrite = "ctrl+shift+r"
+
+# Shortcut for prompt engineering (optimize text as LLM prompt)
+prompt_engineer = "ctrl+shift+p"
 """
 
 
@@ -229,6 +244,15 @@ class BackupConfig:
 
 
 @dataclass
+class ShortcutsConfig:
+    """Keyboard shortcut configuration."""
+    enabled: bool = True
+    proofread: str = "ctrl+shift+g"
+    rewrite: str = "ctrl+shift+r"
+    prompt_engineer: str = "ctrl+shift+p"
+
+
+@dataclass
 class Config:
     hotkey: HotkeyConfig = field(default_factory=HotkeyConfig)
     whisper: WhisperConfig = field(default_factory=WhisperConfig)
@@ -239,6 +263,7 @@ class Config:
     audio: AudioConfig = field(default_factory=AudioConfig)
     ui: UIConfig = field(default_factory=UIConfig)
     backup: BackupConfig = field(default_factory=BackupConfig)
+    shortcuts: ShortcutsConfig = field(default_factory=ShortcutsConfig)
 
 
 def load_config() -> Config:
@@ -341,6 +366,15 @@ def load_config() -> Config:
     if 'backup' in data:
         config.backup = BackupConfig(
             directory=data['backup'].get('directory', config.backup.directory),
+        )
+
+    # Shortcuts settings
+    if 'shortcuts' in data:
+        config.shortcuts = ShortcutsConfig(
+            enabled=data['shortcuts'].get('enabled', config.shortcuts.enabled),
+            proofread=data['shortcuts'].get('proofread', config.shortcuts.proofread),
+            rewrite=data['shortcuts'].get('rewrite', config.shortcuts.rewrite),
+            prompt_engineer=data['shortcuts'].get('prompt_engineer', config.shortcuts.prompt_engineer),
         )
 
     # Validate and sanitize config values

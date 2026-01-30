@@ -62,6 +62,22 @@ class GrammarBackend(ABC):
         """
         pass
 
+    @abstractmethod
+    def fix_with_mode(self, text: str, mode_id: str) -> Tuple[str, Optional[str]]:
+        """
+        Fix text using a specific transformation mode.
+
+        Args:
+            text: The text to transform
+            mode_id: The mode ID from MODE_REGISTRY
+
+        Returns:
+            Tuple of (transformed_text, error_message).
+            On success, error_message is None.
+            On error, returns original text with error description.
+        """
+        pass
+
     # ─────────────────────────────────────────────────────────────────
     # Shared utilities
     # ─────────────────────────────────────────────────────────────────

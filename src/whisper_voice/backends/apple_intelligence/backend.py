@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Tuple, Optional
 
 from ..base import GrammarBackend, ERROR_TRUNCATE_LENGTH
-from ..prompts import GRAMMAR_SYSTEM_PROMPT
+from ..modes import get_mode
 from ...config import get_config
 from ...utils import log, SERVICE_CHECK_TIMEOUT
 
@@ -90,33 +90,70 @@ class AppleIntelligenceBackend(GrammarBackend):
         return False
 
     def fix(self, text: str) -> Tuple[str, Optional[str]]:
-        """Fix grammar using Apple Intelligence."""
-        config = get_config()
+        """Fix grammar using Apple Intelligence. Delegates to proofread mode."""
+        return self.fix_with_mode(text, "proofread")
 
+    def fix_with_mode(self, text: str, mode_id: str) -> Tuple[str, Optional[str]]:
+        """Fix text using a specific transformation mode."""
         if not text or len(text.strip()) < 3:
+            log("Text too short for mode processing, returning as-is", "INFO")
             return text, None
 
-        # If max_chars is 0 or negative, don't chunk (unlimited)
-        if config.apple_intelligence.max_chars <= 0:
-            return self._fix_chunk(text)
+        # Validate mode exists before processing
+        mode = get_mode(mode_id)
+        if not mode:
+            log(f"Unknown mode requested: {mode_id}", "ERR")
+            return text, f"Unknown mode: {mode_id}"
 
-        max_chars = max(500, config.apple_intelligence.max_chars)
-        chunks = self._split_text(text, max_chars)
+        log(f"Apple Intelligence fix_with_mode: {mode.name} ({len(text)} chars)", "INFO")
 
-        if len(chunks) == 1:
-            return self._fix_chunk(text)
+        # Ensure server is running
+        if not self._ensure_server():
+            log("Apple Intelligence server not running", "ERR")
+            return text, "Server not running"
 
-        # Process chunks
-        results = []
-        for idx, chunk in enumerate(chunks, start=1):
-            fixed, err = self._fix_chunk(chunk)
-            if err:
-                log(f"Grammar chunk {idx}/{len(chunks)} skipped: {err}", "WARN")
-                results.append(chunk)
-            else:
-                results.append(fixed)
+        config = get_config()
+        timeout = config.apple_intelligence.timeout if config.apple_intelligence.timeout > 0 else None
 
-        return "\n\n".join(results), None
+        # Build request for server mode using mode-specific prompts
+        try:
+            request = {
+                "system": mode.system_prompt,
+                "user_prompt": mode.user_prompt_template,
+                "text": text
+            }
+        except Exception as e:
+            log(f"Failed to build request for mode {mode_id}: {e}", "ERR")
+            return text, f"Request build error: {e}"
+
+        response, err = self._send_request(request, timeout=timeout)
+
+        if err:
+            log(f"Apple Intelligence server error for {mode.name}: {err}", "ERR")
+            return text, err[:ERROR_TRUNCATE_LENGTH]
+
+        if response is None:
+            log("No response received from Apple Intelligence server", "ERR")
+            return text, "No response from server"
+
+        if not response.get("success", False):
+            error_msg = response.get("error", "Unknown error")
+            if "unavailable" in error_msg.lower() or "not available" in error_msg.lower():
+                log("Apple Intelligence reported unavailable", "ERR")
+                return text, "Apple Intelligence not available"
+            log(f"Apple Intelligence error: {error_msg}", "ERR")
+            return text, error_msg[:ERROR_TRUNCATE_LENGTH]
+
+        result = response.get("result", "").strip()
+        if not result:
+            log("Apple Intelligence returned empty result", "WARN")
+            return text, "Empty response"
+
+        result = self._clean_result(result)
+        result = self._normalize_leading_spaces(result)
+
+        log(f"Apple Intelligence {mode.name} complete: {len(text)} -> {len(result)} chars", "OK")
+        return (result if result else text), None
 
     # ─────────────────────────────────────────────────────────────────
     # Server management
@@ -279,34 +316,3 @@ class AppleIntelligenceBackend(GrammarBackend):
         except Exception as e:
             return None, str(e)
 
-    def _fix_chunk(self, text: str) -> Tuple[str, Optional[str]]:
-        """Fix grammar for a single chunk of text."""
-        config = get_config()
-        timeout = config.apple_intelligence.timeout if config.apple_intelligence.timeout > 0 else None
-
-        # Build request for server mode
-        request = {
-            "system": GRAMMAR_SYSTEM_PROMPT,
-            "user_prompt": "Edit this transcript. Output the corrected text only, nothing else:\n{text}",
-            "text": text
-        }
-
-        response, err = self._send_request(request, timeout=timeout)
-
-        if err:
-            return text, err[:ERROR_TRUNCATE_LENGTH]
-
-        if response is None:
-            return text, "No response from server"
-
-        if not response.get("success", False):
-            error_msg = response.get("error", "Unknown error")
-            if "unavailable" in error_msg.lower() or "not available" in error_msg.lower():
-                return text, "Apple Intelligence not available"
-            return text, error_msg[:ERROR_TRUNCATE_LENGTH]
-
-        result = response.get("result", "").strip()
-        result = self._clean_result(result)
-        result = self._normalize_leading_spaces(result)
-
-        return (result if result else text), None

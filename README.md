@@ -169,6 +169,22 @@ A floating overlay window shows recording status and duration.
 - **Automatic grammar correction** — removes filler words, fixes punctuation
 - **Clipboard integration** — text ready to paste immediately
 
+### Keyboard Shortcuts for Text Transformation
+Transform any selected text instantly with global keyboard shortcuts:
+
+| Shortcut | Mode | Description |
+|----------|------|-------------|
+| **Ctrl+Shift+G** | Proofread | Fix spelling, grammar, and punctuation only |
+| **Ctrl+Shift+R** | Rewrite | Improve readability while preserving meaning |
+| **Ctrl+Shift+P** | Prompt Engineer | Optimize text as an LLM prompt |
+
+**How to use:**
+1. Select text in any application
+2. Press the shortcut
+3. Overlay shows status (Copying, Processing, Done)
+4. Result is copied to clipboard
+5. Paste the transformed text
+
 ### Reliability
 - **Auto-backup** of every recording and transcription
 - **Retry function** if transcription fails
@@ -235,6 +251,12 @@ min_rms = 0.005  # silence threshold (0.0-1.0)
 show_overlay = true
 overlay_opacity = 0.92
 sounds_enabled = true
+
+[shortcuts]
+enabled = true  # Enable/disable all keyboard shortcuts
+proofread = "ctrl+shift+g"  # Fix spelling, grammar, punctuation
+rewrite = "ctrl+shift+r"  # Improve readability
+prompt_engineer = "ctrl+shift+p"  # Optimize as LLM prompt
 ```
 
 ## How It Works
@@ -298,9 +320,11 @@ local-whisper/
         ├── overlay.py          # Floating window UI
         ├── transcriber.py      # WhisperKit integration
         ├── utils.py            # Logging and helpers
+        ├── shortcuts.py        # Global keyboard shortcuts
         └── backends/           # Grammar correction backends
             ├── __init__.py     # Backend registry
             ├── base.py         # Abstract base class
+            ├── modes.py        # Text transformation mode prompts
             ├── ollama/         # Ollama backend
             ├── lm_studio/      # LM Studio backend
             └── apple_intelligence/

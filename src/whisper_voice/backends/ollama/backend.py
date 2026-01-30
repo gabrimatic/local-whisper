@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 import requests
 
 from ..base import GrammarBackend
-from ..prompts import get_ollama_prompt
+from ..modes import get_mode, get_mode_ollama_prompt
 from ...config import get_config
 from ...utils import log, SERVICE_CHECK_TIMEOUT
 
@@ -81,68 +81,37 @@ class OllamaBackend(GrammarBackend):
         return False
 
     def fix(self, text: str) -> Tuple[str, Optional[str]]:
-        """Fix grammar using Ollama."""
+        """Fix grammar using Ollama. Delegates to proofread mode."""
+        return self.fix_with_mode(text, "proofread")
+
+    def fix_with_mode(self, text: str, mode_id: str) -> Tuple[str, Optional[str]]:
+        """Fix text using a specific transformation mode."""
+        # Validate mode exists before processing
+        mode = get_mode(mode_id)
+        if not mode:
+            log(f"Unknown mode requested: {mode_id}", "ERR")
+            return text, f"Unknown mode: {mode_id}"
+
         config = get_config()
 
         if not self._is_local_url(config.ollama.url):
+            log(f"Ollama URL not localhost: {config.ollama.url}", "ERR")
             return text, "Ollama URL must be localhost"
 
         if not text or len(text.strip()) < 3:
+            log("Text too short for mode processing, returning as-is", "INFO")
             return text, None
 
-        # If max_chars is 0 or negative, don't chunk (unlimited)
-        if config.ollama.max_chars <= 0:
-            return self._fix_chunk(text)
+        # Build prompt with error handling
+        try:
+            prompt = get_mode_ollama_prompt(mode_id, text)
+        except ValueError as e:
+            log(f"Failed to build prompt for mode {mode_id}: {e}", "ERR")
+            return text, f"Prompt error: {e}"
 
-        max_chars = max(500, config.ollama.max_chars)
-        chunks = self._split_text(text, max_chars)
-
-        if len(chunks) == 1:
-            return self._fix_chunk(text)
-
-        # Process chunks
-        results = []
-        for idx, chunk in enumerate(chunks, start=1):
-            fixed, err = self._fix_chunk(chunk)
-            if err:
-                log(f"Ollama chunk {idx}/{len(chunks)} skipped: {err}", "WARN")
-                results.append(chunk)
-            else:
-                results.append(fixed)
-
-        return "\n\n".join(results), None
-
-    # ─────────────────────────────────────────────────────────────────
-    # Private methods
-    # ─────────────────────────────────────────────────────────────────
-
-    def _is_local_url(self, url: str) -> bool:
-        """Check if URL points to localhost."""
-        host = urlparse(url).hostname
-        return host in ("localhost", "127.0.0.1", "::1")
-
-    def _build_prompt(self, text: str) -> str:
-        """Build the grammar correction prompt."""
-        return get_ollama_prompt(text)
-
-    def _predict_length(self, text: str, max_predict: int) -> int:
-        """Estimate output length for the model."""
-        # Output should be at least as long as input
-        # Add 20% buffer for punctuation/formatting changes
-        estimate = max(256, int(len(text) * 1.2))
-
-        if max_predict <= 0:
-            return estimate
-
-        return min(max_predict, estimate)
-
-    def _fix_chunk(self, text: str) -> Tuple[str, Optional[str]]:
-        """Fix grammar for a single chunk of text."""
-        config = get_config()
+        log(f"Ollama fix_with_mode: {mode.name} ({len(text)} chars)", "INFO")
 
         try:
-            prompt = self._build_prompt(text)
-
             # Use shared timeout helper
             timeout = self._get_timeout(config.ollama.timeout)
 
@@ -157,11 +126,6 @@ class OllamaBackend(GrammarBackend):
             if config.ollama.num_ctx > 0:
                 options["num_ctx"] = config.ollama.num_ctx
 
-            # Only set num_predict if we have a limit
-            if config.ollama.max_predict > 0:
-                predicted = self._predict_length(text, config.ollama.max_predict)
-                options["num_predict"] = predicted
-
             r = self._session.post(
                 config.ollama.url,
                 json={
@@ -175,15 +139,43 @@ class OllamaBackend(GrammarBackend):
             )
             r.raise_for_status()
 
-            result = r.json().get('response', '').strip()
+            # Parse response
+            try:
+                response_data = r.json()
+            except ValueError as e:
+                log(f"Invalid JSON response from Ollama: {e}", "ERR")
+                return text, "Invalid response"
+
+            result = response_data.get('response', '').strip()
+            if not result:
+                log("Empty response from Ollama", "WARN")
+                return text, "Empty response"
+
             result = self._clean_result(result)
             result = self._normalize_leading_spaces(result)
 
+            log(f"Ollama {mode.name} complete: {len(text)} -> {len(result)} chars", "OK")
             return (result if result else text), None
 
-        except requests.exceptions.ConnectionError:
+        except requests.exceptions.ConnectionError as e:
+            log(f"Ollama connection error: {e}", "ERR")
             return text, "Ollama not responding"
         except requests.exceptions.Timeout:
-            return text, "Grammar fix timeout"
+            log(f"Ollama timeout for mode {mode_id}", "ERR")
+            return text, "Timeout"
+        except requests.exceptions.HTTPError as e:
+            status = e.response.status_code if e.response else "unknown"
+            log(f"Ollama HTTP error {status}: {e}", "ERR")
+            return text, f"HTTP error {status}"
         except Exception as e:
+            log(f"Unexpected Ollama error: {type(e).__name__}: {e}", "ERR")
             return text, self._truncate_error(e)
+
+    # ─────────────────────────────────────────────────────────────────
+    # Private methods
+    # ─────────────────────────────────────────────────────────────────
+
+    def _is_local_url(self, url: str) -> bool:
+        """Check if URL points to localhost."""
+        host = urlparse(url).hostname
+        return host in ("localhost", "127.0.0.1", "::1")

@@ -242,6 +242,35 @@ class RecordingOverlay:
 
         _perform_on_main_thread(_update, wait=True)
 
+    def set_status_text(self, text: str):
+        """Update overlay with custom status text."""
+        config = get_config()
+        if not config.ui.show_overlay:
+            return
+        _import_macos()
+
+        def _update():
+            with self._lock:
+                if self._window is None:
+                    self._create_window()
+                if self._duration_field is None:
+                    return
+
+                self._duration_field.setStringValue_(text)
+                self._layout_row(text)
+                self._duration_field.setTextColor_(_AppKit.NSColor.whiteColor())
+
+                # Show static wave image
+                if self._wave_view and OVERLAY_WAVE_FRAMES:
+                    self._wave_view.setImage_(
+                        _AppKit.NSImage.alloc().initWithContentsOfFile_(OVERLAY_WAVE_FRAMES[0])
+                    )
+
+                self._window.orderFront_(None)
+                self._visible = True
+
+        _perform_on_main_thread(_update, wait=True)
+
     def set_status(self, status: str):
         """Update overlay: 'processing', 'done', 'error'."""
         config = get_config()
