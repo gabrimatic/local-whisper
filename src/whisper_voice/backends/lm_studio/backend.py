@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 import requests
 
 from ..base import GrammarBackend
-from ..prompts import get_lm_studio_messages
+from ..modes import get_mode, get_mode_lm_studio_messages
 from ...config import get_config
 from ...utils import log, SERVICE_CHECK_TIMEOUT
 
@@ -67,36 +67,107 @@ class LMStudioBackend(GrammarBackend):
             return False
 
     def fix(self, text: str) -> Tuple[str, Optional[str]]:
-        """Fix grammar using LM Studio."""
+        """Fix grammar using LM Studio. Delegates to proofread mode."""
+        return self.fix_with_mode(text, "proofread")
+
+    def fix_with_mode(self, text: str, mode_id: str) -> Tuple[str, Optional[str]]:
+        """Fix text using a specific transformation mode."""
+        # Validate mode exists before processing
+        mode = get_mode(mode_id)
+        if not mode:
+            log(f"Unknown mode requested: {mode_id}", "ERR")
+            return text, f"Unknown mode: {mode_id}"
+
         config = get_config()
 
         if not self._is_local_url(config.lm_studio.url):
+            log(f"LM Studio URL not local: {config.lm_studio.url}", "ERR")
             return text, "LM Studio URL must be localhost or LAN"
 
         if not text or len(text.strip()) < 3:
+            log("Text too short for mode processing, returning as-is", "INFO")
             return text, None
 
-        # If max_chars is 0 or negative, don't chunk (unlimited)
-        if config.lm_studio.max_chars <= 0:
-            return self._fix_chunk(text)
+        # Build messages with error handling
+        try:
+            messages = get_mode_lm_studio_messages(mode_id, text)
+        except ValueError as e:
+            log(f"Failed to build messages for mode {mode_id}: {e}", "ERR")
+            return text, f"Prompt error: {e}"
 
-        max_chars = max(500, config.lm_studio.max_chars)
-        chunks = self._split_text(text, max_chars)
+        log(f"LM Studio fix_with_mode: {mode.name} ({len(text)} chars)", "INFO")
 
-        if len(chunks) == 1:
-            return self._fix_chunk(text)
+        try:
+            # Use shared timeout helper
+            timeout = self._get_timeout(config.lm_studio.timeout)
 
-        # Process chunks
-        results = []
-        for idx, chunk in enumerate(chunks, start=1):
-            fixed, err = self._fix_chunk(chunk)
-            if err:
-                log(f"LM Studio chunk {idx}/{len(chunks)} skipped: {err}", "WARN")
-                results.append(chunk)
-            else:
-                results.append(fixed)
+            # Get model ID
+            model_id = self._get_model_id()
+            if not model_id:
+                log("LM Studio: No model available for mode processing", "ERR")
+                return text, "No model available"
 
-        return "\n\n".join(results), None
+            # Build request payload (OpenAI chat format)
+            payload = {
+                "model": model_id,
+                "messages": messages,
+                "temperature": 0.2,
+                "max_tokens": config.lm_studio.max_tokens if config.lm_studio.max_tokens > 0 else 2048,
+                "stream": False
+            }
+
+            r = self._session.post(
+                config.lm_studio.url,
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer lm-studio"
+                },
+                timeout=timeout
+            )
+            r.raise_for_status()
+
+            # Parse OpenAI chat completion response
+            try:
+                data = r.json()
+            except ValueError as e:
+                log(f"Invalid JSON response from LM Studio: {e}", "ERR")
+                return text, "Invalid response"
+
+            choices = data.get("choices", [])
+            if not choices:
+                log("LM Studio returned empty choices array", "WARN")
+                return text, "Empty response"
+
+            message = choices[0].get("message", {})
+            if not message:
+                log("LM Studio response missing message field", "WARN")
+                return text, "Invalid response format"
+
+            result = message.get("content", "").strip()
+            if not result:
+                log("LM Studio returned empty content", "WARN")
+                return text, "Empty response"
+
+            result = self._clean_result(result)
+            result = self._normalize_leading_spaces(result)
+
+            log(f"LM Studio {mode.name} complete: {len(text)} -> {len(result)} chars", "OK")
+            return (result if result else text), None
+
+        except requests.exceptions.ConnectionError as e:
+            log(f"LM Studio connection error: {e}", "ERR")
+            return text, "LM Studio not responding"
+        except requests.exceptions.Timeout:
+            log(f"LM Studio timeout for mode {mode_id}", "ERR")
+            return text, "Timeout"
+        except requests.exceptions.HTTPError as e:
+            status = e.response.status_code if e.response else "unknown"
+            log(f"LM Studio HTTP error {status}: {e}", "ERR")
+            return text, f"HTTP error {status}"
+        except Exception as e:
+            log(f"Unexpected LM Studio error: {type(e).__name__}: {e}", "ERR")
+            return text, self._truncate_error(e)
 
     # ─────────────────────────────────────────────────────────────────
     # Private methods
@@ -183,55 +254,3 @@ class LMStudioBackend(GrammarBackend):
 
         return ""
 
-    def _fix_chunk(self, text: str) -> Tuple[str, Optional[str]]:
-        """Fix grammar for a single chunk of text."""
-        config = get_config()
-
-        try:
-            # Use shared timeout helper
-            timeout = self._get_timeout(config.lm_studio.timeout)
-
-            # Get model ID
-            model_id = self._get_model_id()
-            if not model_id:
-                log("LM Studio: No model available for grammar correction", "WARN")
-                return text, "No model available"
-
-            # Build request payload (OpenAI chat format)
-            payload = {
-                "model": model_id,
-                "messages": get_lm_studio_messages(text),
-                "temperature": 0.2,
-                "max_tokens": config.lm_studio.max_tokens if config.lm_studio.max_tokens > 0 else 2048,
-                "stream": False
-            }
-
-            r = self._session.post(
-                config.lm_studio.url,
-                json=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": "Bearer lm-studio"  # LM Studio doesn't enforce this but some SDKs expect it
-                },
-                timeout=timeout
-            )
-            r.raise_for_status()
-
-            # Parse OpenAI chat completion response
-            data = r.json()
-            choices = data.get("choices", [])
-            if not choices:
-                return text, "Empty response"
-
-            result = choices[0].get("message", {}).get("content", "").strip()
-            result = self._clean_result(result)
-            result = self._normalize_leading_spaces(result)
-
-            return (result if result else text), None
-
-        except requests.exceptions.ConnectionError:
-            return text, "LM Studio not responding"
-        except requests.exceptions.Timeout:
-            return text, "Grammar fix timeout"
-        except Exception as e:
-            return text, self._truncate_error(e)

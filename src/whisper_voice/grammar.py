@@ -66,7 +66,27 @@ class Grammar:
         """
         return self._backend.fix(text)
 
+    def fix_with_mode(self, text: str, mode_id: str) -> Tuple[str, Optional[str]]:
+        """
+        Fix text using a specific transformation mode.
+
+        Args:
+            text: The text to transform.
+            mode_id: The mode identifier (e.g., "proofread", "rewrite").
+
+        Returns:
+            Tuple of (transformed_text, error_message).
+            On success, error_message is None.
+            On error, returns original text with error description.
+        """
+        return self._backend.fix_with_mode(text, mode_id)
+
     @property
     def name(self) -> str:
         """Get the name of the current backend."""
         return self._backend.name
+
+    @property
+    def backend(self) -> GrammarBackend:
+        """Get the underlying backend."""
+        return self._backend

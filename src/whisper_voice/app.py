@@ -19,6 +19,7 @@ import signal
 import time
 import threading
 import warnings
+from typing import Optional
 
 import rumps
 from pynput import keyboard
@@ -38,8 +39,10 @@ from .audio import Recorder
 from .backup import Backup
 from .transcriber import Whisper
 from .grammar import Grammar
-from .overlay import get_overlay
+from .overlay import get_overlay, _perform_on_main_thread
 from .backends import BACKEND_REGISTRY
+from .shortcuts import ShortcutProcessor, build_shortcut_map
+from .key_interceptor import KeyInterceptor
 
 warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
 
@@ -68,7 +71,6 @@ KEY_MAP = {
     "f11": keyboard.Key.f11,
     "f12": keyboard.Key.f12,
 }
-
 
 class App(rumps.App):
     """Main menu bar application."""
@@ -102,6 +104,11 @@ class App(rumps.App):
         self._record_key = KEY_MAP.get(self.config.hotkey.key, keyboard.Key.alt_r)
         self._keyboard_listener = None
         self._key_pressed = False  # Track if hotkey is currently held down
+
+        # Shortcut processor for text transformation modes
+        self._shortcut_processor: Optional[ShortcutProcessor] = None
+        self._shortcut_map: dict = {}  # key -> (modifiers, mode_id)
+        self._key_interceptor: Optional[KeyInterceptor] = None
 
         # Build menu
         self.status = rumps.MenuItem("Starting...")
@@ -137,13 +144,17 @@ class App(rumps.App):
 
     def _set(self, icon: str, text: str):
         """Update menu bar icon and status text."""
-        self.title = icon
-        self.status.title = text
+        def _do():
+            self.title = icon
+            self.status.title = text
+        _perform_on_main_thread(_do)
 
-    def _set_icon(self, path: str):
+    def _set_icon(self, icon_path: Optional[str]):
         """Update menu bar icon image."""
-        if path and path != self.icon:
-            self.icon = path
+        def _do():
+            if icon_path and icon_path != self.icon:
+                self.icon = icon_path
+        _perform_on_main_thread(_do)
 
     def _start_animation(self, state: str):
         """Start or update the animation state."""
@@ -207,6 +218,28 @@ class App(rumps.App):
                 log("Exiting - all services must be available.", "ERR")
                 self._exit_app()
                 return
+
+            # Start shortcuts if enabled and grammar backend available
+            if self.config.shortcuts.enabled:
+                self._shortcut_processor = ShortcutProcessor(self.grammar)
+                self._shortcut_map = build_shortcut_map(self.config)
+
+                # Initialize CGEventTap-based key interceptor for shortcuts
+                self._key_interceptor = KeyInterceptor()
+                for key, (modifiers, mode_id) in self._shortcut_map.items():
+                    self._key_interceptor.register_shortcut(
+                        modifiers, key,
+                        lambda mid=mode_id: self._shortcut_processor.trigger(mid)
+                    )
+                self._key_interceptor.set_enabled_guard(
+                    lambda: (not self.recorder.recording
+                             and not self._busy
+                             and not self._shortcut_processor.is_busy())
+                )
+                if self._key_interceptor.start():
+                    log("Shortcuts: Ctrl+Shift+G (proofread) Ctrl+Shift+R (rewrite) Ctrl+Shift+P (prompt)", "OK")
+                else:
+                    log("Shortcut interception failed (shortcuts will still work but won't suppress keys)", "WARN")
         else:
             log("Grammar correction disabled", "INFO")
 
@@ -257,6 +290,8 @@ class App(rumps.App):
 
     def _on_key_press(self, key):
         """Handle key press events for double-tap / single-tap detection."""
+        # Note: Shortcuts are handled by KeyInterceptor (CGEventTap) for proper suppression
+
         stop_keys = {self._record_key, keyboard.Key.space}
 
         # Stop recording on record key, Esc, or Space
@@ -411,7 +446,9 @@ class App(rumps.App):
         while self.recorder.recording:
             dur = self.recorder.duration
             wave = OVERLAY_WAVE_FRAMES[local_index % len(OVERLAY_WAVE_FRAMES)]
-            self.title = ICON_RECORDING
+            def _set_title():
+                self.title = ICON_RECORDING
+            _perform_on_main_thread(_set_title)
             self.overlay.update_duration(dur, wave)
             local_index += 1
             # Warn about very long recordings (memory usage)
@@ -422,10 +459,14 @@ class App(rumps.App):
         # Reset title when done (processing will update it if active)
         if self._busy:
             self._set_icon(ICON_IMAGE)
-            self.title = ICON_PROCESSING
+            def _set_processing():
+                self.title = ICON_PROCESSING
+            _perform_on_main_thread(_set_processing)
         else:
             self._set_icon(ICON_IMAGE)
-            self.title = ICON_IDLE
+            def _set_idle():
+                self.title = ICON_IDLE
+            _perform_on_main_thread(_set_idle)
 
     def _process(self, audio):
         """Process recorded audio: transcribe, fix grammar, copy to clipboard."""
@@ -662,6 +703,14 @@ class App(rumps.App):
             try:
                 self._keyboard_listener.stop()
                 log("Keyboard listener stopped", "OK")
+            except Exception:
+                pass
+
+        # Stop key interceptor
+        if self._key_interceptor:
+            try:
+                self._key_interceptor.stop()
+                log("Key interceptor stopped", "OK")
             except Exception:
                 pass
 
