@@ -6,6 +6,7 @@ Includes logging, sound playback, and helper functions.
 
 import re
 import subprocess
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -187,6 +188,64 @@ def is_hallucination(text: str) -> bool:
             if len(lower) <= max(80, len(pattern) * 4) and len(words) <= 6:
                 return True
     return False
+
+
+def check_microphone_permission() -> tuple[bool, str]:
+    """Check and request macOS microphone permission via AVFoundation.
+
+    Returns (authorized, message) where message explains the situation.
+    """
+    try:
+        import AVFoundation
+        import objc
+
+        status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(
+            AVFoundation.AVMediaTypeAudio
+        )
+
+        # 3 = authorized
+        if status == 3:
+            return True, "Microphone access granted"
+
+        # 1 = restricted, 2 = denied
+        if status in (1, 2):
+            return False, (
+                "Microphone access denied. "
+                "Go to System Settings > Privacy & Security > Microphone "
+                "and enable your terminal app, then restart."
+            )
+
+        # 0 = notDetermined - request access
+        if status == 0:
+            event = threading.Event()
+            result = [False]
+
+            def callback(granted):
+                result[0] = granted
+                event.set()
+
+            AVFoundation.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
+                AVFoundation.AVMediaTypeAudio, callback
+            )
+            event.wait(timeout=30)
+
+            if result[0]:
+                return True, "Microphone access granted"
+            else:
+                return False, (
+                    "Microphone access denied. "
+                    "Go to System Settings > Privacy & Security > Microphone "
+                    "and enable your terminal app, then restart."
+                )
+
+        return False, f"Unknown microphone authorization status: {status}"
+
+    except ImportError:
+        # AVFoundation not available - skip check, let it fail later if needed
+        return True, "Could not check microphone permission (AVFoundation unavailable)"
+    except Exception as e:
+        # Don't block startup on permission check failures
+        return True, f"Could not check microphone permission: {e}"
 
 
 def hide_dock_icon():

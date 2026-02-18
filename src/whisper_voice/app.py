@@ -16,10 +16,13 @@ Privacy: All processing on-device. No internet. No cloud. No tracking.
 
 import subprocess
 import signal
+import sys
 import time
 import threading
 import warnings
 from typing import Optional
+
+import numpy as np
 
 import rumps
 from pynput import keyboard
@@ -27,7 +30,7 @@ from pynput import keyboard
 from .config import get_config, CONFIG_FILE
 from .utils import (
     log, play_sound, is_silent, is_hallucination, hide_dock_icon, truncate,
-    strip_hallucination_lines,
+    strip_hallucination_lines, check_microphone_permission,
     ICON_IDLE, ICON_RECORDING, ICON_PROCESSING, ICON_SUCCESS, ICON_ERROR,
     ICON_IMAGE, ICON_FRAMES, ICON_PROCESS_FRAMES, OVERLAY_WAVE_FRAMES,
     ICON_RESET_SUCCESS, ICON_RESET_ERROR, LOG_TRUNCATE, PREVIEW_TRUNCATE,
@@ -406,6 +409,17 @@ class App(rumps.App):
                 self._reset_with_overlay(ICON_RESET_ERROR)
                 return
 
+            # Detect all-zeros audio (mic permission issue)
+            if np.max(np.abs(audio)) == 0:
+                log("Mic returned silence - check microphone permissions in System Settings", "ERR")
+                self._set(ICON_ERROR, "Mic permission?")
+                self._set_icon(ICON_IMAGE)
+                self._stop_animation()
+                self.overlay.set_status("error")
+                play_sound("Basso")
+                self._reset_with_overlay(ICON_RESET_ERROR)
+                return
+
             # Check min_duration if configured (0 = no minimum)
             if self.config.audio.min_duration > 0 and dur < self.config.audio.min_duration:
                 log(f"Too short ({dur:.1f}s)", "WARN")
@@ -598,13 +612,14 @@ class App(rumps.App):
             log(f"Transcription failed: {err}", "ERR")
             return None, err
 
+        original_text = raw_text
         cleaned_text, stripped = strip_hallucination_lines(raw_text)
         if stripped:
-            log("Stripped hallucination tail", "WARN")
+            log(f"Stripped hallucination (raw: {original_text!r} -> {cleaned_text!r})", "WARN")
             raw_text = cleaned_text
 
         if not raw_text or is_hallucination(raw_text):
-            log(f"Rejected hallucination: {raw_text}", "WARN")
+            log(f"Rejected as hallucination: {original_text!r}", "WARN")
             return None, "No speech"
 
         return raw_text, None
@@ -775,6 +790,17 @@ def _select_backend() -> tuple:
 def main():
     """Entry point for the application."""
     config = get_config()
+
+    # Check microphone permission before anything else
+    mic_ok, mic_msg = check_microphone_permission()
+    if not mic_ok:
+        print()
+        print(f"  {C_BOLD}{C_YELLOW}Microphone Permission Required{C_RESET}")
+        print()
+        print(f"  {mic_msg}")
+        print()
+        sys.exit(1)
+
     key_name = config.hotkey.key.upper().replace("_", " ")
 
     # Ask user to select grammar backend
