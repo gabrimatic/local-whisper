@@ -280,14 +280,29 @@ fi
 echo ""
 log_step "Installing as LaunchAgent..."
 
+# Remove old .app Login Item if present (legacy cleanup)
+osascript -e 'tell application "System Events" to delete (login items whose name is "Local Whisper")' 2>/dev/null || true
+
 # Kill any existing instance
 pkill -f "wh _run" 2>/dev/null || true
 pkill -f "whisper_voice" 2>/dev/null || true
+pkill -x "Local Whisper" 2>/dev/null || true
 rm -f /tmp/local-whisper.lock
 sleep 1
 
 WH_BIN="$VENV_DIR/bin/wh"
 "$WH_BIN" install && log_ok "LaunchAgent installed and service started" || log_warn "LaunchAgent install failed - run 'wh install' manually"
+
+# Add wh alias to shell config if not already present
+WH_ALIAS="alias wh='$VENV_DIR/bin/wh'"
+for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
+    if [[ -f "$RC" ]] && ! grep -q "alias wh=" "$RC" 2>/dev/null; then
+        echo "" >> "$RC"
+        echo "# Local Whisper CLI" >> "$RC"
+        echo "$WH_ALIAS" >> "$RC"
+        log_ok "Added wh alias to $RC"
+    fi
+done
 
 # ============================================================================
 # Done
@@ -326,6 +341,7 @@ echo -e "  2. ${CYAN}Service is running via LaunchAgent.${NC}"
 echo -e "     It starts automatically at login."
 echo ""
 echo -e "  3. ${CYAN}Manage with the CLI:${NC}"
+echo -e "     ${DIM}(open a new terminal tab or run: source ~/.zshrc)${NC}"
 echo -e "     ${DIM}wh${NC}                Status + help"
 echo -e "     ${DIM}wh backend${NC}        Show/switch grammar backend"
 echo -e "     ${DIM}wh restart${NC}        Restart the service"
