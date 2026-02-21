@@ -789,6 +789,18 @@ def _select_backend() -> tuple:
 
 def main():
     """Entry point for the application."""
+    import fcntl, atexit
+
+    # Single-instance lock - only one wh can run at a time
+    lock_path = "/tmp/local-whisper.lock"
+    lock_file = open(lock_path, "w")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("Local Whisper is already running.", file=sys.stderr)
+        sys.exit(0)
+    atexit.register(lambda: (fcntl.flock(lock_file, fcntl.LOCK_UN), lock_file.close()))
+
     config = get_config()
 
     # Check microphone permission before anything else
@@ -803,8 +815,17 @@ def main():
 
     key_name = config.hotkey.key.upper().replace("_", " ")
 
-    # Ask user to select grammar backend
-    backend_id, backend_display = _select_backend()
+    # Service mode (--service flag or non-interactive): use backend from config, skip prompt
+    service_mode = "--service" in sys.argv or not sys.stdin.isatty()
+    if service_mode:
+        if config.grammar.enabled and config.grammar.backend and config.grammar.backend != "none":
+            backend_id = config.grammar.backend
+            backend_info = BACKEND_REGISTRY.get(backend_id)
+            backend_display = backend_info.name if backend_info else backend_id
+        else:
+            backend_id, backend_display = "none", "Disabled"
+    else:
+        backend_id, backend_display = _select_backend()
 
     # Update config based on user choice
     if backend_id == "none":

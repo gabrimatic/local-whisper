@@ -274,6 +274,49 @@ else
 fi
 
 # ============================================================================
+# Build .app bundle and install as Login Item
+# ============================================================================
+
+echo ""
+log_step "Building app bundle..."
+
+APP_BUNDLE="$SCRIPT_DIR/dist/Local Whisper.app"
+
+VENV_DIR="$VENV_DIR" "$SCRIPT_DIR/scripts/build_app.sh" && \
+    log_ok "App bundle built" || \
+    log_warn "App bundle build failed - will use existing bundle if available"
+
+echo ""
+log_step "Installing as Login Item..."
+
+# Kill any existing instance cleanly and wait for it to fully exit
+pkill -x "Local Whisper" 2>/dev/null || true
+pkill -f "whisper_voice" 2>/dev/null || true
+rm -f /tmp/local-whisper.lock
+sleep 2
+
+if [[ -d "$APP_BUNDLE" ]]; then
+    # Always copy fresh bundle to /Applications
+    rm -rf "/Applications/Local Whisper.app"
+    cp -r "$APP_BUNDLE" /Applications/ || fail "Could not install to /Applications"
+    log_ok "Installed to /Applications/Local Whisper.app"
+
+    TARGET_APP="/Applications/Local Whisper.app"
+
+    # Add to Login Items (remove stale entry first)
+    osascript -e "tell application \"System Events\" to delete (login items whose name is \"Local Whisper\")" 2>/dev/null || true
+    osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"$TARGET_APP\", hidden:true}" 2>/dev/null && \
+        log_ok "Login Item set (starts automatically at login)" || \
+        log_warn "Could not set Login Item - add manually: System Settings → General → Login Items"
+
+    # Launch exactly one instance
+    open "$TARGET_APP"
+    log_ok "Local Whisper launched"
+else
+    fail "App bundle not found at $APP_BUNDLE - build failed"
+fi
+
+# ============================================================================
 # Done
 # ============================================================================
 
@@ -304,18 +347,19 @@ echo -e "${BOLD}Next steps:${NC}"
 echo ""
 echo -e "  1. ${CYAN}Grant Accessibility permission:${NC}"
 echo -e "     System Settings → Privacy & Security → Accessibility"
-echo -e "     Add: ${DIM}Terminal${NC} (or your terminal app)"
+echo -e "     Add: ${DIM}Local Whisper${NC} (or your terminal app)"
 echo ""
-echo -e "  2. ${CYAN}Run the app:${NC}"
-echo -e "     ${DIM}source $VENV_DIR/bin/activate${NC}"
-echo -e "     ${DIM}wh${NC}"
+echo -e "  2. ${CYAN}App is already running as a background service.${NC}"
+echo -e "     It starts automatically at login. No need to run ${DIM}wh${NC} manually."
 echo ""
-echo -e "  3. ${CYAN}Or run directly:${NC}"
-echo -e "     ${DIM}$VENV_DIR/bin/wh${NC}"
+echo -e "  3. ${CYAN}Configure grammar backend:${NC}"
+echo -e "     Edit ${DIM}~/.whisper/config.toml${NC} and set ${DIM}[grammar] backend${NC}"
+echo -e "     Then re-run ${DIM}./setup.sh${NC} to apply and restart."
 echo ""
-echo -e "  4. ${CYAN}Select grammar backend:${NC}"
-echo -e "     Choose Apple Intelligence, Ollama, LM Studio, or None at startup"
+echo -e "  4. ${CYAN}Use it:${NC}"
+echo -e "     Double-tap ${YELLOW}Right Option (⌥)${NC} → speak → tap to stop → text copied"
 echo ""
-echo -e "  5. ${CYAN}Use it:${NC}"
-echo -e "     Double-tap ${YELLOW}Right Option (⌥)${NC} → speak → tap to stop"
+echo -e "  5. ${CYAN}Manage:${NC}"
+echo -e "     Login Items: ${DIM}System Settings → General → Login Items${NC}"
+echo -e "     Quit: ${DIM}menu bar icon → Quit${NC}"
 echo ""
