@@ -757,7 +757,7 @@ LOG_MAX_SIZE = 1_000_000  # ~1MB
 
 
 def _setup_service_logging():
-    """Redirect stdout/stderr to service log when running as .app bundle."""
+    """Redirect stdout/stderr to service log when not attached to a terminal."""
     if sys.stdout.isatty():
         return
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -770,7 +770,7 @@ def _setup_service_logging():
 
 
 def service_main():
-    """Entry point for the service (launched as .app bundle)."""
+    """Entry point for the service (launched via LaunchAgent or wh start)."""
     import fcntl, atexit
 
     _setup_service_logging()

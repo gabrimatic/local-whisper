@@ -4,7 +4,7 @@ CLI service controller for Local Whisper.
 Usage:
     wh                  Status + help (default)
     wh status           Running? PID, backend, config path
-    wh start            Launch the .app bundle
+    wh start            Launch the service
     wh stop             Graceful kill (SIGTERM -> SIGKILL)
     wh restart          Stop + start
     wh backend          Show current + list available
@@ -12,8 +12,8 @@ Usage:
     wh config           Print key config values
     wh config edit      Open config.toml in $EDITOR
     wh config path      Print path to config file
-    wh install          Install .app to /Applications + Login Item
-    wh uninstall        Remove Login Item
+    wh install          Install as LaunchAgent (auto-start at login)
+    wh uninstall        Remove LaunchAgent
     wh log              Tail ~/.whisper/service.log
     wh version          Show version
 """
@@ -38,7 +38,8 @@ C_YELLOW = "\033[93m"
 C_CYAN = "\033[96m"
 
 LOCK_FILE = "/tmp/local-whisper.lock"
-APP_BUNDLE = "/Applications/Local Whisper.app"
+LAUNCHAGENT_LABEL = "com.local-whisper"
+LAUNCHAGENT_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.local-whisper.plist"
 LOG_FILE = Path.home() / ".whisper" / "service.log"
 
 
@@ -64,11 +65,10 @@ def _is_running() -> tuple:
 def _find_pid() -> Optional[int]:
     """Find the service PID."""
     my_pid = os.getpid()
-    for pattern in ["Local Whisper", "whisper_voice", "/bin/wh"]:
+    for pattern in ["wh _run", "whisper_voice", "/bin/wh"]:
         try:
-            flag = "-x" if pattern == "Local Whisper" else "-f"
             result = subprocess.run(
-                ["pgrep", flag, pattern],
+                ["pgrep", "-f", pattern],
                 capture_output=True, text=True
             )
             if result.returncode == 0:
@@ -212,20 +212,36 @@ def cmd_status():
 
 
 def cmd_start():
-    """Launch the .app bundle."""
+    """Launch the service."""
     running, pid = _is_running()
     if running:
         pid_str = str(pid) if pid else "unknown"
         print(f"{C_YELLOW}Already running (pid {pid_str}){C_RESET}")
         return
 
-    if not os.path.exists(APP_BUNDLE):
-        print(f"{C_RED}App bundle not found: {APP_BUNDLE}{C_RESET}", file=sys.stderr)
-        print(f"{C_DIM}Run ./scripts/build_app.sh && ./scripts/install_app.sh first.{C_RESET}", file=sys.stderr)
-        sys.exit(1)
-
-    subprocess.Popen(["open", APP_BUNDLE])
-    print(f"{C_GREEN}Started{C_RESET} {APP_BUNDLE}")
+    if LAUNCHAGENT_PLIST.exists():
+        result = subprocess.run(["launchctl", "start", LAUNCHAGENT_LABEL], capture_output=True)
+        if result.returncode == 0:
+            print(f"{C_GREEN}Started{C_RESET} (via LaunchAgent)")
+        else:
+            # launchctl start can fail if already loaded but stopped; try kickstart
+            uid = os.getuid()
+            subprocess.Popen(
+                ["launchctl", "kickstart", f"gui/{uid}/{LAUNCHAGENT_LABEL}"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            print(f"{C_GREEN}Started{C_RESET} (via LaunchAgent)")
+    else:
+        # No LaunchAgent installed - spawn directly
+        wh_path = sys.argv[0]
+        subprocess.Popen(
+            [wh_path, "_run"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        print(f"{C_GREEN}Started{C_RESET}")
+        print(f"{C_DIM}Tip: run 'wh install' to auto-start at login{C_RESET}")
 
 
 def cmd_stop():
@@ -371,58 +387,91 @@ def cmd_config(args: list):
 
 
 def cmd_install():
-    """Install .app to /Applications and set as Login Item."""
-    dist_app = Path(__file__).parents[3] / "dist" / "Local Whisper.app"
+    """Write LaunchAgent plist and load it."""
+    wh_path = sys.argv[0]  # full path to the wh binary in the venv
+    log_path = str(LOG_FILE)
+    LAUNCHAGENT_PLIST.parent.mkdir(parents=True, exist_ok=True)
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-    if not dist_app.exists():
-        print(f"{C_RED}Built app not found: {dist_app}{C_RESET}", file=sys.stderr)
-        print(f"{C_DIM}Run ./scripts/build_app.sh first.{C_RESET}", file=sys.stderr)
-        sys.exit(1)
+    # Include Homebrew and common tool paths since launchd has a minimal PATH
+    path_value = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-    # Remove existing bundle before copying to avoid merging
-    if os.path.exists(APP_BUNDLE):
-        subprocess.run(["rm", "-rf", APP_BUNDLE], capture_output=True)
+    plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{LAUNCHAGENT_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{wh_path}</string>
+        <string>_run</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{path_value}</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>{log_path}</string>
+    <key>StandardErrorPath</key>
+    <string>{log_path}</string>
+</dict>
+</plist>
+"""
+    LAUNCHAGENT_PLIST.write_text(plist_content)
+    print(f"{C_GREEN}Installed:{C_RESET} {LAUNCHAGENT_PLIST}")
 
-    print(f"{C_DIM}Copying to /Applications...{C_RESET}")
+    # Unload stale entry if any
+    subprocess.run(["launchctl", "unload", str(LAUNCHAGENT_PLIST)], capture_output=True)
+
+    # Stop any running instance first
+    running, pid = _is_running()
+    if running and pid:
+        import signal as _signal
+        try:
+            os.kill(pid, _signal.SIGTERM)
+            time.sleep(1)
+        except ProcessLookupError:
+            pass
+        _cleanup_lock()
+
     result = subprocess.run(
-        ["cp", "-R", str(dist_app), "/Applications/"],
-        capture_output=True, text=True
+        ["launchctl", "load", str(LAUNCHAGENT_PLIST)],
+        capture_output=True, text=True,
     )
-    if result.returncode != 0:
-        print(f"{C_RED}Copy failed: {result.stderr}{C_RESET}", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"{C_GREEN}Installed:{C_RESET} {APP_BUNDLE}")
-
-    # Set Login Item via osascript
-    script = '''
-    tell application "System Events"
-        make new login item at end with properties {path:"/Applications/Local Whisper.app", hidden:true}
-    end tell
-    '''
-    result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
     if result.returncode == 0:
-        print(f"{C_GREEN}Login Item set{C_RESET} - app will start at login")
+        print(f"{C_GREEN}LaunchAgent loaded{C_RESET} - service will start at login automatically")
+        print(f"{C_GREEN}Starting now...{C_RESET}")
+        time.sleep(1)
+        running, pid = _is_running()
+        if running:
+            print(f"{C_GREEN}Running{C_RESET} (pid {pid})")
+        else:
+            print(f"{C_DIM}Service starting in background{C_RESET}")
     else:
-        print(f"{C_YELLOW}Login Item not set: {result.stderr.strip()}{C_RESET}")
-        print(f"{C_DIM}Add manually: System Settings → General → Login Items{C_RESET}")
+        print(f"{C_YELLOW}LaunchAgent load warning: {result.stderr.strip()}{C_RESET}")
+        print(f"{C_DIM}Try: launchctl load {LAUNCHAGENT_PLIST}{C_RESET}")
+
+    print()
+    print(f"{C_BOLD}Important:{C_RESET} Grant Accessibility permission to your terminal app")
+    print(f"{C_DIM}System Settings → Privacy & Security → Accessibility{C_RESET}")
+    print(f"{C_DIM}Add: Terminal, iTerm2, Warp, VS Code — whichever you use to run wh{C_RESET}")
 
 
 def cmd_uninstall():
-    """Remove Login Item."""
-    script = '''
-    tell application "System Events"
-        set theItems to every login item whose path is "/Applications/Local Whisper.app"
-        repeat with theItem in theItems
-            delete theItem
-        end repeat
-    end tell
-    '''
-    result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
-    if result.returncode == 0:
-        print(f"{C_GREEN}Login Item removed{C_RESET}")
-    else:
-        print(f"{C_YELLOW}Could not remove Login Item: {result.stderr.strip()}{C_RESET}", file=sys.stderr)
+    """Unload and remove the LaunchAgent plist."""
+    if not LAUNCHAGENT_PLIST.exists():
+        print(f"{C_DIM}LaunchAgent not installed{C_RESET}")
+        return
+    subprocess.run(["launchctl", "unload", str(LAUNCHAGENT_PLIST)], capture_output=True)
+    LAUNCHAGENT_PLIST.unlink(missing_ok=True)
+    print(f"{C_GREEN}LaunchAgent removed{C_RESET}")
+    print(f"{C_DIM}Service will no longer start at login. Running instance (if any) not stopped.{C_RESET}")
 
 
 def cmd_log():
@@ -463,8 +512,8 @@ def _print_help():
         ("wh config",        "Show key config values"),
         ("wh config edit",   "Open config in $EDITOR"),
         ("wh config path",   "Print path to config file"),
-        ("wh install",       "Install .app to /Applications + Login Item"),
-        ("wh uninstall",     "Remove Login Item"),
+        ("wh install",       "Install LaunchAgent (auto-start at login)"),
+        ("wh uninstall",     "Remove LaunchAgent"),
         ("wh log",           "Tail service log"),
         ("wh version",       "Show version"),
     ]
@@ -530,6 +579,9 @@ def cli_main():
         cmd_log()
     elif cmd == "version":
         cmd_version()
+    elif cmd == "_run":
+        from whisper_voice.app import service_main
+        service_main()
     elif cmd in ("-h", "--help", "help"):
         _print_help()
     else:

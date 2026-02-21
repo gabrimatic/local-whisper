@@ -274,47 +274,20 @@ else
 fi
 
 # ============================================================================
-# Build .app bundle and install as Login Item
+# Install as LaunchAgent
 # ============================================================================
 
 echo ""
-log_step "Building app bundle..."
+log_step "Installing as LaunchAgent..."
 
-APP_BUNDLE="$SCRIPT_DIR/dist/Local Whisper.app"
-
-VENV_DIR="$VENV_DIR" "$SCRIPT_DIR/scripts/build_app.sh" && \
-    log_ok "App bundle built" || \
-    log_warn "App bundle build failed - will use existing bundle if available"
-
-echo ""
-log_step "Installing as Login Item..."
-
-# Kill any existing instance cleanly and wait for it to fully exit
-pkill -x "Local Whisper" 2>/dev/null || true
+# Kill any existing instance
+pkill -f "wh _run" 2>/dev/null || true
 pkill -f "whisper_voice" 2>/dev/null || true
 rm -f /tmp/local-whisper.lock
-sleep 2
+sleep 1
 
-if [[ -d "$APP_BUNDLE" ]]; then
-    # Always copy fresh bundle to /Applications
-    rm -rf "/Applications/Local Whisper.app"
-    cp -r "$APP_BUNDLE" /Applications/ || fail "Could not install to /Applications"
-    log_ok "Installed to /Applications/Local Whisper.app"
-
-    TARGET_APP="/Applications/Local Whisper.app"
-
-    # Add to Login Items (remove stale entry first)
-    osascript -e "tell application \"System Events\" to delete (login items whose name is \"Local Whisper\")" 2>/dev/null || true
-    osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"$TARGET_APP\", hidden:true}" 2>/dev/null && \
-        log_ok "Login Item set (starts automatically at login)" || \
-        log_warn "Could not set Login Item - add manually: System Settings → General → Login Items"
-
-    # Launch exactly one instance
-    open "$TARGET_APP"
-    log_ok "Local Whisper launched"
-else
-    fail "App bundle not found at $APP_BUNDLE - build failed"
-fi
+WH_BIN="$VENV_DIR/bin/wh"
+"$WH_BIN" install && log_ok "LaunchAgent installed and service started" || log_warn "LaunchAgent install failed - run 'wh install' manually"
 
 # ============================================================================
 # Done
@@ -347,9 +320,9 @@ echo -e "${BOLD}Next steps:${NC}"
 echo ""
 echo -e "  1. ${CYAN}Grant Accessibility permission:${NC}"
 echo -e "     System Settings → Privacy & Security → Accessibility"
-echo -e "     Add: ${DIM}Local Whisper${NC} (or your terminal app)"
+echo -e "     Add your terminal app (Terminal, iTerm2, Warp, VS Code)"
 echo ""
-echo -e "  2. ${CYAN}App is running as a background service.${NC}"
+echo -e "  2. ${CYAN}Service is running via LaunchAgent.${NC}"
 echo -e "     It starts automatically at login."
 echo ""
 echo -e "  3. ${CYAN}Manage with the CLI:${NC}"

@@ -111,7 +111,7 @@ If you want to use LM Studio as your grammar backend:
 
 ### Background Service
 
-Local Whisper runs as a background service (Login Item). It starts automatically at login.
+Local Whisper runs as a background service via a LaunchAgent. It starts automatically at login after `wh install`.
 
 ### CLI Management
 
@@ -377,11 +377,11 @@ python tests/test_flow.py
 
 ### "This process is not trusted"
 
-Grant Accessibility permission:
+Grant Accessibility permission to your terminal app (not to a .app bundle):
 1. Open **System Settings**
 2. Go to **Privacy & Security -> Accessibility**
-3. Add your terminal app (Terminal, iTerm2, VS Code, etc.)
-4. Restart the app
+3. Add your terminal app (Terminal, iTerm2, Warp, VS Code, etc.)
+4. Restart the service (`wh restart`)
 
 Or run: `open x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility`
 
