@@ -52,7 +52,7 @@ check_url = "http://localhost:50060/"
 model = "large-v3-v20240930_626MB"
 
 # Language code (en, fa, es, fr, de, etc. or "auto" for detection)
-language = "en"
+language = "auto"
 
 # Transcription timeout in seconds (no limit)
 timeout = 0
@@ -175,7 +175,7 @@ class WhisperConfig:
     url: str = "http://localhost:50060/v1/audio/transcriptions"
     check_url: str = "http://localhost:50060/"
     model: str = "large-v3-v20240930_626MB"
-    language: str = "en"
+    language: str = "auto"
     timeout: int = 0
     prompt: str = DEFAULT_WHISPER_PROMPT
 
