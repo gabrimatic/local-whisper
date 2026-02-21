@@ -280,8 +280,13 @@ fi
 echo ""
 log_step "Installing as LaunchAgent..."
 
-# Remove old .app Login Item if present (legacy cleanup)
+# Legacy cleanup: remove old Login Item and old LaunchAgent if present
 osascript -e 'tell application "System Events" to delete (login items whose name is "Local Whisper")' 2>/dev/null || true
+if [[ -f "$HOME/Library/LaunchAgents/info.gabrimatic.local-whisper.plist" ]]; then
+    launchctl unload "$HOME/Library/LaunchAgents/info.gabrimatic.local-whisper.plist" 2>/dev/null || true
+    rm -f "$HOME/Library/LaunchAgents/info.gabrimatic.local-whisper.plist"
+    log_ok "Removed legacy LaunchAgent"
+fi
 
 # Kill any existing instance
 pkill -f "wh _run" 2>/dev/null || true
