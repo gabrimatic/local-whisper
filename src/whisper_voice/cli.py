@@ -464,21 +464,15 @@ def cmd_install():
 
 
 def cmd_uninstall():
-    """Unload and remove the LaunchAgent plist."""
-    if not LAUNCHAGENT_PLIST.exists():
-        print(f"{C_DIM}LaunchAgent not installed{C_RESET}")
-        return
-    subprocess.run(["launchctl", "unload", str(LAUNCHAGENT_PLIST)], capture_output=True)
-    LAUNCHAGENT_PLIST.unlink(missing_ok=True)
-    print(f"{C_GREEN}LaunchAgent removed{C_RESET}")
-    print(f"{C_DIM}Service will no longer start at login. Running instance (if any) not stopped.{C_RESET}")
+    """Completely remove Local Whisper: stop service, LaunchAgent, config, logs, zshrc alias."""
+    cmd_purge()
 
 
 def cmd_purge():
     """Completely remove Local Whisper: stop service, LaunchAgent, config, logs, zshrc alias."""
     import re as _re
 
-    print(f"  {C_BOLD}Purging Local Whisper...{C_RESET}")
+    print(f"  {C_BOLD}Uninstalling Local Whisper...{C_RESET}")
     print()
 
     # 1. Stop running service
@@ -585,8 +579,7 @@ def _print_help():
         ("wh config edit",   "Open config in $EDITOR"),
         ("wh config path",   "Print path to config file"),
         ("wh install",       "Install LaunchAgent (auto-start at login)"),
-        ("wh uninstall",     "Remove LaunchAgent"),
-        ("wh purge",         "Completely remove Local Whisper (service, config, alias)"),
+        ("wh uninstall",     "Completely remove Local Whisper (service, config, alias)"),
         ("wh log",           "Tail service log"),
         ("wh version",       "Show version"),
     ]
