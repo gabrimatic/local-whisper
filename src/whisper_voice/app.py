@@ -797,7 +797,8 @@ def main():
     try:
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
-        print("Local Whisper is already running.", file=sys.stderr)
+        print("Local Whisper is already running (background service or another terminal).", file=sys.stderr)
+        print("Use the menu bar icon to manage it, or quit it first to run manually.", file=sys.stderr)
         sys.exit(0)
     atexit.register(lambda: (fcntl.flock(lock_file, fcntl.LOCK_UN), lock_file.close()))
 
