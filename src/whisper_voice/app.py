@@ -32,6 +32,7 @@ from .config import get_config, CONFIG_FILE
 from .utils import (
     log, play_sound, is_silent, is_hallucination, hide_dock_icon, truncate,
     strip_hallucination_lines, check_microphone_permission,
+    check_accessibility_trusted, request_accessibility_permission,
     ICON_IDLE, ICON_RECORDING, ICON_PROCESSING, ICON_SUCCESS, ICON_ERROR,
     ICON_IMAGE, ICON_FRAMES, ICON_PROCESS_FRAMES, OVERLAY_WAVE_FRAMES,
     ICON_RESET_SUCCESS, ICON_RESET_ERROR, LOG_TRUNCATE, PREVIEW_TRUNCATE,
@@ -250,6 +251,12 @@ class App(rumps.App):
         self._set(ICON_IDLE, "Ready")
         key_name = self.config.hotkey.key.upper().replace("_", " ")
         log(f"Double-tap {key_name} to record, tap to stop", "OK")
+
+        # Check Accessibility permission - required for global hotkey
+        if not check_accessibility_trusted():
+            request_accessibility_permission()  # triggers system dialog + opens Settings
+            log("Accessibility permission required - System Settings opened", "WARN")
+            log("Enable this process in Accessibility, then run: wh restart", "WARN")
 
         # Start keyboard listener
         self._start_keyboard_listener()

@@ -39,7 +39,7 @@ from Quartz import (
     kCFRunLoopCommonModes,
 )
 
-from .utils import log
+from .utils import log, request_accessibility_permission
 
 
 # macOS virtual key codes to character mapping
@@ -150,6 +150,7 @@ class KeyInterceptor:
 
             if tap is None:
                 log("CGEventTap creation failed (check Accessibility permissions)", "ERR")
+                request_accessibility_permission()  # fallback: trigger system dialog if not already shown
                 return
 
             # Create run loop source

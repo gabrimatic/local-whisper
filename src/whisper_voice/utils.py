@@ -263,3 +263,47 @@ def truncate(text: str, length: int = LOG_TRUNCATE) -> str:
     if len(text) > length:
         return text[:length] + "..."
     return text
+
+
+def check_accessibility_trusted() -> bool:
+    """Return True if this process has Accessibility permission."""
+    try:
+        import ctypes
+        lib = ctypes.CDLL(
+            '/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices'
+        )
+        func = lib.AXIsProcessTrustedWithOptions
+        func.restype = ctypes.c_bool
+        func.argtypes = [ctypes.c_void_p]
+        return bool(func(None))
+    except Exception:
+        return True  # assume trusted if we can't check
+
+
+_accessibility_prompt_shown = False
+
+
+def request_accessibility_permission() -> bool:
+    """
+    Trigger the macOS Accessibility permission prompt.
+    Opens System Settings → Accessibility with this process highlighted.
+    Returns True if already trusted, False if prompt was shown.
+    Only shows the prompt once per process lifetime.
+    """
+    global _accessibility_prompt_shown
+    if _accessibility_prompt_shown:
+        return False
+    _accessibility_prompt_shown = True
+    try:
+        from Foundation import NSDictionary
+        import ctypes
+        lib = ctypes.CDLL(
+            '/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices'
+        )
+        func = lib.AXIsProcessTrustedWithOptions
+        func.restype = ctypes.c_bool
+        func.argtypes = [ctypes.c_void_p]
+        opts = NSDictionary.dictionaryWithObject_forKey_(True, 'AXTrustedCheckOptionPrompt')
+        return bool(func(opts))
+    except Exception:
+        return False
