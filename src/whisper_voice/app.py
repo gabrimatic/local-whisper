@@ -20,6 +20,7 @@ import sys
 import time
 import threading
 import warnings
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -751,54 +752,36 @@ class App(rumps.App):
         log("Goodbye!", "OK")
 
 
-def _select_backend() -> tuple:
-    """
-    Prompt user to select a grammar backend at startup.
-
-    Returns:
-        Tuple of (backend_id, display_name) or ("none", "Disabled")
-    """
-    # Build menu from registry
-    backends = list(BACKEND_REGISTRY.values())
-    max_choice = len(backends) + 1  # +1 for "None" option
-
-    print()
-    print(f"  {C_BOLD}Select Grammar Backend:{C_RESET}")
-    print()
-
-    for i, info in enumerate(backends, start=1):
-        print(f"  {C_CYAN}[{i}]{C_RESET} {info.name} ({info.description})")
-    print(f"  {C_CYAN}[{max_choice}]{C_RESET} None (transcription only, no grammar)")
-    print()
-
-    while True:
-        try:
-            choice = input(f"  {C_DIM}Enter choice (1-{max_choice}):{C_RESET} ").strip()
-            if choice.isdigit():
-                idx = int(choice)
-                if 1 <= idx <= len(backends):
-                    info = backends[idx - 1]
-                    return (info.id, info.name)
-                elif idx == max_choice:
-                    return ("none", "Disabled")
-            print(f"  {C_YELLOW}Invalid choice. Please enter 1-{max_choice}.{C_RESET}")
-        except (KeyboardInterrupt, EOFError):
-            print()
-            raise SystemExit(0)
+LOG_FILE = Path.home() / ".whisper" / "service.log"
+LOG_MAX_SIZE = 1_000_000  # ~1MB
 
 
-def main():
-    """Entry point for the application."""
+def _setup_service_logging():
+    """Redirect stdout/stderr to service log when running as .app bundle."""
+    if sys.stdout.isatty():
+        return
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    # Truncate if too large
+    if LOG_FILE.exists() and LOG_FILE.stat().st_size > LOG_MAX_SIZE:
+        LOG_FILE.write_text("")
+    log_fd = open(LOG_FILE, "a", buffering=1)
+    sys.stdout = log_fd
+    sys.stderr = log_fd
+
+
+def service_main():
+    """Entry point for the service (launched as .app bundle)."""
     import fcntl, atexit
 
-    # Single-instance lock - only one wh can run at a time
+    _setup_service_logging()
+
+    # Single-instance lock - only one instance can run at a time
     lock_path = "/tmp/local-whisper.lock"
     lock_file = open(lock_path, "w")
     try:
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
-        print("Local Whisper is already running (background service or another terminal).", file=sys.stderr)
-        print("Use the menu bar icon to manage it, or quit it first to run manually.", file=sys.stderr)
+        print("Local Whisper is already running.", file=sys.stderr)
         sys.exit(0)
     atexit.register(lambda: (fcntl.flock(lock_file, fcntl.LOCK_UN), lock_file.close()))
 
@@ -816,26 +799,14 @@ def main():
 
     key_name = config.hotkey.key.upper().replace("_", " ")
 
-    # Service mode (--service flag or non-interactive): use backend from config, skip prompt
-    service_mode = "--service" in sys.argv or not sys.stdin.isatty()
-    if service_mode:
-        if config.grammar.enabled and config.grammar.backend and config.grammar.backend != "none":
-            backend_id = config.grammar.backend
-            backend_info = BACKEND_REGISTRY.get(backend_id)
-            backend_display = backend_info.name if backend_info else backend_id
-        else:
-            backend_id, backend_display = "none", "Disabled"
+    # Always read backend from config - no interactive prompt
+    if config.grammar.enabled and config.grammar.backend and config.grammar.backend != "none":
+        backend_id = config.grammar.backend
+        backend_info = BACKEND_REGISTRY.get(backend_id)
+        grammar_info = backend_info.name if backend_info else backend_id
     else:
-        backend_id, backend_display = _select_backend()
-
-    # Update config based on user choice
-    if backend_id == "none":
         config.grammar.enabled = False
         grammar_info = "Disabled"
-    else:
-        config.grammar.enabled = True
-        config.grammar.backend = backend_id
-        grammar_info = backend_display
 
     print()
     print(f"  {C_BOLD}╭────────────────────────────────────────╮{C_RESET}")
@@ -865,4 +836,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    service_main()

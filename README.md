@@ -6,7 +6,7 @@ Double-tap a key, speak, tap to stop (Esc cancels) — polished text copied to c
 
 ## What It Does
 
-1. **Run the app** — choose your grammar backend
+1. **App runs as background service** — configure via `wh backend`
 2. **Double-tap Right Option** to start recording
 3. **Speak** naturally (filler words like "um", "uh", "like" are OK)
 4. **Tap once** (Right Option or Space) to stop
@@ -109,31 +109,30 @@ If you want to use LM Studio as your grammar backend:
 
 ## Usage
 
-### Start the App
+### Background Service
+
+Local Whisper runs as a background service (Login Item). It starts automatically at login.
+
+### CLI Management
+
+Use `wh` to manage the service:
 
 ```bash
-# Option 1: Activate venv and run
+# Activate venv first (or use .venv/bin/wh directly)
 source .venv/bin/activate
-wh
 
-# Option 2: Run directly
-.venv/bin/wh
+wh                  # Status + help
+wh status           # Service status, PID, backend
+wh start            # Launch the service
+wh stop             # Stop the service
+wh restart          # Restart the service
+wh backend          # Show current backend + list available
+wh backend ollama   # Switch grammar backend
+wh config           # Show key config values
+wh config edit      # Open config in editor
+wh log              # Tail service log
+wh version          # Show version
 ```
-
-You'll see a backend selection menu:
-
-```
-Select Grammar Backend:
-
-[1] Apple Intelligence (On-device, macOS 26+)
-[2] Ollama (Local LLM server)
-[3] LM Studio (OpenAI-compatible local server)
-[4] None (transcription only, no grammar)
-
-Enter choice (1-4):
-```
-
-Then the app starts with a live waveform in your menu bar.
 
 ### Record
 
@@ -161,7 +160,7 @@ A floating overlay window shows recording status and duration.
 ## Features
 
 ### Core
-- **Backend selection** — choose Apple Intelligence, Ollama, LM Studio, or none at startup
+- **Backend selection** — switch with `wh backend <name>`
 - **Double-tap to record** — no accidental triggers
 - **Tap to stop** — Right Option or Space for precise control
 - **Real-time duration** display while recording

@@ -3,11 +3,10 @@
 import sys
 
 if getattr(sys, 'frozen', False):
-    # Running as bundled app (py2app)
-    from whisper_voice.app import main
+    from whisper_voice.app import service_main
+    if __name__ == "__main__":
+        service_main()
 else:
-    # Running as module (python -m whisper_voice)
-    from .app import main
-
-if __name__ == "__main__":
-    main()
+    from .cli import cli_main
+    if __name__ == "__main__":
+        cli_main()
