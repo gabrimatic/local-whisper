@@ -49,7 +49,7 @@ url = "http://localhost:50060/v1/audio/transcriptions"
 check_url = "http://localhost:50060/"
 
 # Whisper model to use
-model = "large-v3-v20240930_626MB"
+model = "openai_whisper-large-v3-v20240930"
 
 # Language code (en, fa, es, fr, de, etc. or "auto" for detection)
 language = "auto"
@@ -174,7 +174,7 @@ class HotkeyConfig:
 class WhisperConfig:
     url: str = "http://localhost:50060/v1/audio/transcriptions"
     check_url: str = "http://localhost:50060/"
-    model: str = "large-v3-v20240930_626MB"
+    model: str = "openai_whisper-large-v3-v20240930"
     language: str = "auto"
     timeout: int = 0
     prompt: str = DEFAULT_WHISPER_PROMPT

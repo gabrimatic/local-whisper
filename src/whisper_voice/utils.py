@@ -295,15 +295,30 @@ def request_accessibility_permission() -> bool:
         return False
     _accessibility_prompt_shown = True
     try:
-        from Foundation import NSDictionary
         import ctypes
-        lib = ctypes.CDLL(
-            '/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices'
-        )
-        func = lib.AXIsProcessTrustedWithOptions
-        func.restype = ctypes.c_bool
-        func.argtypes = [ctypes.c_void_p]
-        opts = NSDictionary.dictionaryWithObject_forKey_(True, 'AXTrustedCheckOptionPrompt')
-        return bool(func(opts))
+        cf = ctypes.CDLL('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation')
+        ax = ctypes.CDLL('/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices')
+
+        ax.AXIsProcessTrustedWithOptions.restype = ctypes.c_bool
+        ax.AXIsProcessTrustedWithOptions.argtypes = [ctypes.c_void_p]
+        cf.CFStringCreateWithCString.restype = ctypes.c_void_p
+        cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
+        cf.CFDictionaryCreate.restype = ctypes.c_void_p
+        cf.CFDictionaryCreate.argtypes = [
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+            ctypes.c_long, ctypes.c_void_p, ctypes.c_void_p,
+        ]
+
+        key = cf.CFStringCreateWithCString(None, b'AXTrustedCheckOptionPrompt', 0x08000100)
+        true_val = ctypes.c_void_p.in_dll(cf, 'kCFBooleanTrue').value
+        key_cbs = ctypes.addressof(ctypes.c_byte.in_dll(cf, 'kCFTypeDictionaryKeyCallBacks'))
+        val_cbs = ctypes.addressof(ctypes.c_byte.in_dll(cf, 'kCFTypeDictionaryValueCallBacks'))
+
+        keys = (ctypes.c_void_p * 1)(key)
+        vals = (ctypes.c_void_p * 1)(true_val)
+        opts = cf.CFDictionaryCreate(None, keys, vals, 1, key_cbs, val_cbs)
+        return bool(ax.AXIsProcessTrustedWithOptions(opts))
     except Exception:
+        import subprocess
+        subprocess.Popen(['open', 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'])
         return False

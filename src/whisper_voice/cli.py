@@ -474,6 +474,78 @@ def cmd_uninstall():
     print(f"{C_DIM}Service will no longer start at login. Running instance (if any) not stopped.{C_RESET}")
 
 
+def cmd_purge():
+    """Completely remove Local Whisper: stop service, LaunchAgent, config, logs, zshrc alias."""
+    import re as _re
+
+    print(f"  {C_BOLD}Purging Local Whisper...{C_RESET}")
+    print()
+
+    # 1. Stop running service
+    running, pid = _is_running()
+    if running and pid:
+        try:
+            import signal as _signal
+            os.kill(pid, _signal.SIGTERM)
+            time.sleep(1)
+            try:
+                os.kill(pid, _signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        except ProcessLookupError:
+            pass
+    _cleanup_lock()
+    print(f"  {C_GREEN}✓{C_RESET}  Service stopped")
+
+    # 2. Unload + remove LaunchAgent
+    if LAUNCHAGENT_PLIST.exists():
+        subprocess.run(["launchctl", "unload", str(LAUNCHAGENT_PLIST)], capture_output=True)
+        LAUNCHAGENT_PLIST.unlink(missing_ok=True)
+    # Also clean up old gabrimatic plist if still present
+    old_plist = Path.home() / "Library" / "LaunchAgents" / "info.gabrimatic.local-whisper.plist"
+    if old_plist.exists():
+        subprocess.run(["launchctl", "unload", str(old_plist)], capture_output=True)
+        old_plist.unlink(missing_ok=True)
+    print(f"  {C_GREEN}✓{C_RESET}  LaunchAgent removed")
+
+    # 3. Remove old .app Login Item
+    subprocess.run(
+        ["osascript", "-e",
+         'tell application "System Events" to delete (login items whose name is "Local Whisper")'],
+        capture_output=True
+    )
+    print(f"  {C_GREEN}✓{C_RESET}  Login Item removed")
+
+    # 4. Remove ~/.whisper (config + logs + backups)
+    whisper_dir = Path.home() / ".whisper"
+    if whisper_dir.exists():
+        import shutil as _shutil
+        _shutil.rmtree(whisper_dir)
+        print(f"  {C_GREEN}✓{C_RESET}  Removed ~/.whisper (config, logs, backups)")
+    else:
+        print(f"  {C_DIM}~/.whisper not found - skipping{C_RESET}")
+
+    # 5. Remove wh alias from shell configs
+    alias_pattern = _re.compile(r"^\s*#?\s*Local Whisper CLI\s*$|^\s*alias wh=.*local-whisper.*$")
+    for rc in [Path.home() / ".zshrc", Path.home() / ".bashrc"]:
+        if not rc.exists():
+            continue
+        lines = rc.read_text().splitlines(keepends=True)
+        new_lines = [l for l in lines if not alias_pattern.match(l)]
+        if len(new_lines) != len(lines):
+            rc.write_text("".join(new_lines))
+            print(f"  {C_GREEN}✓{C_RESET}  Removed wh alias from {rc}")
+
+    # 6. Kill any remaining whisperkit-cli process
+    subprocess.run(["pkill", "-9", "-f", "whisperkit-cli"], capture_output=True)
+    subprocess.run(["pkill", "-9", "-f", "apple-ai-cli"], capture_output=True)
+
+    print()
+    print(f"  {C_BOLD}Done.{C_RESET} Local Whisper has been fully removed.")
+    print(f"  {C_DIM}The project folder and venv were not deleted - remove manually if needed.{C_RESET}")
+    print(f"  {C_DIM}Open a new shell for the 'wh' alias removal to take effect.{C_RESET}")
+
+
 def cmd_log():
     """Tail the service log."""
     if not LOG_FILE.exists():
@@ -514,6 +586,7 @@ def _print_help():
         ("wh config path",   "Print path to config file"),
         ("wh install",       "Install LaunchAgent (auto-start at login)"),
         ("wh uninstall",     "Remove LaunchAgent"),
+        ("wh purge",         "Completely remove Local Whisper (service, config, alias)"),
         ("wh log",           "Tail service log"),
         ("wh version",       "Show version"),
     ]
@@ -575,6 +648,8 @@ def cli_main():
         cmd_install()
     elif cmd == "uninstall":
         cmd_uninstall()
+    elif cmd == "purge":
+        cmd_purge()
     elif cmd == "log":
         cmd_log()
     elif cmd == "version":
