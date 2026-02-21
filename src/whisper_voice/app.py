@@ -764,7 +764,7 @@ def _setup_service_logging():
     # Truncate if too large
     if LOG_FILE.exists() and LOG_FILE.stat().st_size > LOG_MAX_SIZE:
         LOG_FILE.write_text("")
-    log_fd = open(LOG_FILE, "a", buffering=1)
+    log_fd = open(LOG_FILE, "a", buffering=1, encoding="utf-8")
     sys.stdout = log_fd
     sys.stderr = log_fd
 
