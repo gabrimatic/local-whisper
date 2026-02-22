@@ -925,9 +925,19 @@ class SettingsWindow:
         )
         item.setView_(view)
 
-        def _lbl(text, y, h, size, bold=False, secondary=False):
+        LABEL_W = FIELD_X - LEFT_MARGIN - 8  # match other tabs' label width
+
+        def _sep(y):
+            """Thin horizontal separator line."""
+            box = _AppKit.NSBox.alloc().initWithFrame_(
+                _Foundation.NSMakeRect(LEFT_MARGIN, y, CONTENT_W - LEFT_MARGIN * 2, 1)
+            )
+            box.setBoxType_(_AppKit.NSBoxSeparator)
+            view.addSubview_(box)
+
+        def _center_lbl(text, y, h, size, bold=False, secondary=False):
             tf = _AppKit.NSTextField.alloc().initWithFrame_(
-                _Foundation.NSMakeRect(0, y, CONTENT_W, h)
+                _Foundation.NSMakeRect(LEFT_MARGIN, y, CONTENT_W - LEFT_MARGIN * 2, h)
             )
             tf.setStringValue_(text)
             tf.setBezeled_(False)
@@ -943,18 +953,47 @@ class SettingsWindow:
                 tf.setTextColor_(_AppKit.NSColor.secondaryLabelColor())
             view.addSubview_(tf)
 
-        def _link(text, y, url):
+        def _row_label(text, y):
+            """Right-aligned row label (matches other tabs)."""
+            tf = _AppKit.NSTextField.alloc().initWithFrame_(
+                _Foundation.NSMakeRect(LEFT_MARGIN, y + 1, LABEL_W, ROW_H)
+            )
+            tf.setStringValue_(text)
+            tf.setBezeled_(False)
+            tf.setDrawsBackground_(False)
+            tf.setEditable_(False)
+            tf.setSelectable_(False)
+            tf.setAlignment_(_AppKit.NSTextAlignmentRight)
+            tf.setFont_(_AppKit.NSFont.systemFontOfSize_(12))
+            tf.setTextColor_(_AppKit.NSColor.secondaryLabelColor())
+            view.addSubview_(tf)
+
+        def _row_text(text, y):
+            """Plain value text in the right column."""
+            tf = _AppKit.NSTextField.alloc().initWithFrame_(
+                _Foundation.NSMakeRect(FIELD_X, y + 1, FIELD_W, ROW_H)
+            )
+            tf.setStringValue_(text)
+            tf.setBezeled_(False)
+            tf.setDrawsBackground_(False)
+            tf.setEditable_(False)
+            tf.setSelectable_(False)
+            tf.setFont_(_AppKit.NSFont.systemFontOfSize_(12))
+            view.addSubview_(tf)
+
+        def _row_link(text, y, url):
+            """Clickable link in the right column."""
             btn = _AppKit.NSButton.alloc().initWithFrame_(
-                _Foundation.NSMakeRect(0, y, CONTENT_W, 20)
+                _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, ROW_H + 2)
             )
             btn.setBordered_(False)
             btn.setButtonType_(_AppKit.NSButtonTypeMomentaryPushIn)
+            btn.setAlignment_(_AppKit.NSTextAlignmentLeft)
             attr = _Foundation.NSAttributedString.alloc().initWithString_attributes_(
                 text,
                 {
                     _AppKit.NSForegroundColorAttributeName: _AppKit.NSColor.linkColor(),
                     _AppKit.NSFontAttributeName: _AppKit.NSFont.systemFontOfSize_(12),
-                    _AppKit.NSUnderlineStyleAttributeName: 1,
                 },
             )
             btn.setAttributedTitle_(attr)
@@ -965,45 +1004,54 @@ class SettingsWindow:
             ))
             view.addSubview_(btn)
 
-        y = 44.0
-
-        # App name + version
-        _lbl("Local Whisper", y, 28, 20, bold=True)
-        y += 30
+        # ── App identity header ──────────────────────────────────────────
+        y = 32.0
+        _center_lbl("Local Whisper", y, 26, 20, bold=True)
+        y += 28
         try:
             from whisper_voice import __version__
-            _lbl(f"Version {__version__}", y, 18, 11, secondary=True)
+            _center_lbl(f"Version {__version__}", y, 16, 11, secondary=True)
+            y += 18
         except Exception:
             pass
-        y += 22
+        y += 18
 
-        y += 16  # spacer
+        _sep(y)
+        y += 16
 
-        # Author
-        _lbl("Created by Soroush Yousefpour", y, 20, 13)
-        y += 24
-        _link("gabrimatic.info", y, "https://gabrimatic.info")
-        y += 26
+        # ── Author ───────────────────────────────────────────────────────
+        _row_label("Author", y)
+        _row_text("Soroush Yousefpour", y)
+        y += ROW_H + ROW_GAP
 
-        y += 20  # spacer
+        _row_label("Website", y)
+        _row_link("gabrimatic.info", y, "https://gabrimatic.info")
+        y += ROW_H + ROW_GAP
 
-        # Credits
-        _lbl("Open Source Credits", y, 16, 10, secondary=True)
-        y += 20
+        _row_label("Source", y)
+        _row_link("github.com/gabrimatic/local-whisper", y,
+                  "https://github.com/gabrimatic/local-whisper")
+        y += ROW_H + ROW_GAP
 
+        y += 6
+        _sep(y)
+        y += 16
+
+        # ── Credits ──────────────────────────────────────────────────────
         credits = [
-            ("WhisperKit by Argmax", "https://github.com/argmaxinc/WhisperKit"),
-            ("Apple Intelligence", None),
-            ("Ollama", "https://ollama.ai"),
-            ("rumps by jaredks", "https://github.com/jaredks/rumps"),
-            ("LM Studio", "https://lmstudio.ai"),
+            ("Speech",   "WhisperKit by Argmax",  "https://github.com/argmaxinc/WhisperKit"),
+            ("Grammar",  "Apple Intelligence",     None),
+            ("LLM",      "Ollama",                 "https://ollama.ai"),
+            ("Menu bar", "rumps",                  "https://github.com/jaredks/rumps"),
+            ("Local LLM","LM Studio",              "https://lmstudio.ai"),
         ]
-        for text, url in credits:
+        for row_label, name, url in credits:
+            _row_label(row_label, y)
             if url:
-                _link(text, y, url)
+                _row_link(name, y, url)
             else:
-                _lbl(text, y, 20, 12)
-            y += 22
+                _row_text(name, y)
+            y += ROW_H + ROW_GAP
 
     # ------------------------------------------------------------------ #
     # Callbacks                                                            #
