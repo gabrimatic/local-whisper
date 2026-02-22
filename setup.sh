@@ -211,8 +211,8 @@ for i in $(seq 1 $WHISPER_PRECOMPILE_TIMEOUT); do
         WHISPER_READY=true
         break
     fi
-    if [ $((i % 15)) -eq 0 ]; then
-        printf "\r  ${DIM}Compiling... ${i}s elapsed${NC}   "
+    if [ $((i % 10)) -eq 0 ]; then
+        log_info "Compiling... ${i}s elapsed"
     fi
 done
 echo ""
@@ -272,7 +272,7 @@ if command -v lms &> /dev/null; then
     else
         log_info "Downloading grammar model: $LMSTUDIO_MODEL"
         log_info "This may take a few minutes..."
-        if lms get "$LMSTUDIO_MODEL" -y --quiet 2>&1; then
+        if lms get "$LMSTUDIO_MODEL" -y --quiet 2>/dev/null; then
             log_ok "Model $LMSTUDIO_MODEL ready"
         else
             log_warn "Failed to download model (you can do this later in LM Studio)"
@@ -345,6 +345,11 @@ rm -f /tmp/local-whisper.lock
 sleep 1
 
 WH_BIN="$VENV_DIR/bin/wh"
+
+# Verify wh binary was created by pip install
+if [[ ! -f "$WH_BIN" ]]; then
+    fail "wh binary not found at $WH_BIN - package install may have failed"
+fi
 
 # Write LaunchAgent plist
 PLIST_PATH="$HOME/Library/LaunchAgents/com.local-whisper.plist"
@@ -425,15 +430,28 @@ else
     echo ""
     read -r -p "  Press Enter once you have granted access... "
     echo ""
-    # Restart service so the keyboard listener picks up the new permission
-    log_info "Restarting service with new Accessibility permission..."
-    "$WH_BIN" restart 2>/dev/null || true
-    sleep 2
-    log_ok "Service restarted"
+    # Re-verify
+    AX_NOW=$("$VENV_DIR/bin/python3" -c "
+from whisper_voice.utils import check_accessibility_trusted
+print('yes' if check_accessibility_trusted() else 'no')
+" 2>/dev/null)
+    if [ "$AX_NOW" = "yes" ]; then
+        log_info "Restarting service with new Accessibility permission..."
+        "$WH_BIN" restart 2>/dev/null || true
+        sleep 2
+        log_ok "Service restarted with Accessibility"
+    else
+        log_warn "Accessibility not detected - hotkey may not work"
+        log_info "Run 'wh restart' after granting Accessibility in System Settings"
+    fi
 fi
 
 # Add wh alias to shell config if not already present
 WH_ALIAS="alias wh='$VENV_DIR/bin/wh'"
+
+# Always ensure .zshrc exists (macOS default shell is zsh)
+touch "$HOME/.zshrc"
+
 for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
     if [[ -f "$RC" ]] && ! grep -q "alias wh=" "$RC" 2>/dev/null; then
         echo "" >> "$RC"
@@ -442,6 +460,14 @@ for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
         log_ok "Added wh alias to $RC"
     fi
 done
+
+# Fish shell hint
+if command -v fish &>/dev/null && [[ -d "$HOME/.config/fish" ]]; then
+    FISH_CONFIG="$HOME/.config/fish/config.fish"
+    if ! grep -q "alias wh=" "$FISH_CONFIG" 2>/dev/null; then
+        log_info "Fish detected - add manually: alias wh='$VENV_DIR/bin/wh'"
+    fi
+fi
 
 # ============================================================================
 # Done
