@@ -149,7 +149,8 @@ A floating overlay window shows recording status and duration.
 | Menu Item | Description |
 |-----------|-------------|
 | Status | Current state (Ready, Recording, etc.) |
-| Grammar: [Backend] | Shows active grammar backend |
+| Grammar: [Backend] | Active backend; open submenu to switch backend in-place |
+| Settings... | Open the Settings window (all config options) |
 | Retry Last | Re-transcribe the last recording |
 | Copy Last | Copy last transcription again |
 | History | Open all saved session transcripts |
@@ -157,10 +158,29 @@ A floating overlay window shows recording status and duration.
 | Config | Open configuration file |
 | Quit | Exit the app |
 
+### Grammar Submenu
+
+The **Grammar** menu item expands into a submenu listing every available backend. The active backend has a checkmark. Selecting a different entry switches the backend immediately, without restarting the service.
+
+### Settings Window
+
+**Settings...** opens a native panel with five tabs:
+
+| Tab | What you can configure |
+|-----|----------------------|
+| Recording | Trigger key, double-tap window, min/max duration, silence threshold |
+| Transcription | Whisper model, language, vocabulary hint prompt, timeout |
+| Grammar | Grammar correction toggle, Ollama/Apple Intelligence/LM Studio settings, keyboard shortcuts |
+| Interface | Overlay visibility, overlay opacity, sounds |
+| Advanced | Backup directory, WhisperKit server URLs |
+
+Changes are written to `~/.whisper/config.toml` on Save. Fields that require a restart (hotkey, model, shortcuts) show a warning and offer to restart immediately.
+
 ## Features
 
 ### Core
-- **Backend selection** — switch with `wh backend <name>`
+- **Backend selection** — switch from the Grammar submenu (in-place, no restart) or with `wh backend <name>` (restarts service)
+- **Settings window** — full GUI for all config options (Settings... in the menu bar)
 - **Double-tap to record** — no accidental triggers
 - **Tap to stop** — Right Option or Space for precise control
 - **Real-time duration** display while recording
@@ -199,7 +219,7 @@ Transform any selected text instantly with global keyboard shortcuts:
 
 ## Configuration
 
-Settings are stored in `~/.whisper/config.toml`. Edit via menu bar (Config) or directly:
+Settings are stored in `~/.whisper/config.toml`. Edit via the Settings window (Settings... in the menu bar), via the Config menu item (opens the file in your editor), or directly:
 
 ```toml
 [hotkey]
@@ -317,6 +337,7 @@ local-whisper/
         ├── config.py           # Configuration management
         ├── grammar.py          # Grammar backend factory
         ├── overlay.py          # Floating window UI
+        ├── settings.py         # Settings window (5-tab NSPanel)
         ├── transcriber.py      # WhisperKit integration
         ├── utils.py            # Logging and helpers
         ├── shortcuts.py        # Global keyboard shortcuts

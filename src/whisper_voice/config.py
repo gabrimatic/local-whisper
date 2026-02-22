@@ -510,7 +510,11 @@ def _find_in_section(content: str, section: str, key: str) -> Optional[str]:
 
 
 def _replace_in_section(content: str, section: str, key: str, new_value: str) -> str:
-    """Replace a key's value within a specific TOML section."""
+    """Replace a key's value within a specific TOML section.
+
+    new_value must already be serialized to its TOML string representation
+    (e.g. '"quoted"' for strings, 'true'/'false' for bools, '42' for ints).
+    """
     lines = content.splitlines(keepends=True)
     in_section = False
     for i, line in enumerate(lines):
@@ -519,10 +523,11 @@ def _replace_in_section(content: str, section: str, key: str, new_value: str) ->
             in_section = stripped == f"[{section}]"
             continue
         if in_section:
-            # Match quoted value
+            repl = r'\g<1>' + new_value
+            # Match quoted string value
             new_line = re.sub(
                 rf'({key}\s*=\s*)"[^"]*"',
-                f'\\1"{new_value}"',
+                repl,
                 line
             )
             if new_line != line:
@@ -531,7 +536,16 @@ def _replace_in_section(content: str, section: str, key: str, new_value: str) ->
             # Match unquoted boolean
             new_line = re.sub(
                 rf'({key}\s*=\s*)(true|false)',
-                f'\\1{new_value}',
+                repl,
+                line
+            )
+            if new_line != line:
+                lines[i] = new_line
+                return "".join(lines)
+            # Match unquoted numeric (integer or float)
+            new_line = re.sub(
+                rf'({key}\s*=\s*)[-+]?[0-9]*\.?[0-9]+',
+                repl,
                 line
             )
             if new_line != line:
@@ -548,7 +562,7 @@ def update_config_backend(new_backend: str) -> bool:
         config.grammar.enabled = (new_backend != "none")
     try:
         content = CONFIG_FILE.read_text()
-        content = _replace_in_section(content, "grammar", "backend", new_backend)
+        content = _replace_in_section(content, "grammar", "backend", _serialize_toml_value(new_backend))
         enabled_val = "false" if new_backend == "none" else "true"
         content = _replace_in_section(content, "grammar", "enabled", enabled_val)
         CONFIG_FILE.write_text(content)
@@ -558,15 +572,32 @@ def update_config_backend(new_backend: str) -> bool:
         return False
 
 
-def update_config_field(section: str, key: str, value: str) -> bool:
-    """Update a single config field in-memory AND persist to TOML."""
+def _serialize_toml_value(value) -> str:
+    """Serialize a Python value to its TOML string representation."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return str(value)
+    # String: wrap in double quotes
+    return f'"{value}"'
+
+
+def update_config_field(section: str, key: str, value) -> bool:
+    """Update a single config field in-memory AND persist to TOML.
+
+    value may be a bool, int, float, or str. Serialization is handled
+    automatically so callers pass Python-native values directly.
+    """
     config = get_config()
     section_obj = getattr(config, section, None)
     if section_obj is not None and hasattr(section_obj, key):
         setattr(section_obj, key, value)
     try:
         content = CONFIG_FILE.read_text()
-        content = _replace_in_section(content, section, key, value)
+        toml_value = _serialize_toml_value(value)
+        content = _replace_in_section(content, section, key, toml_value)
         CONFIG_FILE.write_text(content)
         return True
     except Exception as e:

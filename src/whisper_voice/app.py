@@ -136,6 +136,7 @@ class App(rumps.App):
             None,
             rumps.MenuItem("Backups", callback=self._open_backups),
             rumps.MenuItem("Config", callback=self._open_config),
+            rumps.MenuItem("Settings...", callback=self._open_settings),
             rumps.MenuItem("Quit", callback=self._quit)
         ]
 
@@ -168,10 +169,6 @@ class App(rumps.App):
         self._backend_menu_items["none"] = disabled_item
         self.grammar_menu.add(None)   # separator
         self.grammar_menu.add(disabled_item)
-        self.grammar_menu.add(None)   # separator
-        settings_item = rumps.MenuItem("Settings...", callback=self._open_settings)
-        self.grammar_menu.add(settings_item)
-
         # Set parent menu title
         if not self.config.grammar.enabled:
             self.grammar_menu.title = "Grammar: Disabled"
