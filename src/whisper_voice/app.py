@@ -94,6 +94,12 @@ class App(rumps.App):
         self.recorder = Recorder()
         self.overlay = get_overlay()
 
+        # Grammar submenu state
+        self._grammar_lock = threading.Lock()
+        self._backend_menu_items: dict = {}  # backend_id -> MenuItem
+        self.grammar_menu = rumps.MenuItem("Grammar")
+        self._build_backend_submenu()
+
         # State flags
         self._busy = False
         self._ready = False
@@ -120,10 +126,9 @@ class App(rumps.App):
 
         # Build menu
         self.status = rumps.MenuItem("Starting...")
-        self.grammar_status = rumps.MenuItem(self._get_grammar_menu_text())
         self.menu = [
             self.status,
-            self.grammar_status,
+            self.grammar_menu,
             None,
             rumps.MenuItem("Retry Last", callback=self._retry),
             rumps.MenuItem("Copy Last", callback=self._copy),
@@ -144,11 +149,133 @@ class App(rumps.App):
             hide_dock_icon()
             self._dock_hidden = True
 
-    def _get_grammar_menu_text(self) -> str:
-        """Get the grammar status text for the menu."""
-        if not self.config.grammar.enabled or self.grammar is None:
-            return "Grammar: Disabled"
-        return f"Grammar: {self.grammar.name}"
+    def _build_backend_submenu(self):
+        """Build the Grammar submenu with all backends + Settings."""
+        current = self.config.grammar.backend if self.config.grammar.enabled else "none"
+        self._backend_menu_items = {}
+
+        for backend_id, info in BACKEND_REGISTRY.items():
+            item = rumps.MenuItem(info.name, callback=self._on_switch_backend)
+            item._backend_id = backend_id
+            item.state = 1 if backend_id == current else 0
+            self._backend_menu_items[backend_id] = item
+            self.grammar_menu.add(item)
+
+        # Disabled option
+        disabled_item = rumps.MenuItem("Disabled", callback=self._on_switch_backend)
+        disabled_item._backend_id = "none"
+        disabled_item.state = 1 if not self.config.grammar.enabled else 0
+        self._backend_menu_items["none"] = disabled_item
+        self.grammar_menu.add(None)   # separator
+        self.grammar_menu.add(disabled_item)
+        self.grammar_menu.add(None)   # separator
+        settings_item = rumps.MenuItem("Settings...", callback=self._open_settings)
+        self.grammar_menu.add(settings_item)
+
+        # Set parent menu title
+        if not self.config.grammar.enabled:
+            self.grammar_menu.title = "Grammar: Disabled"
+        else:
+            info = BACKEND_REGISTRY.get(current)
+            self.grammar_menu.title = f"Grammar: {info.name}" if info else "Grammar"
+
+    def _update_backend_menu_checks(self, active_id: str):
+        """Update checkmarks. Must run on main thread."""
+        for bid, item in self._backend_menu_items.items():
+            item.state = 1 if bid == active_id else 0
+        info = BACKEND_REGISTRY.get(active_id)
+        if active_id == "none":
+            self.grammar_menu.title = "Grammar: Disabled"
+        elif info:
+            self.grammar_menu.title = f"Grammar: {info.name}"
+
+    def _on_switch_backend(self, sender):
+        """Menu callback for backend selection."""
+        if self._busy or self.recorder.recording:
+            return
+        backend_id = sender._backend_id
+        current = self.config.grammar.backend if self.config.grammar.enabled else "none"
+        if backend_id == current and self._grammar_ready:
+            return
+        threading.Thread(target=self._switch_backend, args=(backend_id,), daemon=True).start()
+
+    def _switch_backend(self, backend_id: str):
+        """Switch grammar backend in-process. Runs in background thread."""
+        from .config import update_config_backend
+        from .grammar import Grammar
+
+        info = BACKEND_REGISTRY.get(backend_id)
+        display_name = info.name if info else ("Disabled" if backend_id == "none" else backend_id)
+
+        # Show switching status
+        _perform_on_main_thread(lambda: setattr(self.status, "title", f"Switching to {display_name}..."))
+        _perform_on_main_thread(lambda: self._update_backend_menu_checks(backend_id))
+
+        # Capture current backend for potential rollback
+        previous_backend_id = self.config.grammar.backend if self.config.grammar.enabled else "none"
+
+        # Tear down old grammar
+        with self._grammar_lock:
+            old_grammar = self.grammar
+            self.grammar = None
+            self._grammar_ready = False
+
+        if old_grammar is not None:
+            try:
+                old_grammar.close()
+            except Exception as e:
+                log(f"Error closing grammar: {e}", "WARN")
+
+        # Handle "disabled" case — safe to persist immediately (no start() can fail)
+        if backend_id == "none":
+            update_config_backend(backend_id)
+            log("Grammar correction disabled")
+            _perform_on_main_thread(lambda: setattr(self.status, "title", "Ready"))
+            return
+
+        # Start new backend before persisting config
+        ok = False
+        new_grammar = None
+        try:
+            new_grammar = Grammar()
+            ok = new_grammar.start()
+        except Exception as e:
+            log(f"Failed to start {display_name}: {e}", "ERR")
+            new_grammar = None
+            ok = False
+
+        with self._grammar_lock:
+            if ok:
+                # Only persist config after confirmed successful start
+                update_config_backend(backend_id)
+                self.grammar = new_grammar
+                self._grammar_ready = True
+                if hasattr(self, "_shortcut_processor") and self._shortcut_processor is not None:
+                    from .shortcuts import ShortcutProcessor
+                    self._shortcut_processor = ShortcutProcessor(self.grammar)
+            else:
+                # Rollback in-memory config to previous backend
+                update_config_backend(previous_backend_id)
+                self.grammar = None
+                self._grammar_ready = False
+
+        if ok:
+            log(f"Switched to {display_name}")
+            _perform_on_main_thread(lambda: setattr(self.status, "title", "Ready"))
+        else:
+            log(f"{display_name} unavailable", "ERR")
+            def _show_error():
+                self.status.title = f"{display_name} unavailable"
+                threading.Timer(3.0, lambda: _perform_on_main_thread(
+                    lambda: setattr(self.status, "title", "Ready")
+                )).start()
+            _perform_on_main_thread(_show_error)
+
+    def _open_settings(self, _=None):
+        """Open the Settings window."""
+        from .settings import get_settings_window
+        win = get_settings_window()
+        _perform_on_main_thread(win.show)
 
     def _set(self, icon: str, text: str):
         """Update menu bar icon and status text."""
@@ -590,24 +717,31 @@ class App(rumps.App):
 
     def _check_grammar_connection(self):
         """Check and update grammar backend availability (lazy reconnect)."""
-        if not self.config.grammar.enabled or self.grammar is None:
+        with self._grammar_lock:
+            grammar = self.grammar
+
+        if not self.config.grammar.enabled or grammar is None:
             return
-        backend_now = self.grammar.running()
+        backend_now = grammar.running()
         if backend_now and not self._grammar_ready:
-            log(f"{self.grammar.name} connected! Grammar correction enabled", "OK")
+            log(f"{grammar.name} connected! Grammar correction enabled", "OK")
             self._grammar_ready = True
         elif not backend_now and self._grammar_ready:
-            log(f"{self.grammar.name} disconnected", "WARN")
+            log(f"{grammar.name} disconnected", "WARN")
             self._grammar_ready = False
 
     def _apply_grammar(self, raw_text: str) -> str:
         """Apply grammar correction if available. Returns final text."""
-        if not self.config.grammar.enabled or not self._grammar_ready or self.grammar is None:
+        with self._grammar_lock:
+            grammar = self.grammar
+            grammar_ready = self._grammar_ready
+
+        if not self.config.grammar.enabled or not grammar_ready or grammar is None:
             return raw_text
 
         self._set(ICON_PROCESSING, "Polishing...")
         log("Polishing text...", "AI")
-        final_text, g_err = self.grammar.fix(raw_text)
+        final_text, g_err = grammar.fix(raw_text)
         if g_err:
             log(f"Grammar fix skipped: {g_err}", "WARN")
             return raw_text
@@ -747,9 +881,12 @@ class App(rumps.App):
             pass
 
         # Clean up grammar resources
-        if self.grammar is not None:
+        with self._grammar_lock:
+            grammar = self.grammar
+            self.grammar = None
+        if grammar is not None:
             try:
-                self.grammar.close()
+                grammar.close()
             except Exception as e:
                 log(f"Error closing grammar: {e}", "WARN")
 

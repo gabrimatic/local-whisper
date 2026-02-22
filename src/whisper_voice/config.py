@@ -4,6 +4,7 @@ Configuration management for Local Whisper.
 Loads settings from ~/.whisper/config.toml with sensible defaults.
 """
 
+import re
 import sys
 import threading
 from pathlib import Path
@@ -483,3 +484,91 @@ def get_config() -> Config:
             if _config is None:
                 _config = load_config()
     return _config
+
+
+# ---------------------------------------------------------------------------
+# TOML section helpers (shared by config.py and cli.py)
+# ---------------------------------------------------------------------------
+
+def _find_in_section(content: str, section: str, key: str) -> Optional[str]:
+    """Find a key's value within a specific TOML section. Returns the value or None."""
+    in_section = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            in_section = stripped == f"[{section}]"
+            continue
+        if in_section:
+            m = re.match(rf'{key}\s*=\s*"([^"]*)"', stripped)
+            if m:
+                return m.group(1)
+            # Also match unquoted booleans
+            m = re.match(rf'{key}\s*=\s*(true|false)', stripped)
+            if m:
+                return m.group(1)
+    return None
+
+
+def _replace_in_section(content: str, section: str, key: str, new_value: str) -> str:
+    """Replace a key's value within a specific TOML section."""
+    lines = content.splitlines(keepends=True)
+    in_section = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            in_section = stripped == f"[{section}]"
+            continue
+        if in_section:
+            # Match quoted value
+            new_line = re.sub(
+                rf'({key}\s*=\s*)"[^"]*"',
+                f'\\1"{new_value}"',
+                line
+            )
+            if new_line != line:
+                lines[i] = new_line
+                return "".join(lines)
+            # Match unquoted boolean
+            new_line = re.sub(
+                rf'({key}\s*=\s*)(true|false)',
+                f'\\1{new_value}',
+                line
+            )
+            if new_line != line:
+                lines[i] = new_line
+                return "".join(lines)
+    return content
+
+
+def update_config_backend(new_backend: str) -> bool:
+    """Update grammar backend in-memory AND persist to TOML file."""
+    config = get_config()
+    with _config_lock:
+        config.grammar.backend = new_backend
+        config.grammar.enabled = (new_backend != "none")
+    try:
+        content = CONFIG_FILE.read_text()
+        content = _replace_in_section(content, "grammar", "backend", new_backend)
+        enabled_val = "false" if new_backend == "none" else "true"
+        content = _replace_in_section(content, "grammar", "enabled", enabled_val)
+        CONFIG_FILE.write_text(content)
+        return True
+    except Exception as e:
+        print(f"Config write failed: {e}", file=sys.stderr)
+        return False
+
+
+def update_config_field(section: str, key: str, value: str) -> bool:
+    """Update a single config field in-memory AND persist to TOML."""
+    config = get_config()
+    section_obj = getattr(config, section, None)
+    if section_obj is not None and hasattr(section_obj, key):
+        setattr(section_obj, key, value)
+    try:
+        content = CONFIG_FILE.read_text()
+        content = _replace_in_section(content, section, key, value)
+        CONFIG_FILE.write_text(content)
+        return True
+    except Exception as e:
+        print(f"Config write failed: {e}", file=sys.stderr)
+        return False

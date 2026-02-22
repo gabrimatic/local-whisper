@@ -28,6 +28,17 @@ import time
 from pathlib import Path
 from typing import Optional
 
+# Import TOML helpers from config (avoids duplication)
+try:
+    from whisper_voice.config import _find_in_section, _replace_in_section
+except ImportError:
+    # Fallback stubs used if config import fails (e.g., during install before venv)
+    def _find_in_section(content, section, key):  # type: ignore[misc]
+        return None
+
+    def _replace_in_section(content, section, key, new_value):  # type: ignore[misc]
+        return content
+
 # Color constants
 C_RESET = "\033[0m"
 C_BOLD = "\033[1m"
@@ -92,56 +103,6 @@ def _cleanup_lock():
 def _get_config_path() -> Path:
     """Return the config file path."""
     return Path.home() / ".whisper" / "config.toml"
-
-
-def _find_in_section(content: str, section: str, key: str) -> Optional[str]:
-    """Find a key's value within a specific TOML section. Returns the value or None."""
-    in_section = False
-    for line in content.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
-            in_section = stripped == f"[{section}]"
-            continue
-        if in_section:
-            m = re.match(rf'{key}\s*=\s*"([^"]*)"', stripped)
-            if m:
-                return m.group(1)
-            # Also match unquoted booleans
-            m = re.match(rf'{key}\s*=\s*(true|false)', stripped)
-            if m:
-                return m.group(1)
-    return None
-
-
-def _replace_in_section(content: str, section: str, key: str, new_value: str) -> str:
-    """Replace a key's value within a specific TOML section."""
-    lines = content.splitlines(keepends=True)
-    in_section = False
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
-            in_section = stripped == f"[{section}]"
-            continue
-        if in_section:
-            # Match quoted value
-            new_line = re.sub(
-                rf'({key}\s*=\s*)"[^"]*"',
-                f'\\1"{new_value}"',
-                line
-            )
-            if new_line != line:
-                lines[i] = new_line
-                return "".join(lines)
-            # Match unquoted boolean
-            new_line = re.sub(
-                rf'({key}\s*=\s*)(true|false)',
-                f'\\1{new_value}',
-                line
-            )
-            if new_line != line:
-                lines[i] = new_line
-                return "".join(lines)
-    return content
 
 
 def _read_config_backend() -> Optional[str]:
