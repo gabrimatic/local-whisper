@@ -125,7 +125,8 @@ wh                  # Status + help
 wh status           # Service status, PID, backend
 wh start            # Launch the service
 wh stop             # Stop the service
-wh restart          # Restart the service
+wh restart          # Restart (auto-rebuilds Swift CLI if sources changed)
+wh build            # Rebuild the Apple Intelligence Swift CLI
 wh backend          # Show current backend + list available
 wh backend ollama   # Switch grammar backend
 wh config           # Show key config values
@@ -164,15 +165,16 @@ The **Grammar** menu item expands into a submenu listing every available backend
 
 ### Settings Window
 
-**Settings...** opens a native panel with five tabs:
+**Settings...** opens a native panel with six tabs:
 
 | Tab | What you can configure |
 |-----|----------------------|
 | Recording | Trigger key, double-tap window, min/max duration, silence threshold |
 | Transcription | Whisper model, language, vocabulary hint prompt, timeout |
 | Grammar | Grammar correction toggle, Ollama/Apple Intelligence/LM Studio settings, keyboard shortcuts |
-| Interface | Overlay visibility, overlay opacity, sounds |
+| Interface | Overlay visibility, overlay opacity, sounds, notifications |
 | Advanced | Backup directory, WhisperKit server URLs |
+| About | Version, author, open source credits |
 
 Changes are written to `~/.whisper/config.toml` on Save. Fields that require a restart (hotkey, model, shortcuts) show a warning and offer to restart immediately.
 
@@ -270,6 +272,7 @@ min_rms = 0.005  # silence threshold (0.0-1.0)
 show_overlay = true
 overlay_opacity = 0.92
 sounds_enabled = true
+notifications_enabled = true
 
 [shortcuts]
 enabled = true  # Enable/disable all keyboard shortcuts

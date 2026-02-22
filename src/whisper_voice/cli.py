@@ -246,8 +246,60 @@ def cmd_stop():
         sys.exit(1)
 
 
-def cmd_restart():
-    """Stop then start."""
+def _swift_cli_dir() -> Path:
+    """Return the Apple Intelligence Swift CLI source directory."""
+    return Path(__file__).parent / "backends" / "apple_intelligence" / "cli"
+
+
+def _swift_cli_binary() -> Path:
+    """Return the expected path of the compiled apple-ai-cli binary."""
+    return _swift_cli_dir() / ".build" / "release" / "apple-ai-cli"
+
+
+def _swift_sources_newer_than_binary() -> bool:
+    """Return True if any Swift source is newer than the compiled binary."""
+    binary = _swift_cli_binary()
+    if not binary.exists():
+        return True
+    binary_mtime = binary.stat().st_mtime
+    sources_dir = _swift_cli_dir() / "Sources"
+    if not sources_dir.exists():
+        return False
+    for src in sources_dir.rglob("*.swift"):
+        if src.stat().st_mtime > binary_mtime:
+            return True
+    return False
+
+
+def cmd_build():
+    """Build the Apple Intelligence Swift CLI."""
+    cli_dir = _swift_cli_dir()
+    if not cli_dir.exists():
+        print(f"{C_RED}Swift CLI directory not found: {cli_dir}{C_RESET}", file=sys.stderr)
+        sys.exit(1)
+
+    swift = shutil.which("swift")
+    if not swift:
+        print(f"{C_RED}swift not found - install Xcode or Xcode Command Line Tools{C_RESET}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"{C_DIM}Building Apple Intelligence CLI...{C_RESET}")
+    result = subprocess.run(
+        [swift, "build", "-c", "release"],
+        cwd=str(cli_dir),
+    )
+    if result.returncode != 0:
+        print(f"{C_RED}Build failed{C_RESET}", file=sys.stderr)
+        sys.exit(result.returncode)
+    print(f"{C_GREEN}Build successful{C_RESET}")
+
+
+def cmd_restart(rebuild: bool = False):
+    """Stop then start, optionally rebuilding the Swift CLI first."""
+    if rebuild or _swift_sources_newer_than_binary():
+        if not rebuild:
+            print(f"{C_YELLOW}Swift sources changed - rebuilding...{C_RESET}")
+        cmd_build()
     cmd_stop()
     # Wait for lock to actually release (up to 3s)
     for _ in range(30):
@@ -515,7 +567,8 @@ def _print_help():
         ("wh status",        "Service status, PID, backend"),
         ("wh start",         "Launch the service"),
         ("wh stop",          "Stop the service"),
-        ("wh restart",       "Restart the service"),
+        ("wh restart",       "Restart (auto-rebuilds Swift CLI if sources changed)"),
+        ("wh build",         "Rebuild the Apple Intelligence Swift CLI"),
         ("wh backend",       "Show current backend + list available"),
         ("wh backend <name>","Switch grammar backend (restarts if running)"),
         ("wh config",        "Show key config values"),
@@ -575,6 +628,8 @@ def cli_main():
         cmd_stop()
     elif cmd == "restart":
         cmd_restart()
+    elif cmd == "build":
+        cmd_build()
     elif cmd == "backend":
         cmd_backend(rest)
     elif cmd == "config":

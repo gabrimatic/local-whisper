@@ -144,6 +144,9 @@ overlay_opacity = 0.92
 # Play sound effects
 sounds_enabled = true
 
+# Show macOS notifications on completion/error
+notifications_enabled = true
+
 [backup]
 # Backup directory
 directory = "~/.whisper"
@@ -233,6 +236,7 @@ class UIConfig:
     show_overlay: bool = True
     overlay_opacity: float = 0.92
     sounds_enabled: bool = True
+    notifications_enabled: bool = True
 
 
 @dataclass
@@ -361,6 +365,7 @@ def load_config() -> Config:
             show_overlay=data['ui'].get('show_overlay', config.ui.show_overlay),
             overlay_opacity=data['ui'].get('overlay_opacity', config.ui.overlay_opacity),
             sounds_enabled=data['ui'].get('sounds_enabled', config.ui.sounds_enabled),
+            notifications_enabled=data['ui'].get('notifications_enabled', config.ui.notifications_enabled),
         )
 
     # Backup settings
