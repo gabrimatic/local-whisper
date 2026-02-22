@@ -105,6 +105,21 @@ class AppleIntelligenceBackend(GrammarBackend):
             log(f"Unknown mode requested: {mode_id}", "ERR")
             return text, f"Unknown mode: {mode_id}"
 
+        # Handle max_chars chunking
+        config = get_config()
+        max_chars = config.apple_intelligence.max_chars
+        if max_chars > 0 and len(text) > max_chars:
+            log(f"Apple Intelligence: splitting {len(text)} chars into chunks of {max_chars}", "INFO")
+            chunks = self._split_text(text, max_chars)
+            results = []
+            for i, chunk in enumerate(chunks):
+                log(f"Apple Intelligence: processing chunk {i+1}/{len(chunks)} ({len(chunk)} chars)", "INFO")
+                result, err = self.fix_with_mode(chunk, mode_id)
+                if err:
+                    return text, err
+                results.append(result)
+            return "\n\n".join(results), None
+
         log(f"Apple Intelligence fix_with_mode: {mode.name} ({len(text)} chars)", "INFO")
 
         # Ensure server is running
@@ -112,7 +127,6 @@ class AppleIntelligenceBackend(GrammarBackend):
             log("Apple Intelligence server not running", "ERR")
             return text, "Server not running"
 
-        config = get_config()
         timeout = config.apple_intelligence.timeout if config.apple_intelligence.timeout > 0 else None
 
         # Build request for server mode using mode-specific prompts

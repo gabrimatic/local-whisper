@@ -74,6 +74,7 @@ _RESTART_REQUIRED_FIELDS = {
     ("whisper", "model"),
     ("whisper", "url"),
     ("whisper", "check_url"),
+    ("ui", "overlay_opacity"),
     ("shortcuts", "enabled"),
     ("shortcuts", "proofread"),
     ("shortcuts", "rewrite"),

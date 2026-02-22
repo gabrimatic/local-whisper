@@ -35,7 +35,7 @@ from .config import get_config, CONFIG_FILE
 from .utils import (
     log, play_sound, is_silent, is_hallucination, hide_dock_icon, truncate,
     strip_hallucination_lines, check_microphone_permission,
-    check_accessibility_trusted, request_accessibility_permission,
+    check_accessibility_trusted, request_accessibility_permission, send_notification,
     ICON_IDLE, ICON_RECORDING, ICON_PROCESSING, ICON_SUCCESS, ICON_ERROR,
     ICON_IMAGE, ICON_FRAMES, ICON_PROCESS_FRAMES, OVERLAY_WAVE_FRAMES,
     ICON_RESET_SUCCESS, ICON_RESET_ERROR, LOG_TRUNCATE, PREVIEW_TRUNCATE,
@@ -635,6 +635,7 @@ class App(rumps.App):
             raw_text, err = self._transcribe_and_validate(path)
             if err:
                 self._show_error(err, f"Transcription failed: {err}")
+                send_notification("Transcription Failed", err)
                 return
 
             self.backup.save_raw(raw_text)
@@ -650,6 +651,7 @@ class App(rumps.App):
 
             # 5. Success
             self._show_success(final_text)
+            send_notification("Transcription Complete", truncate(final_text, PREVIEW_TRUNCATE))
 
             # 6. Backup
             self.backup.save_text(final_text)
@@ -657,6 +659,7 @@ class App(rumps.App):
 
         except Exception as e:
             self._show_error("Error", f"Error: {e}")
+            send_notification("Transcription Error", str(e))
         finally:
             with self._state_lock:
                 self._busy = False

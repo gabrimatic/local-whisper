@@ -248,6 +248,22 @@ def check_microphone_permission() -> tuple[bool, str]:
         return True, f"Could not check microphone permission: {e}"
 
 
+def send_notification(title: str, message: str):
+    """Send a macOS notification if notifications are enabled."""
+    config = get_config()
+    if not config.ui.notifications_enabled:
+        return
+    try:
+        from Foundation import NSUserNotification, NSUserNotificationCenter
+        notification = NSUserNotification.alloc().init()
+        notification.setTitle_(title)
+        notification.setInformativeText_(message)
+        center = NSUserNotificationCenter.defaultUserNotificationCenter()
+        center.deliverNotification_(notification)
+    except Exception:
+        pass  # Silent failure - notifications are best-effort
+
+
 def hide_dock_icon():
     """Hide the dock icon (menu bar app only)."""
     try:

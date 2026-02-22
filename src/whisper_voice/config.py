@@ -519,13 +519,18 @@ def _replace_in_section(content: str, section: str, key: str, new_value: str) ->
 
     new_value must already be serialized to its TOML string representation
     (e.g. '"quoted"' for strings, 'true'/'false' for bools, '42' for ints).
+
+    If the key doesn't exist in the section, it is appended under the header.
     """
     lines = content.splitlines(keepends=True)
     in_section = False
+    section_header_idx = None
     for i, line in enumerate(lines):
         stripped = line.strip()
         if stripped.startswith("[") and stripped.endswith("]"):
             in_section = stripped == f"[{section}]"
+            if in_section:
+                section_header_idx = i
             continue
         if in_section:
             repl = r'\g<1>' + new_value
@@ -556,6 +561,13 @@ def _replace_in_section(content: str, section: str, key: str, new_value: str) ->
             if new_line != line:
                 lines[i] = new_line
                 return "".join(lines)
+
+    # Key not found in section - append it after the section header
+    if section_header_idx is not None:
+        new_line = f"{key} = {new_value}\n"
+        lines.insert(section_header_idx + 1, new_line)
+        return "".join(lines)
+
     return content
 
 

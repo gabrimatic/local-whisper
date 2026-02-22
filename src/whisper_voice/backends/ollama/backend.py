@@ -109,6 +109,20 @@ class OllamaBackend(GrammarBackend):
             log(f"Failed to build prompt for mode {mode_id}: {e}", "ERR")
             return text, f"Prompt error: {e}"
 
+        # Handle max_chars chunking
+        max_chars = config.ollama.max_chars
+        if max_chars > 0 and len(text) > max_chars:
+            log(f"Ollama: splitting {len(text)} chars into chunks of {max_chars}", "INFO")
+            chunks = self._split_text(text, max_chars)
+            results = []
+            for i, chunk in enumerate(chunks):
+                log(f"Ollama: processing chunk {i+1}/{len(chunks)} ({len(chunk)} chars)", "INFO")
+                result, err = self.fix_with_mode(chunk, mode_id)
+                if err:
+                    return text, err
+                results.append(result)
+            return "\n\n".join(results), None
+
         log(f"Ollama fix_with_mode: {mode.name} ({len(text)} chars)", "INFO")
 
         try:
