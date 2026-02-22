@@ -319,6 +319,5 @@ def request_accessibility_permission() -> bool:
         opts = cf.CFDictionaryCreate(None, keys, vals, 1, key_cbs, val_cbs)
         return bool(ax.AXIsProcessTrustedWithOptions(opts))
     except Exception:
-        import subprocess
         subprocess.Popen(['open', 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'])
         return False

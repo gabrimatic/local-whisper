@@ -16,7 +16,7 @@ from .config import get_config, DEFAULT_WHISPER_PROMPT
 from .utils import log, TRANSCRIBE_CHECK_TIMEOUT
 
 # Startup timeout for WhisperKit server
-STARTUP_TIMEOUT = 90
+STARTUP_TIMEOUT = 300
 
 
 class Whisper:

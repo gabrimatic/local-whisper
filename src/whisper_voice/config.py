@@ -49,7 +49,7 @@ url = "http://localhost:50060/v1/audio/transcriptions"
 check_url = "http://localhost:50060/"
 
 # Whisper model to use
-model = "openai_whisper-large-v3-v20240930"
+model = "whisper-large-v3-v20240930"
 
 # Language code (en, fa, es, fr, de, etc. or "auto" for detection)
 language = "auto"

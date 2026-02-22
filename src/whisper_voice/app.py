@@ -10,10 +10,13 @@ Architecture:
 Supported grammar backends:
     - apple_intelligence: Apple's on-device Foundation Models (macOS 15+)
     - ollama: Local Ollama server with configurable LLM models
+    - lm_studio: LM Studio local server (OpenAI-compatible API)
 
 Privacy: All processing on-device. No internet. No cloud. No tracking.
 """
 
+import atexit
+import fcntl
 import subprocess
 import signal
 import sys
@@ -778,8 +781,6 @@ def _setup_service_logging():
 
 def service_main():
     """Entry point for the service (launched via LaunchAgent or wh start)."""
-    import fcntl, atexit
-
     _setup_service_logging()
 
     # Single-instance lock - only one instance can run at a time
@@ -793,6 +794,14 @@ def service_main():
     atexit.register(lambda: (fcntl.flock(lock_file, fcntl.LOCK_UN), lock_file.close()))
 
     config = get_config()
+
+    # Check Accessibility permission first - required for global hotkey.
+    # Must run here (in the LaunchAgent process) so macOS prompts for THIS process,
+    # not for whatever terminal the user happened to use during setup.
+    if not check_accessibility_trusted():
+        request_accessibility_permission()  # opens System Settings → Accessibility for this process
+        log("Accessibility permission required - System Settings opened", "WARN")
+        log("Grant access to this process, then run: wh restart", "WARN")
 
     # Check microphone permission before anything else
     mic_ok, mic_msg = check_microphone_permission()

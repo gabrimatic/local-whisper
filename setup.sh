@@ -178,6 +178,55 @@ fi
 log_ok "WhisperKit CLI ready"
 
 # ============================================================================
+# Pre-compile WhisperKit model (one-time, required before first use)
+# ============================================================================
+
+echo ""
+log_step "Pre-compiling WhisperKit model..."
+log_info "First-time setup: downloads and compiles the speech model (~600MB)."
+log_info "This can take 5-15 minutes. Only happens once."
+
+WHISPER_MODEL="whisper-large-v3-v20240930"
+WHISPER_PORT=50060
+WHISPER_PRECOMPILE_TIMEOUT=1200  # 20 minutes
+
+# Kill anything already on the port
+lsof -ti:$WHISPER_PORT 2>/dev/null | xargs kill -9 2>/dev/null || true
+sleep 1
+
+# Start whisperkit-cli - this downloads + compiles the CoreML model
+whisperkit-cli serve --model "$WHISPER_MODEL" > /tmp/whisperkit-precompile.log 2>&1 &
+WHISPER_PRECOMPILE_PID=$!
+
+WHISPER_READY=false
+for i in $(seq 1 $WHISPER_PRECOMPILE_TIMEOUT); do
+    sleep 1
+    if ! kill -0 $WHISPER_PRECOMPILE_PID 2>/dev/null; then
+        echo ""
+        log_warn "WhisperKit exited unexpectedly during compilation"
+        log_info "Check /tmp/whisperkit-precompile.log for details"
+        break
+    fi
+    if curl -sf "http://localhost:$WHISPER_PORT/" > /dev/null 2>&1; then
+        WHISPER_READY=true
+        break
+    fi
+    if [ $((i % 15)) -eq 0 ]; then
+        printf "\r  ${DIM}Compiling... ${i}s elapsed${NC}   "
+    fi
+done
+echo ""
+
+kill $WHISPER_PRECOMPILE_PID 2>/dev/null || true
+wait $WHISPER_PRECOMPILE_PID 2>/dev/null || true
+
+if $WHISPER_READY; then
+    log_ok "WhisperKit model compiled and ready (future starts will be fast)"
+else
+    log_warn "WhisperKit model compilation did not complete - first service start may be slow"
+fi
+
+# ============================================================================
 # Ollama Model Setup (if Ollama is installed)
 # ============================================================================
 
@@ -296,7 +345,92 @@ rm -f /tmp/local-whisper.lock
 sleep 1
 
 WH_BIN="$VENV_DIR/bin/wh"
-"$WH_BIN" install && log_ok "LaunchAgent installed and service started" || log_warn "LaunchAgent install failed - run 'wh install' manually"
+
+# Write LaunchAgent plist
+PLIST_PATH="$HOME/Library/LaunchAgents/com.local-whisper.plist"
+LOG_PATH="$HOME/.whisper/service.log"
+mkdir -p "$HOME/Library/LaunchAgents"
+mkdir -p "$HOME/.whisper"
+
+cat > "$PLIST_PATH" <<PLIST_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.local-whisper</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$VENV_DIR/bin/wh</string>
+        <string>_run</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>$LOG_PATH</string>
+    <key>StandardErrorPath</key>
+    <string>$LOG_PATH</string>
+</dict>
+</plist>
+PLIST_EOF
+
+log_ok "LaunchAgent plist written"
+
+# Unload stale entry if any, then load fresh
+launchctl unload "$PLIST_PATH" 2>/dev/null || true
+if launchctl load "$PLIST_PATH" 2>/dev/null; then
+    log_ok "LaunchAgent loaded (auto-start at login enabled)"
+else
+    log_warn "LaunchAgent load had a warning - continuing"
+fi
+
+# Start the service now
+launchctl start com.local-whisper 2>/dev/null || true
+sleep 2
+
+# Show status
+if pgrep -f "wh _run" > /dev/null 2>&1; then
+    _SVC_PID=$(pgrep -f "wh _run" | head -1)
+    log_ok "Service started (pid $_SVC_PID)"
+else
+    log_info "Service starting in background"
+fi
+
+# Request Accessibility permission.
+# We call AXIsProcessTrustedWithOptions from the venv Python - the same executable
+# the LaunchAgent uses. Granting here grants it for the service too.
+echo ""
+log_step "Requesting Accessibility permission..."
+AX_ALREADY_GRANTED=$("$VENV_DIR/bin/python3" -c "
+from whisper_voice.utils import check_accessibility_trusted, request_accessibility_permission
+if check_accessibility_trusted():
+    print('yes')
+else:
+    request_accessibility_permission()
+    print('no')
+" 2>/dev/null)
+
+if [ "$AX_ALREADY_GRANTED" = "yes" ]; then
+    log_ok "Already granted"
+else
+    log_warn "System Settings opened - grant Accessibility to Python/wh"
+    log_info "System Settings → Privacy & Security → Accessibility → enable the entry"
+    echo ""
+    read -r -p "  Press Enter once you have granted access... "
+    echo ""
+    # Restart service so the keyboard listener picks up the new permission
+    log_info "Restarting service with new Accessibility permission..."
+    "$WH_BIN" restart 2>/dev/null || true
+    sleep 2
+    log_ok "Service restarted"
+fi
 
 # Add wh alias to shell config if not already present
 WH_ALIAS="alias wh='$VENV_DIR/bin/wh'"
@@ -336,23 +470,10 @@ echo -e "     - Model auto-downloaded if LM Studio CLI was installed"
 echo -e "     - ${YELLOW}Developer → Start Server${NC} (required!)"
 echo -e "     ${DIM}Note: Loading a model does NOT auto-start the server${NC}"
 echo ""
-echo -e "${BOLD}Next steps:${NC}"
+echo -e "${BOLD}You're ready:${NC}"
 echo ""
-echo -e "  1. ${CYAN}Grant Accessibility permission:${NC}"
-echo -e "     System Settings → Privacy & Security → Accessibility"
-echo -e "     Add your terminal app (Terminal, iTerm2, Warp, VS Code)"
+echo -e "  Double-tap ${YELLOW}Right Option (⌥)${NC} → speak → tap to stop → text copied to clipboard"
 echo ""
-echo -e "  2. ${CYAN}Service is running via LaunchAgent.${NC}"
-echo -e "     It starts automatically at login."
-echo ""
-echo -e "  3. ${CYAN}Manage with the CLI:${NC}"
-echo -e "     ${DIM}(open a new terminal tab or run: source ~/.zshrc)${NC}"
-echo -e "     ${DIM}wh${NC}                Status + help"
-echo -e "     ${DIM}wh backend${NC}        Show/switch grammar backend"
-echo -e "     ${DIM}wh restart${NC}        Restart the service"
-echo -e "     ${DIM}wh log${NC}            Tail service log"
-echo -e "     ${DIM}wh config edit${NC}    Edit configuration"
-echo ""
-echo -e "  4. ${CYAN}Use it:${NC}"
-echo -e "     Double-tap ${YELLOW}Right Option (⌥)${NC} → speak → tap to stop → text copied"
+echo -e "  ${DIM}Service starts automatically at login.${NC}"
+echo -e "  ${DIM}Run 'wh' in a new terminal to manage the service.${NC}"
 echo ""

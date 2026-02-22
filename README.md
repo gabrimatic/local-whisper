@@ -111,7 +111,7 @@ If you want to use LM Studio as your grammar backend:
 
 ### Background Service
 
-Local Whisper runs as a background service via a LaunchAgent. It starts automatically at login after `wh install`.
+Local Whisper runs as a background service via a LaunchAgent. It starts automatically at login - `setup.sh` handles the full install.
 
 ### CLI Management
 
