@@ -9,66 +9,15 @@
 
 Double-tap a key, speak, tap to stop. Polished text lands in your clipboard. No cloud, no internet, no tracking.
 
-## What It Does
+<p align="center">
+  <img src="assets/hero.png" width="600" alt="Local Whisper recording in Notes">
+</p>
 
-1. **App runs as background service** (configure via `wh backend`)
-2. **Double-tap Right Option** to start recording
-3. **Speak** naturally (filler words like "um", "uh", "like" are OK)
-4. **Tap once** (Right Option or Space) to stop
-5. **Press Esc** to cancel recording (no save, no transcription)
-6. **WhisperKit** transcribes your speech locally
-7. **Grammar backend** fixes grammar and removes filler words
-8. **Text copied** to clipboard, paste anywhere
+---
 
-## Grammar Backends
+## Quick Start
 
-Pick a grammar correction engine:
-
-| Backend | Requirements | Description |
-|---------|--------------|-------------|
-| **Apple Intelligence** | macOS 26+, Apple Silicon, Apple Intelligence enabled | On-device, fastest, best quality |
-| **Ollama** | Ollama installed and running | Local LLM server, works on any Mac |
-| **LM Studio** | LM Studio with model loaded + server started | OpenAI-compatible, works on any Mac |
-| **None** | - | Transcription only, no grammar correction |
-
-## Privacy
-
-Everything runs on your Mac:
-
-| Component | Purpose | Location |
-|-----------|---------|----------|
-| WhisperKit | Speech-to-text | localhost:50060 |
-| Apple Intelligence | Grammar correction | On-device (built-in) |
-| Ollama | Grammar correction | localhost:11434 |
-| LM Studio | Grammar correction | localhost:1234 |
-| Config file | Your settings | ~/.whisper/config.toml |
-| Audio backup | Recovery if needed | ~/.whisper/ |
-
-**Zero data leaves your machine.**
-
-## Requirements
-
-### Apple Intelligence
-- macOS 26+ (Tahoe) with Foundation Models
-- Apple Silicon (M1/M2/M3/M4)
-- Apple Intelligence enabled in System Settings
-
-### Ollama
-- Ollama installed ([ollama.ai](https://ollama.ai))
-- A grammar model pulled (e.g., `ollama pull gemma3:4b-it-qat`)
-- Ollama server running (`ollama serve`)
-
-### LM Studio
-- LM Studio installed ([lmstudio.ai](https://lmstudio.ai))
-- A model loaded in LM Studio
-- Local server running (Developer > Start Server)
-
-### All backends
-- ~4GB disk space for models
-- Microphone access
-- Accessibility permission (for the global hotkey)
-
-## Installation
+**Apple Silicon required.** ~4GB disk space for models, microphone access, Accessibility permission.
 
 ```bash
 git clone https://github.com/gabrimatic/local-whisper.git
@@ -76,60 +25,101 @@ cd local-whisper
 ./setup.sh
 ```
 
-`setup.sh` handles everything:
-- Creates a Python virtual environment
-- Installs Homebrew (if missing), Python 3.9+, and WhisperKit CLI
-- Downloads and pre-compiles the WhisperKit model (~1.5GB, 5-15 min on first run)
-- Builds the Apple Intelligence Swift CLI helper
-- Installs all Python dependencies
-- Installs a LaunchAgent for auto-start at login
-- Requests Accessibility permission (System Settings opens automatically)
-- Sets up the `wh` shell alias
+`setup.sh` handles everything: Python venv, Homebrew, WhisperKit CLI, model download (~1.5GB), Swift CLI build, dependencies, LaunchAgent for auto-start, Accessibility permission, and the `wh` shell alias.
 
-### Installing Ollama (optional)
+| Action | Key |
+|--------|-----|
+| Start recording | Double-tap **Right Option** |
+| Stop and process | Tap **Right Option** or **Space** |
+| Cancel | Tap **Esc** |
 
-If you want Ollama as your grammar backend:
+A floating overlay shows status and duration while you record.
 
-1. Download and install from [ollama.ai](https://ollama.ai)
-2. Pull a grammar model and start the server:
+---
+
+## Grammar Backends
+
+Pick a grammar correction engine (or skip grammar entirely):
+
+| Backend | Requirements | Notes |
+|---------|-------------|-------|
+| **Apple Intelligence** | macOS 26+, Apple Silicon, Apple Intelligence enabled | Fastest, best quality |
+| **Ollama** | [Ollama](https://ollama.ai) installed and running | Works on any Mac |
+| **LM Studio** | [LM Studio](https://lmstudio.ai) with model loaded + local server started | Works on any Mac |
+| **Disabled** | (none) | Transcription only |
+
+Switch backends from the **Grammar** submenu in the menu bar (instant, no restart), with `wh backend <name>` (restarts service), or in the Settings window.
+
+<details>
+<summary><strong>Ollama setup</strong> (optional)</summary>
+
+1. Download from [ollama.ai](https://ollama.ai)
+2. Pull a model and start the server:
 
 ```bash
-# Pull a grammar model
 ollama pull gemma3:4b-it-qat
-
-# Start the server (keep running in background)
 ollama serve
 ```
 
-### Installing LM Studio (optional)
+</details>
 
-If you want LM Studio as your grammar backend:
+<details>
+<summary><strong>LM Studio setup</strong> (optional)</summary>
 
 1. Download from [lmstudio.ai](https://lmstudio.ai)
-2. Install and open LM Studio
-3. Search for and download a model (e.g., `google/gemma-3-4b`)
-4. Load the model
-5. **Start the local server** (required, easy to miss):
-   - Go to the **Developer** tab in the left sidebar
-   - Click **Start Server**
-   - Confirm you see "Server running on port 1234"
+2. Download and load a model (e.g., `google/gemma-3-4b`)
+3. **Start the local server**: Developer tab > Start Server
 
 > Loading a model does **not** start the API server automatically. Start it from the Developer tab, or the app reports "LM Studio not running".
 
+</details>
+
+---
+
+## Features
+
+- **Double-tap to record** with no accidental triggers
+- **Real-time duration** display while recording
+- **Floating overlay** showing status (recording, processing, copied)
+- **Automatic grammar correction** that removes filler words and fixes punctuation
+- **Clipboard integration** for immediate paste
+- **Settings window** with full GUI for all config options
+- **Auto-backup** of every recording and transcription
+- **Silence detection** that rejects empty recordings
+- **Hallucination filter** that blocks Whisper's common false outputs
+- **Retry function** if transcription fails
+
+### Keyboard Shortcuts
+
+Transform selected text in any app with global shortcuts:
+
+| Shortcut | Mode | What it does |
+|----------|------|-------------|
+| **Ctrl+Shift+G** | Proofread | Fix spelling, grammar, and punctuation |
+| **Ctrl+Shift+R** | Rewrite | Improve readability while preserving meaning |
+| **Ctrl+Shift+P** | Prompt Engineer | Optimize text as an LLM prompt |
+
+Select text, press the shortcut, result lands in your clipboard.
+
+### Feedback
+
+- **Sounds**: Pop on record start, Glass on success, Basso on failure
+- **Menu bar icon**: Animated waveform during recording
+- **Overlay states**: `0.0` recording · `···` processing · `Copied` done · `Failed` error
+
+<p align="center">
+  <img src="assets/overlay-recording.png" width="280" alt="Floating overlay during recording">
+</p>
+
+---
+
 ## Usage
 
-### Background Service
+### CLI
 
-Local Whisper runs as a background service via a LaunchAgent. It starts automatically at login. `setup.sh` handles the full install.
-
-### CLI Management
-
-Use `wh` to manage the service:
+`wh` manages the background service:
 
 ```bash
-# Activate venv first (or use .venv/bin/wh directly)
-source .venv/bin/activate
-
 wh                  # Status + help
 wh status           # Service status, PID, backend
 wh start            # Launch the service
@@ -143,100 +133,59 @@ wh config edit      # Open config in editor
 wh config path      # Print path to config file
 wh log              # Tail service log
 wh version          # Show version
-wh uninstall        # Completely remove Local Whisper (service, config, alias)
+wh uninstall        # Completely remove Local Whisper
 ```
 
-### Record
+### Menu Bar
 
-| Action | Result |
-|--------|--------|
-| **Double-tap Right Option** | Start recording |
-| **Tap Right Option or Space** | Stop and process |
-| **Tap Esc** | Cancel recording |
+<p align="center">
+  <img src="assets/menu-bar.png" width="380" alt="Local Whisper menu bar">
+</p>
 
-A floating overlay window shows recording status and duration.
-
-### Menu Bar Options
-
-| Menu Item | Description |
-|-----------|-------------|
+| Item | Description |
+|------|-------------|
 | Status | Current state (Ready, Recording, etc.) |
-| Grammar: [Backend] | Active backend; open submenu to switch backend in-place |
+| Grammar: [Backend] | Active backend; submenu to switch in-place |
 | Retry Last | Re-transcribe the last recording |
 | Copy Last | Copy last transcription again |
-| History | Open all saved session transcripts |
+| History | Open saved session transcripts |
 | Backups | Open backup folder |
 | Config | Open configuration file |
-| Settings... | Open the Settings window (all config options) |
-| Quit | Exit the app |
-
-### Grammar Submenu
-
-The **Grammar** menu item expands into a submenu of all available backends. The active one has a checkmark. Select a different entry to switch instantly (no restart).
+| Settings... | Full settings GUI |
+| Quit | Exit |
 
 ### Settings Window
 
-**Settings...** opens a native panel with six tabs:
+**Settings...** in the menu bar opens a native panel with six tabs:
 
-| Tab | What you can configure |
-|-----|----------------------|
+| Tab | What you configure |
+|-----|-------------------|
 | Recording | Trigger key, double-tap window, min/max duration, silence threshold |
-| Transcription | Whisper model, language, vocabulary hint prompt, timeout |
-| Grammar | Grammar correction toggle, Ollama/Apple Intelligence/LM Studio settings, keyboard shortcuts |
-| Interface | Overlay visibility, overlay opacity, sounds, notifications |
+| Transcription | Whisper model, language, vocabulary hint, timeout |
+| Grammar | Backend selection, per-backend settings, keyboard shortcuts |
+| Interface | Overlay visibility/opacity, sounds, notifications |
 | Advanced | Backup directory, WhisperKit server URLs |
-| About | Version, author, open source credits |
+| About | Version, author, credits |
 
-Changes are written to `~/.whisper/config.toml` on Save. Fields that require a restart (hotkey, model, server URLs, overlay opacity, shortcuts) show a warning and offer to restart immediately.
+<p align="center">
+  <img src="assets/settings.png" width="480" alt="Settings window">
+</p>
 
-## Features
+Changes save to `~/.whisper/config.toml`. Fields that require a restart show a warning and offer to restart immediately.
 
-### Core
-- **Backend selection**: switch from the Grammar submenu (in-place, no restart) or with `wh backend <name>` (restarts service)
-- **Settings window**: full GUI for all config options (Settings... in the menu bar)
-- **Double-tap to record**: no accidental triggers
-- **Tap to stop**: Right Option or Space for precise control
-- **Real-time duration** display while recording
-- **Floating overlay**: minimal pill showing status (recording, processing, copied)
-- **Automatic grammar correction**: removes filler words, fixes punctuation
-- **Clipboard integration**: text ready to paste immediately
-
-### Keyboard Shortcuts
-Transform selected text with global shortcuts:
-
-| Shortcut | Mode | Description |
-|----------|------|-------------|
-| **Ctrl+Shift+G** | Proofread | Fix spelling, grammar, and punctuation only |
-| **Ctrl+Shift+R** | Rewrite | Improve readability while preserving meaning |
-| **Ctrl+Shift+P** | Prompt Engineer | Optimize text as an LLM prompt |
-
-**How to use:**
-1. Select text in any app
-2. Press the shortcut
-3. Overlay shows the mode name while processing, then Done
-4. Result lands in your clipboard
-5. Paste the transformed text
-
-### Reliability
-- **Auto-backup** of every recording and transcription
-- **Retry function** if transcription fails
-- **Unlimited** recording duration
-- **Silence detection**: rejects empty recordings
-- **Hallucination filter**: blocks Whisper's common false outputs
-
-### Feedback
-- **Sound effects**: "Pop" on record start, "Glass" on success, "Basso" on failure
-- **Status icons**: Animated waveform in menu bar and overlay
-- **Overlay states**: `0.0` recording, `···` processing, `Copied` done, `Failed` error
-- **Console logging** with timestamps and colors
+---
 
 ## Configuration
 
-Settings live in `~/.whisper/config.toml`. Edit via the Settings window, the Config menu item (opens in your editor), or directly:
+Settings live in `~/.whisper/config.toml`. Edit via the Settings window, the Config menu item, `wh config edit`, or directly.
+
+<details>
+<summary><strong>Full config reference</strong></summary>
 
 ```toml
 [hotkey]
-# Key options: alt_r, alt_l, ctrl_r, ctrl_l, cmd_r, cmd_l, shift_r, shift_l, caps_lock, f1-f12
+# Key options: alt_r, alt_l, ctrl_r, ctrl_l, cmd_r, cmd_l, shift_r, shift_l,
+#              caps_lock, f1-f12
 key = "alt_r"
 double_tap_threshold = 0.4  # seconds
 
@@ -247,43 +196,41 @@ url = "http://localhost:50060/v1/audio/transcriptions"
 check_url = "http://localhost:50060/"
 timeout = 0  # no limit
 # Optional vocabulary hint for transcription (technical terms, names).
-# Leave empty unless you need to hint specific vocabulary.
 prompt = ""
 
 [grammar]
 # Backend: "apple_intelligence", "ollama", or "lm_studio"
 backend = "apple_intelligence"
-# Enable grammar correction (overridden by startup selection)
 enabled = true
 
 [ollama]
 url = "http://localhost:11434/api/generate"
 check_url = "http://localhost:11434/"
 model = "gemma3:4b-it-qat"
-keep_alive = "60m"  # keep model hot
-timeout = 0  # no limit
-max_chars = 0  # no limit
-max_predict = 0  # no limit
-num_ctx = 0  # no limit
+keep_alive = "60m"
+timeout = 0
+max_chars = 0
+max_predict = 0
+num_ctx = 0
 unload_on_exit = false
 
 [apple_intelligence]
-max_chars = 0  # no limit (for chunking long texts)
-timeout = 0  # no limit
+max_chars = 0
+timeout = 0
 
 [lm_studio]
 url = "http://localhost:1234/v1/chat/completions"
 check_url = "http://localhost:1234/"
 model = "google/gemma-3-4b"
-max_chars = 0  # no limit
-max_tokens = 0  # no limit
-timeout = 0  # no limit
+max_chars = 0
+max_tokens = 0
+timeout = 0
 
 [audio]
 sample_rate = 16000
 min_duration = 0
 max_duration = 0  # no limit
-min_rms = 0.005  # silence threshold (0.0-1.0)
+min_rms = 0.005   # silence threshold (0.0-1.0)
 
 [backup]
 directory = "~/.whisper"
@@ -295,152 +242,102 @@ sounds_enabled = true
 notifications_enabled = true
 
 [shortcuts]
-enabled = true  # Enable/disable all keyboard shortcuts
-proofread = "ctrl+shift+g"  # Fix spelling, grammar, punctuation
-rewrite = "ctrl+shift+r"  # Improve readability
-prompt_engineer = "ctrl+shift+p"  # Optimize as LLM prompt
+enabled = true
+proofread = "ctrl+shift+g"
+rewrite = "ctrl+shift+r"
+prompt_engineer = "ctrl+shift+p"
 ```
 
-## How It Works
+</details>
+
+---
+
+## Privacy
+
+Everything runs on your Mac. Zero data leaves your machine.
+
+| Component | Location |
+|-----------|----------|
+| WhisperKit | localhost:50060 |
+| Apple Intelligence | On-device |
+| Ollama | localhost:11434 |
+| LM Studio | localhost:1234 |
+| Config + backups | ~/.whisper/ |
+
+---
+
+## Architecture
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│                       Your Voice                          │
-└───────────────────────────────────────────────────────────┘
-                             │
-                             ▼
+│  Microphone → WAV (16kHz mono) → ~/.whisper/              │
+└──────────────────────────┬────────────────────────────────┘
+                           ▼
 ┌───────────────────────────────────────────────────────────┐
-│  Microphone → WAV file (16kHz mono)                       │
-│  Saved to ~/.whisper/last_recording.wav                   │
-└───────────────────────────────────────────────────────────┘
-                             │
-                             ▼
+│  WhisperKit (localhost:50060)                              │
+│  Runs on Apple Neural Engine · OpenAI-compatible API      │
+└──────────────────────────┬────────────────────────────────┘
+                           ▼
 ┌───────────────────────────────────────────────────────────┐
-│  WhisperKit (localhost:50060)                             │
-│  OpenAI-compatible API, runs on Apple Neural Engine       │
-│  Output: Raw transcription                                │
-└───────────────────────────────────────────────────────────┘
-                             │
-                             ▼
-┌───────────────────────────────────────────────────────────┐
-│  Grammar Backend (selected at startup)                    │
+│  Grammar Backend                                          │
 │                                                           │
-│  Apple Intelligence  │  Ollama       │  LM Studio         │
-│  On-device Swift     │  Local LLM    │  OpenAI-compatible │
+│  Apple Intelligence  │  Ollama        │  LM Studio        │
+│  On-device Swift     │  localhost LLM │  OpenAI-compatible │
 │                                                           │
-│  Removes: um, uh, like, you know, basically               │
-│  Fixes: grammar, punctuation, capitalization              │
-└───────────────────────────────────────────────────────────┘
-                             │
-                             ▼
+│  Removes filler words · Fixes grammar and punctuation     │
+└──────────────────────────┬────────────────────────────────┘
+                           ▼
 ┌───────────────────────────────────────────────────────────┐
-│  Clipboard (pbcopy)                                       │
-│  Ready to paste with Cmd+V                                │
+│  Clipboard (⌘V to paste)                                  │
 └───────────────────────────────────────────────────────────┘
 ```
 
-## Project Structure
+---
 
-```
-local-whisper/
-├── pyproject.toml              # Python package configuration
-├── setup.sh                    # Installation script
-├── README.md                   # This file
-├── AGENTS.md                   # Developer guidelines
-├── tests/
-│   ├── test_flow.py            # End-to-end integration test
-│   └── fixtures/               # Test audio and expected outputs
-└── src/
-    └── whisper_voice/
-        ├── __init__.py         # Package initialization
-        ├── __main__.py         # Entry point for python -m
-        ├── app.py              # Main menu bar application
-        ├── audio.py            # Audio recording
-        ├── backup.py           # File backup manager
-        ├── config.py           # Configuration management
-        ├── cli.py              # CLI service controller (wh command)
-        ├── grammar.py          # Grammar backend factory
-        ├── overlay.py          # Floating window UI
-        ├── settings.py         # Settings window (6-tab NSPanel)
-        ├── transcriber.py      # WhisperKit integration
-        ├── utils.py            # Logging and helpers
-        ├── shortcuts.py        # Global keyboard shortcuts
-        ├── key_interceptor.py  # Low-level CGEvent tap for keyboard shortcuts
-        └── backends/           # Grammar correction backends
-            ├── __init__.py     # Backend registry
-            ├── base.py         # Abstract base class
-            ├── modes.py        # Text transformation mode prompts
-            ├── ollama/         # Ollama backend
-            ├── lm_studio/      # LM Studio backend
-            └── apple_intelligence/
-                ├── backend.py  # Apple Intelligence backend
-                └── cli/        # Swift CLI helper
-```
+## WhisperKit Models
 
-Data is stored in `~/.whisper/`:
-```
-~/.whisper/
-├── config.toml           # Your settings
-├── last_recording.wav    # Audio file
-├── last_raw.txt          # Before grammar fix
-├── last_transcription.txt # Final text
-└── history/              # All session transcripts (RAW + FIXED)
-```
+Models by [Argmax](https://github.com/argmaxinc/WhisperKit), running locally on Apple Neural Engine.
 
-## Development
+| Model | Size | Notes |
+|-------|------|-------|
+| `tiny` / `tiny.en` | ~39MB | Fastest, lowest accuracy |
+| `base` / `base.en` | ~74MB | |
+| `small` / `small.en` | ~244MB | |
+| `whisper-large-v3-v20240930` | ~1.5GB | **Default**, best accuracy |
 
-```bash
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
+Set `model` in the `[whisper]` section of your config.
 
-# Install in editable mode
-pip install -e .
-
-# Build the Swift CLI (one-time, required for Apple Intelligence)
-cd src/whisper_voice/backends/apple_intelligence/cli
-swift build -c release
-cd -
-
-# Run the app
-wh
-
-# Or run as module
-python -m whisper_voice
-
-# Run tests (requires WhisperKit + grammar backend)
-python tests/test_flow.py
-```
-
-### New Grammar Backend
-
-1. Create a folder under `backends/` with `__init__.py` and `backend.py`
-2. Implement the `GrammarBackend` abstract class
-3. Add an entry to `BACKEND_REGISTRY` in `backends/__init__.py`
-4. Done. The menu, CLI, and Settings window generate from the registry automatically
+---
 
 ## Troubleshooting
 
-### "This process is not trusted"
+<details>
+<summary><strong>"This process is not trusted"</strong></summary>
 
 The `wh` Python process (the LaunchAgent) needs Accessibility permission, not your terminal app.
 
 On first run, System Settings opens automatically showing the exact process to approve. Enable it there.
 
-> **Do not grant Accessibility to Terminal, iTerm2, Warp, or any other terminal app.** The service runs as its own standalone Python process via LaunchAgent. Granting permission to a terminal has no effect.
+**Do not grant Accessibility to Terminal, iTerm2, Warp, or any other terminal app.** The service runs as its own standalone Python process via LaunchAgent. Granting permission to a terminal has no effect.
 
 If System Settings didn't open automatically:
 ```bash
 open x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility
 ```
 
-Locate the `wh` process in the list, enable it, and restart (`wh restart`).
+Locate the `wh` process, enable it, and restart: `wh restart`.
 
-### Double-tap not working
+</details>
+
+<details>
+<summary><strong>Double-tap not working</strong></summary>
 
 Tap twice quickly (within 0.4s by default). Adjust `double_tap_threshold` in the config if needed.
 
-### Apple Intelligence not working
+</details>
+
+<details>
+<summary><strong>Apple Intelligence not working</strong></summary>
 
 Verify:
 1. You're on **macOS 26** (Tahoe) or later
@@ -448,14 +345,20 @@ Verify:
 3. **Apple Intelligence** is enabled in System Settings > Apple Intelligence & Siri
 4. The Swift CLI is built (`./setup.sh` or `wh build`)
 
-### Ollama not working
+</details>
+
+<details>
+<summary><strong>Ollama not working</strong></summary>
 
 Verify:
 1. Ollama is installed ([ollama.ai](https://ollama.ai))
 2. A model is pulled: `ollama pull gemma3:4b-it-qat`
 3. Server is running: `ollama serve`
 
-### LM Studio not working
+</details>
+
+<details>
+<summary><strong>LM Studio not working</strong></summary>
 
 Verify:
 1. LM Studio is installed ([lmstudio.ai](https://lmstudio.ai))
@@ -464,75 +367,133 @@ Verify:
    - Developer tab > click "Start Server"
    - Confirm "Server running on port 1234" in LM Studio
    - Loading a model does **not** start the server automatically
-4. Server is accessible at `http://localhost:1234`
+4. Server is accessible: `curl http://localhost:1234/v1/models`
 
-Test the server:
-```bash
-curl http://localhost:1234/v1/models
-```
+</details>
 
-### "CLI not built" error
+<details>
+<summary><strong>"CLI not built" error</strong></summary>
 
-Compile the Swift CLI once:
-```bash
-wh build
-```
+Build the Swift CLI: `wh build`. `setup.sh` does this automatically.
 
-`./setup.sh` does this automatically.
+</details>
 
-### Transcription slow
+<details>
+<summary><strong>Transcription slow</strong></summary>
 
-First run downloads the Whisper model (~1.5GB for default model). Subsequent runs are faster.
+First run downloads the Whisper model (~1.5GB). Subsequent runs are faster.
 
-### Empty transcription
+</details>
+
+<details>
+<summary><strong>Empty transcription</strong></summary>
 
 - Speak clearly, close to the microphone
 - Check microphone permissions in System Settings
 - Confirm the correct input device is selected
 
-### Floating overlay not showing
+</details>
 
-Check `show_overlay = true` in your config file (`~/.whisper/config.toml`).
+<details>
+<summary><strong>Floating overlay not showing</strong></summary>
 
-## Available WhisperKit Models
+Check `show_overlay = true` in `~/.whisper/config.toml`.
 
-All models by [Argmax](https://github.com/argmaxinc/WhisperKit), running locally on Apple Neural Engine.
+</details>
 
-| Model | Size | Notes |
-|-------|------|-------|
-| `tiny` | ~39MB | Fastest, lowest accuracy |
-| `tiny.en` | ~39MB | English-only |
-| `base` | ~74MB | |
-| `base.en` | ~74MB | English-only |
-| `small` | ~244MB | |
-| `small.en` | ~244MB | English-only |
-| `whisper-large-v3-v20240930` | ~1.5GB | **Recommended** (default) |
+---
 
-Set the model name in your config: `model = "whisper-large-v3-v20240930"`.
+## Development
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e .
+
+# Build Swift CLI (one-time, for Apple Intelligence)
+wh build
+
+# Run
+wh
+# or: python -m whisper_voice
+
+# Test (requires WhisperKit + grammar backend)
+python tests/test_flow.py
+```
+
+### Adding a Backend
+
+1. Create a folder under `backends/` with `__init__.py` and `backend.py`
+2. Implement the `GrammarBackend` abstract class
+3. Add an entry to `BACKEND_REGISTRY` in `backends/__init__.py`
+4. Menu, CLI, and Settings auto-generate from the registry
+
+<details>
+<summary><strong>Project structure</strong></summary>
+
+```
+local-whisper/
+├── pyproject.toml
+├── setup.sh
+├── tests/
+│   ├── test_flow.py
+│   └── fixtures/
+└── src/whisper_voice/
+    ├── app.py              # Menu bar application
+    ├── cli.py              # CLI controller (wh)
+    ├── audio.py            # Audio recording
+    ├── backup.py           # File backup
+    ├── config.py           # Config management
+    ├── grammar.py          # Backend factory
+    ├── overlay.py          # Floating UI
+    ├── settings.py         # Settings window (6-tab NSPanel)
+    ├── transcriber.py      # WhisperKit client
+    ├── utils.py            # Helpers
+    ├── shortcuts.py        # Keyboard shortcuts
+    ├── key_interceptor.py  # CGEvent tap
+    └── backends/
+        ├── base.py         # Abstract base
+        ├── modes.py        # Transformation modes
+        ├── ollama/
+        ├── lm_studio/
+        └── apple_intelligence/
+            ├── backend.py
+            └── cli/        # Swift CLI helper
+```
+
+Data stored in `~/.whisper/`:
+```
+~/.whisper/
+├── config.toml             # Settings
+├── last_recording.wav      # Audio file
+├── last_raw.txt            # Before grammar fix
+├── last_transcription.txt  # Final text
+└── history/                # All session transcripts
+```
+
+</details>
+
+---
 
 ## Credits
 
-| Project | Role |
-|---------|------|
-| [WhisperKit](https://github.com/argmaxinc/WhisperKit) by [Argmax](https://www.argmaxinc.com) | On-device speech recognition |
-| [Apple Intelligence](https://www.apple.com/apple-intelligence/) | On-device language models |
-| [Ollama](https://ollama.ai) | Local LLM server |
-| [rumps](https://github.com/jaredks/rumps) | macOS menu bar apps in Python |
-| [LM Studio](https://lmstudio.ai) | Local LLM interface |
+[WhisperKit](https://github.com/argmaxinc/WhisperKit) by [Argmax](https://www.argmaxinc.com) · [Apple Intelligence](https://www.apple.com/apple-intelligence/) · [Ollama](https://ollama.ai) · [rumps](https://github.com/jaredks/rumps) · [LM Studio](https://lmstudio.ai)
 
-## Legal Notices
+<details>
+<summary><strong>Legal notices</strong></summary>
 
 ### Trademarks
 
 "Whisper" is a trademark of OpenAI. "Apple Intelligence" is a trademark of Apple Inc. "WhisperKit" is a trademark of Argmax, Inc. "Ollama" and "LM Studio" are trademarks of their respective owners.
 
-This project is not affiliated with, endorsed by, or sponsored by OpenAI, Apple, Argmax, or any other trademark holder. All trademark names are used here solely to describe compatibility with their respective technologies.
+This project is not affiliated with, endorsed by, or sponsored by OpenAI, Apple, Argmax, or any other trademark holder. All trademark names are used solely to describe compatibility with their respective technologies.
 
 ### Third-Party Licenses
 
-This project depends on [pynput](https://github.com/moses-palmer/pynput), which is licensed under LGPL-3.0. When installed via pip (the default), pynput is dynamically linked and fully compatible with this project's MIT license. If you redistribute the py2app bundle (`scripts/build_app.sh`), pynput is statically bundled; LGPL-3.0 requires that you allow end users to re-link against their own version of pynput. The complete source of this project (including build scripts) satisfies this requirement.
+This project depends on [pynput](https://github.com/moses-palmer/pynput), licensed under LGPL-3.0. When installed via pip (the default), pynput is dynamically linked and fully compatible with this project's MIT license. If you redistribute the py2app bundle (`scripts/build_app.sh`), pynput is statically bundled; LGPL-3.0 requires that you allow end users to re-link against their own version of pynput. The complete source of this project (including build scripts) satisfies this requirement.
 
 All other dependencies use MIT, BSD, or Apache 2.0 licenses. See each package for details.
+
+</details>
 
 ## License
 
