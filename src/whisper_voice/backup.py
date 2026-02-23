@@ -6,6 +6,7 @@ Backup manager for Local Whisper.
 Handles persistence of audio recordings and transcriptions.
 """
 
+import glob
 import os
 import wave
 import threading
@@ -62,6 +63,12 @@ class Backup:
     def save_audio(self, data: np.ndarray) -> Path:
         """Save audio data to WAV file."""
         config = get_config()
+        # Clean up stale segment files from previous long recordings
+        for seg_file in glob.glob(os.path.join(self._dir, "last_recording_[0-9]*.wav")):
+            try:
+                os.remove(seg_file)
+            except OSError:
+                pass
         with self._lock:
             try:
                 safe = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
@@ -113,6 +120,24 @@ class Backup:
                     path.write_text(payload, encoding='utf-8')
             except Exception as e:
                 log(f"Save history failed: {e}", "ERR")
+
+    def save_audio_segment(self, data: np.ndarray, index: int) -> Path:
+        """Save a segment of a long recording. Returns path."""
+        config = get_config()
+        path = self._dir / f"last_recording_{index}.wav"
+        with self._lock:
+            try:
+                safe = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+                audio = (safe * 32767).astype(np.int16)
+                with wave.open(str(path), 'wb') as w:
+                    w.setnchannels(1)
+                    w.setsampwidth(2)
+                    w.setframerate(config.audio.sample_rate)
+                    w.writeframes(audio.tobytes())
+                return path
+            except Exception as e:
+                log(f"Save segment failed: {e}", "ERR")
+                return None
 
     def get_audio(self) -> Path:
         """Get path to last audio file, or None if missing."""

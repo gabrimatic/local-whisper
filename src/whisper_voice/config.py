@@ -61,6 +61,24 @@ timeout = 0
 # Leave empty unless you need to hint specific vocabulary.
 prompt = ""
 
+# Decoding temperature (0.0 = greedy/deterministic, higher = more random)
+temperature = 0.0
+
+# Compression ratio threshold for fallback (higher = more tolerant of repetition)
+compression_ratio_threshold = 2.4
+
+# Probability threshold below which a segment is considered silence
+no_speech_threshold = 0.6
+
+# Log probability threshold for fallback (lower = stricter)
+logprob_threshold = -1.0
+
+# Number of temperature fallback steps before giving up
+temperature_fallback_count = 5
+
+# Prompt preset for transcription context ("none", "technical", "dictation", "custom")
+prompt_preset = "none"
+
 [grammar]
 # Grammar correction backend: "apple_intelligence", "ollama", or "lm_studio"
 backend = "apple_intelligence"
@@ -131,6 +149,18 @@ max_duration = 0
 # Minimum RMS level to consider as speech (0.0-1.0)
 min_rms = 0.005
 
+# Enable voice activity detection to trim silence
+vad_enabled = true
+
+# Apply noise reduction before transcription
+noise_reduction = true
+
+# Normalize audio levels before transcription
+normalize_audio = true
+
+# Seconds of audio to buffer before the hotkey press (captures lead-in)
+pre_buffer = 0.2
+
 [ui]
 # Show floating overlay window during recording
 show_overlay = true
@@ -179,6 +209,12 @@ class WhisperConfig:
     language: str = "auto"
     timeout: int = 0
     prompt: str = DEFAULT_WHISPER_PROMPT
+    temperature: float = 0.0
+    compression_ratio_threshold: float = 2.4
+    no_speech_threshold: float = 0.6
+    logprob_threshold: float = -1.0
+    temperature_fallback_count: int = 5
+    prompt_preset: str = "none"
 
 
 @dataclass
@@ -226,6 +262,10 @@ class AudioConfig:
     min_duration: float = 0
     max_duration: int = 0
     min_rms: float = 0.005
+    vad_enabled: bool = True
+    noise_reduction: bool = True
+    normalize_audio: bool = True
+    pre_buffer: float = 0.2
 
 
 @dataclass
@@ -307,6 +347,12 @@ def load_config() -> Config:
             language=data['whisper'].get('language', config.whisper.language),
             timeout=data['whisper'].get('timeout', config.whisper.timeout),
             prompt=data['whisper'].get('prompt', config.whisper.prompt),
+            temperature=data['whisper'].get('temperature', config.whisper.temperature),
+            compression_ratio_threshold=data['whisper'].get('compression_ratio_threshold', config.whisper.compression_ratio_threshold),
+            no_speech_threshold=data['whisper'].get('no_speech_threshold', config.whisper.no_speech_threshold),
+            logprob_threshold=data['whisper'].get('logprob_threshold', config.whisper.logprob_threshold),
+            temperature_fallback_count=data['whisper'].get('temperature_fallback_count', config.whisper.temperature_fallback_count),
+            prompt_preset=data['whisper'].get('prompt_preset', config.whisper.prompt_preset),
         )
 
     # Grammar settings
@@ -355,6 +401,10 @@ def load_config() -> Config:
             min_duration=data['audio'].get('min_duration', config.audio.min_duration),
             max_duration=data['audio'].get('max_duration', config.audio.max_duration),
             min_rms=data['audio'].get('min_rms', config.audio.min_rms),
+            vad_enabled=data['audio'].get('vad_enabled', config.audio.vad_enabled),
+            noise_reduction=data['audio'].get('noise_reduction', config.audio.noise_reduction),
+            normalize_audio=data['audio'].get('normalize_audio', config.audio.normalize_audio),
+            pre_buffer=data['audio'].get('pre_buffer', config.audio.pre_buffer),
         )
 
     # UI settings
@@ -468,6 +518,34 @@ def _validate_config(config: Config):
     if not 0.0 <= config.audio.min_rms <= 1.0:
         print("Config warning: min_rms must be between 0.0 and 1.0, using 0.005", file=sys.stderr)
         config.audio.min_rms = 0.005
+
+    # pre_buffer: clamp to 0.0-1.0
+    if config.audio.pre_buffer < 0.0:
+        config.audio.pre_buffer = 0.0
+    elif config.audio.pre_buffer > 1.0:
+        config.audio.pre_buffer = 1.0
+
+    # Whisper decoding parameters
+    if not 0.0 <= config.whisper.temperature <= 1.0:
+        print("Config warning: whisper temperature must be between 0.0 and 1.0, using 0.0", file=sys.stderr)
+        config.whisper.temperature = 0.0
+
+    if config.whisper.compression_ratio_threshold <= 0:
+        print("Config warning: compression_ratio_threshold must be positive, using 2.4", file=sys.stderr)
+        config.whisper.compression_ratio_threshold = 2.4
+
+    if not 0.0 <= config.whisper.no_speech_threshold <= 1.0:
+        print("Config warning: no_speech_threshold must be between 0.0 and 1.0, using 0.6", file=sys.stderr)
+        config.whisper.no_speech_threshold = 0.6
+
+    if config.whisper.temperature_fallback_count < 0:
+        print("Config warning: temperature_fallback_count cannot be negative, using 5", file=sys.stderr)
+        config.whisper.temperature_fallback_count = 5
+
+    _valid_prompt_presets = ("none", "technical", "dictation", "custom")
+    if config.whisper.prompt_preset not in _valid_prompt_presets:
+        print(f"Config warning: invalid prompt_preset '{config.whisper.prompt_preset}', using 'none'", file=sys.stderr)
+        config.whisper.prompt_preset = "none"
 
     # UI validation
     if not 0.0 <= config.ui.overlay_opacity <= 1.0:

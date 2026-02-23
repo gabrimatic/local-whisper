@@ -6,6 +6,7 @@ Floating overlay window for Local Whisper.
 Shows recording status in a transparent window at center-bottom of screen.
 """
 
+import math
 import threading
 import queue
 from typing import Optional, Callable
@@ -79,9 +80,11 @@ class RecordingOverlay:
         self._duration_field = None
         self._app_field = None
         self._wave_view = None
+        self._level_bar = None
         self._font = None
         self._lock = threading.Lock()
         self._visible = False
+        self._audio_level = 0.0
 
     def _create_window(self):
         """Create the overlay window on the main thread."""
@@ -160,6 +163,25 @@ class RecordingOverlay:
         self._duration_field.setAlignment_(_AppKit.NSTextAlignmentLeft)
         content.addSubview_(self._duration_field)
 
+        # Audio level bar — thin strip at the bottom of the pill
+        bar_margin = 14
+        bar_height = 3
+        bar_y = 4
+        bar_max_width = window_width - bar_margin * 2
+        self._level_bar = _AppKit.NSView.alloc().initWithFrame_(
+            _Foundation.NSMakeRect(bar_margin, bar_y, 0, bar_height)
+        )
+        self._level_bar.setWantsLayer_(True)
+        self._level_bar.layer().setCornerRadius_(bar_height / 2)
+        self._level_bar.layer().setBackgroundColor_(
+            _Quartz.CGColorCreateGenericRGB(0.4, 0.9, 0.5, 0.0)
+        )
+        content.addSubview_(self._level_bar)
+        self._level_bar_margin = bar_margin
+        self._level_bar_max_width = bar_max_width
+        self._level_bar_y = bar_y
+        self._level_bar_height = bar_height
+
         self._text_field = None
         self._app_field = None
         self._window.setContentView_(content)
@@ -200,6 +222,13 @@ class RecordingOverlay:
                     self._duration_field.setTextColor_(
                         _AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(1.0, 0.35, 0.35, 1.0)
                     )
+                if self._level_bar:
+                    self._audio_level = 0.0
+                    self._level_bar.setFrame_(
+                        _Foundation.NSMakeRect(
+                            self._level_bar_margin, self._level_bar_y, 0, self._level_bar_height
+                        )
+                    )
                 if self._wave_view:
                     self._wave_view.setImage_(
                         _AppKit.NSImage.alloc().initWithContentsOfFile_(OVERLAY_WAVE_FRAMES[0])
@@ -219,7 +248,7 @@ class RecordingOverlay:
 
         _perform_on_main_thread(_hide)
 
-    def update_duration(self, seconds: float, frame: str = ""):
+    def update_duration(self, seconds: float, frame: str = "", level: float = 0.0):
         """Update the duration display."""
         config = get_config()
         if not config.ui.show_overlay:
@@ -228,6 +257,7 @@ class RecordingOverlay:
         with self._lock:
             if not self._visible or self._duration_field is None:
                 return
+            self._audio_level = level
 
         _import_macos()
 
@@ -241,6 +271,24 @@ class RecordingOverlay:
                 )
             if self._wave_view and frame:
                 self._wave_view.setImage_(_AppKit.NSImage.alloc().initWithContentsOfFile_(frame))
+            if self._level_bar:
+                lvl = max(0.0, min(1.0, self._audio_level))
+                bar_width = math.sqrt(lvl) * self._level_bar_max_width
+                self._level_bar.setFrame_(
+                    _Foundation.NSMakeRect(
+                        self._level_bar_margin, self._level_bar_y,
+                        bar_width, self._level_bar_height
+                    )
+                )
+                if lvl < 0.005:
+                    r, g, b, a = 0.5, 0.5, 0.5, 0.5
+                elif lvl < 0.05:
+                    r, g, b, a = 0.4, 0.9, 0.5, 0.85
+                else:
+                    r, g, b, a = 1.0, 0.65, 0.2, 0.9
+                self._level_bar.layer().setBackgroundColor_(
+                    _Quartz.CGColorCreateGenericRGB(r, g, b, a)
+                )
 
         _perform_on_main_thread(_update, wait=True)
 
@@ -288,6 +336,12 @@ class RecordingOverlay:
                 if self._duration_field is None:
                     return
 
+                if self._level_bar:
+                    self._level_bar.setFrame_(
+                        _Foundation.NSMakeRect(
+                            self._level_bar_margin, self._level_bar_y, 0, self._level_bar_height
+                        )
+                    )
                 if status == "processing":
                     text = "···"
                     self._duration_field.setStringValue_(text)

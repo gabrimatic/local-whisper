@@ -79,14 +79,18 @@ ollama serve
 ## Features
 
 - **Double-tap to record** with no accidental triggers
+- **Pre-recording buffer** captures 200ms of audio before the hotkey fires, so the first syllable is never clipped
+- **Audio pre-processing pipeline**: VAD-based silence trimming, spectral noise reduction, and RMS normalization before transcription
+- **Long recording support**: recordings over 28s are split at natural speech pauses and transcribed in segments
+- **Real-time audio level indicator** in the overlay while recording (color-coded by level)
 - **Real-time duration** display while recording
 - **Floating overlay** showing status (recording, processing, copied)
 - **Automatic grammar correction** that removes filler words and fixes punctuation
 - **Clipboard integration** for immediate paste
 - **Settings window** with full GUI for all config options
 - **Auto-backup** of every recording and transcription
-- **Silence detection** that rejects empty recordings
 - **Hallucination filter** that blocks Whisper's common false outputs
+- **Vocabulary prompt presets** for technical or dictation use cases
 - **Retry function** if transcription fails
 
 ### Keyboard Shortcuts
@@ -160,8 +164,8 @@ wh uninstall        # Completely remove Local Whisper
 
 | Tab | What you configure |
 |-----|-------------------|
-| Recording | Trigger key, double-tap window, min/max duration, silence threshold |
-| Transcription | Whisper model, language, vocabulary hint, timeout |
+| Recording | Trigger key, double-tap window, min/max duration, silence threshold, VAD, noise reduction, pre-buffer |
+| Transcription | Whisper model, language, vocabulary preset, decoding quality thresholds, timeout |
 | Grammar | Backend selection, per-backend settings, keyboard shortcuts |
 | Interface | Overlay visibility/opacity, sounds, notifications |
 | Advanced | Backup directory, WhisperKit server URLs |
@@ -195,7 +199,15 @@ language = "auto"  # e.g. "en", or "auto" for detection
 url = "http://localhost:50060/v1/audio/transcriptions"
 check_url = "http://localhost:50060/"
 timeout = 0  # no limit
-# Optional vocabulary hint for transcription (technical terms, names).
+# Decoding quality
+temperature = 0.0                   # 0.0 = greedy/deterministic
+compression_ratio_threshold = 2.4   # drop repetitive segments above this
+no_speech_threshold = 0.6           # drop silent segments above this
+logprob_threshold = -1.0            # fallback trigger threshold
+temperature_fallback_count = 5      # fallback steps before giving up
+# Vocabulary prompt preset: "none", "technical", "dictation", or "custom"
+prompt_preset = "none"
+# Used only when prompt_preset = "custom"
 prompt = ""
 
 [grammar]
@@ -229,8 +241,12 @@ timeout = 0
 [audio]
 sample_rate = 16000
 min_duration = 0
-max_duration = 0  # no limit
-min_rms = 0.005   # silence threshold (0.0-1.0)
+max_duration = 0    # no limit
+min_rms = 0.005     # silence threshold (0.0-1.0)
+vad_enabled = true  # VAD-based silence trimming
+noise_reduction = true
+normalize_audio = true
+pre_buffer = 0.2    # seconds of audio captured before hotkey (0 to disable)
 
 [backup]
 directory = "~/.whisper"
@@ -239,7 +255,7 @@ directory = "~/.whisper"
 show_overlay = true
 overlay_opacity = 0.92
 sounds_enabled = true
-notifications_enabled = true
+notifications_enabled = false
 
 [shortcuts]
 enabled = true
@@ -270,12 +286,18 @@ Everything runs on your Mac. Zero data leaves your machine.
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│  Microphone → WAV (16kHz mono) → ~/.whisper/              │
+│  Microphone → pre-buffer (200ms ring) + live capture      │
+└──────────────────────────┬────────────────────────────────┘
+                           ▼
+┌───────────────────────────────────────────────────────────┐
+│  Audio Pre-processing Pipeline                            │
+│  VAD (Silero) → Silence trim → Noise reduction → Normalize│
+│  Long recordings split at speech gaps (28s max per chunk) │
 └──────────────────────────┬────────────────────────────────┘
                            ▼
 ┌───────────────────────────────────────────────────────────┐
 │  WhisperKit (localhost:50060)                              │
-│  Runs on Apple Neural Engine · OpenAI-compatible API      │
+│  Runs on Apple Neural Engine · verbose_json + filtering   │
 └──────────────────────────┬────────────────────────────────┘
                            ▼
 ┌───────────────────────────────────────────────────────────┐
@@ -288,7 +310,7 @@ Everything runs on your Mac. Zero data leaves your machine.
 └──────────────────────────┬────────────────────────────────┘
                            ▼
 ┌───────────────────────────────────────────────────────────┐
-│  Clipboard (⌘V to paste)                                  │
+│  Clipboard (⌘V to paste) · Saved to ~/.whisper/           │
 └───────────────────────────────────────────────────────────┘
 ```
 
@@ -440,13 +462,14 @@ local-whisper/
 └── src/whisper_voice/
     ├── app.py              # Menu bar application
     ├── cli.py              # CLI controller (wh)
-    ├── audio.py            # Audio recording
+    ├── audio.py            # Audio recording + pre-buffer
+    ├── audio_processor.py  # VAD, noise reduction, normalization
     ├── backup.py           # File backup
     ├── config.py           # Config management
     ├── grammar.py          # Backend factory
-    ├── overlay.py          # Floating UI
+    ├── overlay.py          # Floating UI + audio level indicator
     ├── settings.py         # Settings window (6-tab NSPanel)
-    ├── transcriber.py      # WhisperKit client
+    ├── transcriber.py      # WhisperKit client + quality tuning
     ├── utils.py            # Helpers
     ├── shortcuts.py        # Keyboard shortcuts
     ├── key_interceptor.py  # CGEvent tap

@@ -36,7 +36,7 @@ from pynput import keyboard
 
 from .config import get_config, CONFIG_FILE
 from .utils import (
-    log, play_sound, is_silent, is_hallucination, hide_dock_icon, truncate,
+    log, play_sound, is_hallucination, hide_dock_icon, truncate,
     strip_hallucination_lines, check_microphone_permission,
     check_accessibility_trusted, request_accessibility_permission, send_notification,
     ICON_IDLE, ICON_RECORDING, ICON_PROCESSING, ICON_SUCCESS, ICON_ERROR,
@@ -47,6 +47,7 @@ from .utils import (
     C_RESET, C_BOLD, C_DIM, C_CYAN, C_GREEN, C_YELLOW
 )
 from .audio import Recorder
+from .audio_processor import AudioProcessor
 from .backup import Backup
 from .transcriber import Whisper
 from .grammar import Grammar
@@ -96,6 +97,7 @@ class App(rumps.App):
         self.grammar = Grammar() if self.config.grammar.enabled else None
         self.recorder = Recorder()
         self.overlay = get_overlay()
+        self.audio_processor = AudioProcessor(self.config)
 
         # Grammar submenu state
         self._grammar_lock = threading.Lock()
@@ -344,6 +346,7 @@ class App(rumps.App):
             self._exit_app()
             return
         self._ready = True
+        self.recorder.start_monitoring()
 
         # Check grammar backend - required if enabled
         if self.config.grammar.enabled and self.grammar is not None:
@@ -569,16 +572,6 @@ class App(rumps.App):
                 self._reset_with_overlay(ICON_RESET_ERROR)
                 return
 
-            if is_silent(audio):
-                log("No speech detected (silent)", "WARN")
-                self._set(ICON_IDLE, "Ready")
-                self._set_icon(ICON_IMAGE)
-                self._stop_animation()
-                self.overlay.set_status("error")
-                play_sound("Basso")
-                self._reset_with_overlay(ICON_RESET_ERROR)
-                return
-
             log(f"Recorded {dur:.1f}s", "OK")
             self._busy = True
 
@@ -601,7 +594,8 @@ class App(rumps.App):
             def _set_title():
                 self.title = ICON_RECORDING
             _perform_on_main_thread(_set_title)
-            self.overlay.update_duration(dur, wave)
+            level = self.recorder.rms_level
+            self.overlay.update_duration(dur, wave, level)
             local_index += 1
             # Warn about very long recordings (memory usage)
             if dur > 1800 and not warned_long:  # 30 minutes
@@ -626,20 +620,61 @@ class App(rumps.App):
         self._frame_index = 0
         self._start_animation("processing")
         try:
-            # 1. Backup audio
-            self._set(ICON_PROCESSING, "Saving...")
-            path = self.backup.save_audio(audio)
-            if not path:
-                self._show_error("Save failed", "Audio save failed")
-                return
-            log("Audio backed up", "OK")
+            config = self.config
 
-            # 2. Transcribe and validate
-            raw_text, err = self._transcribe_and_validate(path)
-            if err:
-                self._show_error(err, f"Transcription failed: {err}")
-                send_notification("Transcription Failed", err)
+            # 1. Audio pre-processing (VAD, noise reduction, normalization)
+            self._set(ICON_PROCESSING, "Processing...")
+            processed = self.audio_processor.process(audio, config.audio.sample_rate)
+            if not processed.has_speech:
+                log("No speech detected (VAD)", "WARN")
+                self._show_error("No speech", "No speech detected in recording")
                 return
+            audio = processed.audio
+
+            # 2. Long recording segmentation
+            segments = self.audio_processor.segment_long_audio(audio, config.audio.sample_rate)
+
+            if len(segments) == 1:
+                # Single segment - standard flow
+                self._set(ICON_PROCESSING, "Saving...")
+                path = self.backup.save_audio(segments[0])
+                if not path:
+                    self._show_error("Save failed", "Audio save failed")
+                    return
+                log("Audio backed up", "OK")
+
+                raw_text, err = self._transcribe_and_validate(path)
+                if err:
+                    self._show_error(err, f"Transcription failed: {err}")
+                    send_notification("Transcription Failed", err)
+                    return
+            else:
+                # Multi-segment: transcribe each and join
+                log(f"Long recording: {len(segments)} segments", "INFO")
+                all_text = []
+                for i, seg in enumerate(segments):
+                    self._set(ICON_PROCESSING, f"Transcribing {i + 1}/{len(segments)}...")
+                    path = self.backup.save_audio_segment(seg, i)
+                    if not path:
+                        log(f"Segment {i} save failed, skipping", "WARN")
+                        continue
+                    text, seg_err = self.whisper.transcribe(path)
+                    if text:
+                        cleaned, stripped = strip_hallucination_lines(text)
+                        if stripped:
+                            log(f"Segment {i}: stripped hallucination", "WARN")
+                        if cleaned and not is_hallucination(cleaned):
+                            all_text.append(cleaned)
+                raw_text = " ".join(all_text) if all_text else None
+                err = "No speech" if not raw_text else None
+
+                if err:
+                    self._show_error(err, f"Transcription failed: {err}")
+                    send_notification("Transcription Failed", err)
+                    return
+
+                # Also save the first segment as the main audio backup
+                self.backup.save_audio(segments[0])
 
             self.backup.save_raw(raw_text)
             log(f"Raw: {truncate(raw_text, LOG_TRUNCATE)}", "OK")
@@ -666,6 +701,7 @@ class App(rumps.App):
         finally:
             with self._state_lock:
                 self._busy = False
+            self.recorder.start_monitoring()
 
     def _reset(self, seconds: float):
         """Reset icon to idle after delay."""
@@ -845,6 +881,9 @@ class App(rumps.App):
     def _cleanup(self):
         """Clean up all resources before exit."""
         log("Shutting down...", "INFO")
+
+        # Stop monitor stream before anything else
+        self.recorder.stop_monitoring()
 
         # Cancel any running timer
         if self._max_timer:

@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from .config import get_config, DEFAULT_WHISPER_PROMPT
+from .config import get_config
 from .utils import log, TRANSCRIBE_CHECK_TIMEOUT
 
 # Startup timeout for WhisperKit server
@@ -69,7 +69,16 @@ class Whisper:
         log("Starting WhisperKit server...")
         try:
             self._process = subprocess.Popen(
-                ['whisperkit-cli', 'serve', '--model', config.whisper.model],
+                [
+                    'whisperkit-cli', 'serve',
+                    '--model', config.whisper.model,
+                    '--compression-ratio-threshold', str(config.whisper.compression_ratio_threshold),
+                    '--no-speech-threshold', str(config.whisper.no_speech_threshold),
+                    '--logprob-threshold', str(config.whisper.logprob_threshold),
+                    '--first-token-log-prob-threshold', '-1.5',
+                    '--temperature-increment-on-fallback', '0.2',
+                    '--temperature-fallback-count', str(config.whisper.temperature_fallback_count),
+                ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True
@@ -108,15 +117,20 @@ class Whisper:
                 data = {'model': config.whisper.model}
                 if config.whisper.language and config.whisper.language != "auto":
                     data['language'] = config.whisper.language
-                # Add prompt for vocabulary/style guidance if configured
-                prompt = config.whisper.prompt
-                if prompt and prompt.strip():
-                    lang = (config.whisper.language or "").strip().lower()
-                    if prompt == DEFAULT_WHISPER_PROMPT:
-                        if lang.startswith("en"):
-                            data['prompt'] = prompt
-                    else:
-                        data['prompt'] = prompt
+
+                # Use prompt from config (settings writes resolved text on save)
+                preset = config.whisper.prompt_preset
+                if preset != "none":
+                    resolved_prompt = config.whisper.prompt
+                    if resolved_prompt and resolved_prompt.strip():
+                        data['prompt'] = resolved_prompt
+
+                # Temperature for decoding
+                data['temperature'] = str(config.whisper.temperature)
+
+                # Request verbose JSON for segment-level filtering
+                data['response_format'] = 'verbose_json'
+
                 # timeout=0 means unlimited read, but keep reasonable connect timeout
                 if config.whisper.timeout > 0:
                     timeout = config.whisper.timeout
@@ -135,7 +149,39 @@ class Whisper:
                         )
                         self._last_request_time = time.time()
                         r.raise_for_status()
-                        text = r.json().get('text', '').strip()
+
+                        try:
+                            body = r.json()
+                        except Exception:
+                            body = {}
+
+                        # Try verbose_json segment filtering first
+                        segments = body.get('segments')
+                        if segments is not None:
+                            kept = []
+                            for seg in segments:
+                                no_speech_prob = seg.get('no_speech_prob', 0.0)
+                                compression_ratio = seg.get('compression_ratio', 1.0)
+                                if no_speech_prob > config.whisper.no_speech_threshold:
+                                    log(f"Dropping segment (no_speech_prob={no_speech_prob:.2f})")
+                                    continue
+                                if compression_ratio > config.whisper.compression_ratio_threshold:
+                                    log(f"Dropping segment (compression_ratio={compression_ratio:.2f})")
+                                    continue
+                                seg_text = seg.get('text', '').strip()
+                                if seg_text:
+                                    kept.append(seg_text)
+                            if kept:
+                                text = ' '.join(kept).strip()
+                                return (text, None) if text else (None, "Empty")
+                            elif segments:
+                                # All segments were filtered out
+                                log("All segments filtered (no speech / repetition)")
+                                return None, "Empty"
+                            # segments list was empty, fall through to plain text
+
+                        # Fall back to plain text field
+                        text = body.get('text', '').strip()
                         return (text, None) if text else (None, "Empty")
                     except requests.exceptions.ConnectionError as e:
                         if attempt == 0:
@@ -175,7 +221,6 @@ class Whisper:
         # Always use pkill to ensure any whisperkit-cli process is killed
         # (covers cases where server was already running before app started)
         try:
-            import subprocess
             result = subprocess.run(['pkill', '-9', '-f', 'whisperkit-cli serve'],
                                    timeout=2, capture_output=True)
             if result.returncode == 0:

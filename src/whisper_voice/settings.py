@@ -25,7 +25,7 @@ _callback_queue = queue.Queue(maxsize=100)
 
 # Layout constants (based on known tab content dimensions — never queried at runtime)
 CONTENT_W = 516    # tab content width
-CONTENT_H = 430    # tab content height
+CONTENT_H = 560    # tab content height
 GRAMMAR_DOC_H = 880  # grammar scrollable doc height
 BAR_H = 52         # bottom button bar height
 LEFT_MARGIN = 20
@@ -76,11 +76,39 @@ _RESTART_REQUIRED_FIELDS = {
     ("whisper", "model"),
     ("whisper", "url"),
     ("whisper", "check_url"),
+    ("whisper", "temperature"),
+    ("whisper", "compression_ratio_threshold"),
+    ("whisper", "no_speech_threshold"),
+    ("whisper", "logprob_threshold"),
+    ("whisper", "temperature_fallback_count"),
+    ("whisper", "prompt_preset"),
     ("ui", "overlay_opacity"),
     ("shortcuts", "enabled"),
     ("shortcuts", "proofread"),
     ("shortcuts", "rewrite"),
     ("shortcuts", "prompt_engineer"),
+}
+
+# Prompt preset options: (display_label, config_value)
+_PROMPT_PRESET_OPTIONS = [
+    ("None", "none"),
+    ("Technical", "technical"),
+    ("Dictation", "dictation"),
+    ("Custom", "custom"),
+]
+
+# Preset prompt texts keyed by config value — must match what is sent to WhisperKit
+_PROMPT_PRESET_TEXTS = {
+    "none": "",
+    "technical": (
+        "function, variable, API, JSON, HTTP, async, await, "
+        "TypeScript, Python, React, Node.js, Git, Docker, Kubernetes"
+    ),
+    "dictation": (
+        "Hello, I'd like to dictate a message. "
+        "Please transcribe the following text with proper punctuation and formatting."
+    ),
+    "custom": "",
 }
 
 
@@ -171,7 +199,7 @@ class SettingsWindow:
     """Floating settings panel covering all configurable options."""
 
     WIDTH = 560
-    HEIGHT = 520
+    HEIGHT = 650
 
     def __init__(self):
         self._panel = None
@@ -188,12 +216,22 @@ class SettingsWindow:
         self._max_duration_field = None
         self._min_rms_slider = None
         self._min_rms_label = None
+        self._vad_enabled_checkbox = None
+        self._noise_reduction_checkbox = None
+        self._normalize_audio_checkbox = None
+        self._pre_buffer_field = None
 
         # Transcription tab
         self._whisper_model_field = None
         self._whisper_language_popup = None
         self._whisper_prompt_view = None
         self._whisper_timeout_field = None
+        self._whisper_temperature_field = None
+        self._whisper_compression_ratio_field = None
+        self._whisper_no_speech_threshold_field = None
+        self._whisper_logprob_threshold_field = None
+        self._whisper_temperature_fallback_field = None
+        self._whisper_prompt_preset_popup = None
 
         # Grammar tab
         self._grammar_enabled_checkbox = None
@@ -565,6 +603,29 @@ class SettingsWindow:
         )
 
         self._add_note(view, y, "0 = disabled / unlimited for duration fields")
+        y += 20 + SECTION_GAP
+
+        # Audio Processing section
+        y = self._add_section_header(view, y, "Audio Processing")
+
+        self._vad_enabled_checkbox, y = self._make_checkbox_row(
+            view, y, "Enable VAD", config.audio.vad_enabled
+        )
+
+        self._noise_reduction_checkbox, y = self._make_checkbox_row(
+            view, y, "Noise reduction", config.audio.noise_reduction
+        )
+
+        self._normalize_audio_checkbox, y = self._make_checkbox_row(
+            view, y, "Normalize audio", config.audio.normalize_audio
+        )
+
+        self._pre_buffer_field = self._make_text_field_for_row(
+            config.audio.pre_buffer,
+            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+        )
+        y = self._add_row(view, y, "Pre-buffer (s)", self._pre_buffer_field)
+        self._add_note(view, y, "Lead-in audio captured before hotkey press (0.0\u20131.0 s)")
 
     def _build_transcription_tab(self, item):
         config = get_config()
@@ -644,7 +705,52 @@ class SettingsWindow:
             config.whisper.timeout,
             _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
         )
-        self._add_row(view, y, "Timeout (s, 0=auto)", self._whisper_timeout_field)
+        y = self._add_row(view, y, "Timeout (s, 0=auto)", self._whisper_timeout_field)
+        y += SECTION_GAP
+
+        # Decoding Parameters section
+        y = self._add_section_header(view, y, "Decoding Parameters")
+
+        self._whisper_temperature_field = self._make_text_field_for_row(
+            config.whisper.temperature,
+            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+        )
+        y = self._add_row(view, y, "Temperature", self._whisper_temperature_field)
+
+        self._whisper_compression_ratio_field = self._make_text_field_for_row(
+            config.whisper.compression_ratio_threshold,
+            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+        )
+        y = self._add_row(view, y, "Compression ratio", self._whisper_compression_ratio_field)
+
+        self._whisper_no_speech_threshold_field = self._make_text_field_for_row(
+            config.whisper.no_speech_threshold,
+            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+        )
+        y = self._add_row(view, y, "No-speech threshold", self._whisper_no_speech_threshold_field)
+
+        self._whisper_logprob_threshold_field = self._make_text_field_for_row(
+            config.whisper.logprob_threshold,
+            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+        )
+        y = self._add_row(view, y, "Log prob threshold", self._whisper_logprob_threshold_field)
+
+        self._whisper_temperature_fallback_field = self._make_text_field_for_row(
+            config.whisper.temperature_fallback_count,
+            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+        )
+        y = self._add_row(view, y, "Temp fallback count", self._whisper_temperature_fallback_field)
+
+        self._whisper_prompt_preset_popup = self._make_popup(
+            _PROMPT_PRESET_OPTIONS, config.whisper.prompt_preset,
+            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, ROW_H + 4),
+        )
+        self._connect_button(self._whisper_prompt_preset_popup, self._on_prompt_preset_change)
+        self._connect_button(self._whisper_prompt_preset_popup, self._on_restart_required_change)
+        y = self._add_row(view, y, "Prompt preset", self._whisper_prompt_preset_popup)
+
+        y = self._add_note(view, y, "All decoding parameters require restart. Preset updates the vocabulary hint above.")
+        self._update_prompt_preset_ui(config.whisper.prompt_preset, config.whisper.prompt)
 
     def _build_grammar_tab(self, item):
         config = get_config()
@@ -1066,6 +1172,32 @@ class SettingsWindow:
             self._restart_label.setHidden_(False)
         self._restart_required_changed = True
 
+    def _on_prompt_preset_change(self, sender):
+        """Update the vocabulary hint text view when the prompt preset changes."""
+        if not self._whisper_prompt_preset_popup or not self._whisper_prompt_view:
+            return
+        idx = self._whisper_prompt_preset_popup.indexOfSelectedItem()
+        if 0 <= idx < len(_PROMPT_PRESET_OPTIONS):
+            preset_value = _PROMPT_PRESET_OPTIONS[idx][1]
+            self._update_prompt_preset_ui(preset_value, None)
+
+    def _update_prompt_preset_ui(self, preset_value: str, current_prompt):
+        """Apply preset text and editable state to the prompt text view."""
+        if not self._whisper_prompt_view:
+            return
+        is_custom = (preset_value == "custom")
+        self._whisper_prompt_view.setEditable_(is_custom)
+        if preset_value != "custom":
+            preset_text = _PROMPT_PRESET_TEXTS.get(preset_value, "")
+            self._whisper_prompt_view.setString_(preset_text)
+        elif current_prompt is not None:
+            self._whisper_prompt_view.setString_(current_prompt)
+        color = (
+            _AppKit.NSColor.labelColor() if is_custom
+            else _AppKit.NSColor.secondaryLabelColor()
+        )
+        self._whisper_prompt_view.setTextColor_(color)
+
     def _on_fetch_ollama_models(self, _sender):
         """Fetch available Ollama models in a background thread."""
         if self._ollama_status_label:
@@ -1169,6 +1301,16 @@ class SettingsWindow:
             ("audio", "min_duration"): config.audio.min_duration,
             ("audio", "max_duration"): config.audio.max_duration,
             ("audio", "min_rms"): config.audio.min_rms,
+            ("audio", "vad_enabled"): config.audio.vad_enabled,
+            ("audio", "noise_reduction"): config.audio.noise_reduction,
+            ("audio", "normalize_audio"): config.audio.normalize_audio,
+            ("audio", "pre_buffer"): config.audio.pre_buffer,
+            ("whisper", "temperature"): config.whisper.temperature,
+            ("whisper", "compression_ratio_threshold"): config.whisper.compression_ratio_threshold,
+            ("whisper", "no_speech_threshold"): config.whisper.no_speech_threshold,
+            ("whisper", "logprob_threshold"): config.whisper.logprob_threshold,
+            ("whisper", "temperature_fallback_count"): config.whisper.temperature_fallback_count,
+            ("whisper", "prompt_preset"): config.whisper.prompt_preset,
             ("ui", "show_overlay"): config.ui.show_overlay,
             ("ui", "overlay_opacity"): config.ui.overlay_opacity,
             ("ui", "sounds_enabled"): config.ui.sounds_enabled,
@@ -1208,6 +1350,17 @@ class SettingsWindow:
             self._min_rms_slider.setFloatValue_(config.audio.min_rms)
         if self._min_rms_label:
             self._min_rms_label.setStringValue_(f"{config.audio.min_rms:.4f}")
+        if self._vad_enabled_checkbox:
+            state = _AppKit.NSControlStateValueOn if config.audio.vad_enabled else _AppKit.NSControlStateValueOff
+            self._vad_enabled_checkbox.setState_(state)
+        if self._noise_reduction_checkbox:
+            state = _AppKit.NSControlStateValueOn if config.audio.noise_reduction else _AppKit.NSControlStateValueOff
+            self._noise_reduction_checkbox.setState_(state)
+        if self._normalize_audio_checkbox:
+            state = _AppKit.NSControlStateValueOn if config.audio.normalize_audio else _AppKit.NSControlStateValueOff
+            self._normalize_audio_checkbox.setState_(state)
+        if self._pre_buffer_field:
+            self._pre_buffer_field.setStringValue_(str(config.audio.pre_buffer))
 
         # Transcription tab
         if self._whisper_model_field:
@@ -1221,6 +1374,26 @@ class SettingsWindow:
             self._whisper_prompt_view.setString_(config.whisper.prompt or "")
         if self._whisper_timeout_field:
             self._whisper_timeout_field.setStringValue_(str(config.whisper.timeout))
+        if self._whisper_temperature_field:
+            self._whisper_temperature_field.setStringValue_(str(config.whisper.temperature))
+        if self._whisper_compression_ratio_field:
+            self._whisper_compression_ratio_field.setStringValue_(
+                str(config.whisper.compression_ratio_threshold))
+        if self._whisper_no_speech_threshold_field:
+            self._whisper_no_speech_threshold_field.setStringValue_(
+                str(config.whisper.no_speech_threshold))
+        if self._whisper_logprob_threshold_field:
+            self._whisper_logprob_threshold_field.setStringValue_(
+                str(config.whisper.logprob_threshold))
+        if self._whisper_temperature_fallback_field:
+            self._whisper_temperature_fallback_field.setStringValue_(
+                str(config.whisper.temperature_fallback_count))
+        if self._whisper_prompt_preset_popup:
+            for i, (_, val) in enumerate(_PROMPT_PRESET_OPTIONS):
+                if val == config.whisper.prompt_preset:
+                    self._whisper_prompt_preset_popup.selectItemAtIndex_(i)
+                    break
+            self._update_prompt_preset_ui(config.whisper.prompt_preset, config.whisper.prompt)
 
         # Grammar tab
         if self._ollama_model_popup:
@@ -1360,6 +1533,15 @@ class SettingsWindow:
                 self._max_duration_field.stringValue(), 0)
         if self._min_rms_slider:
             new_values[("audio", "min_rms")] = round(self._min_rms_slider.floatValue(), 5)
+        if self._vad_enabled_checkbox:
+            new_values[("audio", "vad_enabled")] = self._checkbox_bool(self._vad_enabled_checkbox)
+        if self._noise_reduction_checkbox:
+            new_values[("audio", "noise_reduction")] = self._checkbox_bool(self._noise_reduction_checkbox)
+        if self._normalize_audio_checkbox:
+            new_values[("audio", "normalize_audio")] = self._checkbox_bool(self._normalize_audio_checkbox)
+        if self._pre_buffer_field:
+            new_values[("audio", "pre_buffer")] = round(
+                self._parse_float(self._pre_buffer_field.stringValue(), 0.2), 3)
 
         # Transcription
         if self._whisper_model_field:
@@ -1372,6 +1554,27 @@ class SettingsWindow:
         if self._whisper_timeout_field:
             new_values[("whisper", "timeout")] = self._parse_int(
                 self._whisper_timeout_field.stringValue(), 0)
+        if self._whisper_temperature_field:
+            new_values[("whisper", "temperature")] = self._parse_float(
+                self._whisper_temperature_field.stringValue(), 0.0)
+        if self._whisper_compression_ratio_field:
+            new_values[("whisper", "compression_ratio_threshold")] = self._parse_float(
+                self._whisper_compression_ratio_field.stringValue(), 2.4)
+        if self._whisper_no_speech_threshold_field:
+            new_values[("whisper", "no_speech_threshold")] = self._parse_float(
+                self._whisper_no_speech_threshold_field.stringValue(), 0.6)
+        if self._whisper_logprob_threshold_field:
+            new_values[("whisper", "logprob_threshold")] = self._parse_float(
+                self._whisper_logprob_threshold_field.stringValue(), -1.0)
+        if self._whisper_temperature_fallback_field:
+            new_values[("whisper", "temperature_fallback_count")] = self._parse_int(
+                self._whisper_temperature_fallback_field.stringValue(), 5)
+        if self._whisper_prompt_preset_popup:
+            preset_val = self._popup_value(self._whisper_prompt_preset_popup, _PROMPT_PRESET_OPTIONS)
+            new_values[("whisper", "prompt_preset")] = preset_val
+            # When preset is not custom, save the preset text as the prompt too
+            if preset_val != "custom" and self._whisper_prompt_view:
+                new_values[("whisper", "prompt")] = _PROMPT_PRESET_TEXTS.get(preset_val, "")
 
         # Grammar
         if self._grammar_enabled_checkbox:

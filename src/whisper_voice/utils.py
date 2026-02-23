@@ -12,8 +12,6 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
-
 from .config import get_config
 
 # Console colors
@@ -127,14 +125,6 @@ def play_sound(name: str):
         )
     except Exception:
         pass  # Silent failure
-
-
-def is_silent(audio: np.ndarray) -> bool:
-    """Check if audio is mostly silence based on RMS level."""
-    # Only reject truly empty audio - let WhisperKit handle silence detection
-    if len(audio) == 0:
-        return True
-    return False
 
 
 def strip_hallucination_lines(text: str) -> tuple[str, bool]:
