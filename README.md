@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)]()
 [![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-required-blue.svg)]()
-[![Python 3.9+](https://img.shields.io/badge/Python-3.9+-blue.svg)]()
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)]()
 
 **Local voice transcription with grammar correction for macOS.**
 

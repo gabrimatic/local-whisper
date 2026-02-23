@@ -8,7 +8,7 @@ version = "1.0.0"
 description = "Local voice transcription with grammar correction for macOS"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 authors = [
     { name = "Soroush Yousefpour" }
 ]
@@ -20,8 +20,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -35,7 +33,6 @@ dependencies = [
     "pynput>=1.7.0",
     "pyobjc-framework-Cocoa>=8.0",
     "pyobjc-framework-Quartz>=8.0",
-    "tomli>=2.0.0; python_version < '3.11'",
 ]
 
 [project.scripts]

@@ -14,14 +14,7 @@ import threading
 from pathlib import Path
 from urllib.parse import urlparse
 
-# tomllib is Python 3.11+, fall back to tomli for older versions
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    try:
-        import tomli as tomllib
-    except ImportError:
-        tomllib = None
+import tomllib
 from dataclasses import dataclass, field
 from typing import Optional, Literal
 
@@ -73,7 +66,7 @@ prompt = ""
 backend = "apple_intelligence"
 
 # Enable/disable grammar correction
-enabled = true
+enabled = false
 
 [ollama]
 # Ollama server URL
@@ -149,7 +142,7 @@ overlay_opacity = 0.92
 sounds_enabled = true
 
 # Show macOS notifications on completion/error
-notifications_enabled = true
+notifications_enabled = false
 
 [backup]
 # Backup directory
@@ -192,7 +185,7 @@ class WhisperConfig:
 class GrammarConfig:
     """Grammar correction settings."""
     backend: GrammarBackendType = "apple_intelligence"
-    enabled: bool = True
+    enabled: bool = False
 
 
 @dataclass
@@ -240,7 +233,7 @@ class UIConfig:
     show_overlay: bool = True
     overlay_opacity: float = 0.92
     sounds_enabled: bool = True
-    notifications_enabled: bool = True
+    notifications_enabled: bool = False
 
 
 @dataclass
@@ -289,14 +282,11 @@ def load_config() -> Config:
 
     # Load and parse config
     data = {}
-    if tomllib is not None:
-        try:
-            with open(CONFIG_FILE, 'rb') as f:
-                data = tomllib.load(f)
-        except Exception as e:
-            print(f"Config parse error: {e}", file=sys.stderr)
-    else:
-        print("Config parse warning: tomli not available", file=sys.stderr)
+    try:
+        with open(CONFIG_FILE, 'rb') as f:
+            data = tomllib.load(f)
+    except Exception as e:
+        print(f"Config parse error: {e}", file=sys.stderr)
 
     # Build config object with defaults
     config = Config()
@@ -436,7 +426,9 @@ def _validate_config(config: Config):
         config.lm_studio.check_url = "http://localhost:1234/"
 
     # Grammar backend validation
-    if config.grammar.backend not in GRAMMAR_BACKENDS:
+    if config.grammar.backend == "none":
+        config.grammar.enabled = False
+    elif config.grammar.enabled and config.grammar.backend not in GRAMMAR_BACKENDS:
         print(f"Config warning: Invalid grammar backend '{config.grammar.backend}', using 'apple_intelligence'", file=sys.stderr)
         config.grammar.backend = "apple_intelligence"
 
