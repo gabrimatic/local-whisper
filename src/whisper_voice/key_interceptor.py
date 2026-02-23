@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Soroush Yousefpour
 """
 CGEventTap-based keyboard shortcut interception for macOS.
 

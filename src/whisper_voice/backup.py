@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Soroush Yousefpour
 """
 Backup manager for Local Whisper.
 
@@ -23,6 +25,10 @@ class Backup:
         config = get_config()
         self._dir = config.backup.path
         self._dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self._dir.chmod(0o700)
+        except OSError:
+            pass
         self._history_dir = self._dir / "history"
         self._history_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()

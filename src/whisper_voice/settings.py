@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Soroush Yousefpour
 """
 Settings window for Local Whisper.
 
-Comprehensive NSPanel covering every configurable option across 5 tabs:
-Recording, Transcription, Grammar, Interface, Advanced.
+Comprehensive NSPanel covering every configurable option across 6 tabs:
+Recording, Transcription, Grammar, Interface, Advanced, About.
 """
 
 import objc
@@ -11,7 +13,7 @@ import subprocess
 import threading
 from typing import Optional, Callable
 
-from .config import get_config, update_config_field
+from .config import get_config, update_config_field, _is_valid_url
 from .utils import log
 
 # Lazily imported macOS frameworks
@@ -1433,6 +1435,22 @@ class SettingsWindow:
             new_values[("whisper", "url")] = self._whisper_url_field.stringValue().strip()
         if self._whisper_check_url_field:
             new_values[("whisper", "check_url")] = self._whisper_check_url_field.stringValue().strip()
+
+        # Validate URL fields before writing
+        url_errors = []
+        for field_key in [("ollama", "url"), ("lm_studio", "url"),
+                          ("whisper", "url"), ("whisper", "check_url")]:
+            if field_key in new_values:
+                url_val = new_values[field_key]
+                if url_val and not _is_valid_url(url_val):
+                    url_errors.append(f"Invalid URL: {url_val}")
+        if url_errors:
+            alert = _AppKit.NSAlert.alloc().init()
+            alert.setMessageText_("Invalid settings")
+            alert.setInformativeText_("\n".join(url_errors))
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
+            return
 
         # Write only changed fields
         any_changed = False

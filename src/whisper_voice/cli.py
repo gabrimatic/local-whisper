@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Soroush Yousefpour
 """
 CLI service controller for Local Whisper.
 
@@ -48,7 +50,7 @@ C_GREEN = "\033[92m"
 C_YELLOW = "\033[93m"
 C_CYAN = "\033[96m"
 
-LOCK_FILE = "/tmp/local-whisper.lock"
+LOCK_FILE = str(Path.home() / ".whisper" / "service.lock")
 LAUNCHAGENT_LABEL = "com.local-whisper"
 LAUNCHAGENT_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.local-whisper.plist"
 LOG_FILE = Path.home() / ".whisper" / "service.log"
@@ -490,8 +492,8 @@ def cmd_uninstall():
         except ProcessLookupError:
             pass
     _cleanup_lock()
-    subprocess.run(["pkill", "-9", "-f", "whisperkit-cli"], capture_output=True)
-    subprocess.run(["pkill", "-9", "-f", "apple-ai-cli"], capture_output=True)
+    subprocess.run(["pkill", "-9", "-f", "whisperkit-cli serve"], capture_output=True)
+    subprocess.run(["pkill", "-9", "-f", "apple-ai-cli serve"], capture_output=True)
     print(f"  {C_GREEN}✓{C_RESET}  Service stopped")
 
     # Remove LaunchAgent (current + legacy)

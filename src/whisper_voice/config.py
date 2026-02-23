@@ -1,9 +1,13 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Soroush Yousefpour
 """
 Configuration management for Local Whisper.
 
 Loads settings from ~/.whisper/config.toml with sensible defaults.
 """
 
+import fcntl
+import os
 import re
 import sys
 import threading
@@ -178,7 +182,7 @@ class HotkeyConfig:
 class WhisperConfig:
     url: str = "http://localhost:50060/v1/audio/transcriptions"
     check_url: str = "http://localhost:50060/"
-    model: str = "openai_whisper-large-v3-v20240930"
+    model: str = "whisper-large-v3-v20240930"
     language: str = "auto"
     timeout: int = 0
     prompt: str = DEFAULT_WHISPER_PROMPT
@@ -274,6 +278,10 @@ class Config:
 def load_config() -> Config:
     """Load configuration from file, creating default if missing."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        CONFIG_DIR.chmod(0o700)
+    except OSError:
+        pass
 
     # Create default config if it doesn't exist
     if not CONFIG_FILE.exists():
@@ -578,11 +586,17 @@ def update_config_backend(new_backend: str) -> bool:
         config.grammar.backend = new_backend
         config.grammar.enabled = (new_backend != "none")
     try:
-        content = CONFIG_FILE.read_text()
-        content = _replace_in_section(content, "grammar", "backend", _serialize_toml_value(new_backend))
-        enabled_val = "false" if new_backend == "none" else "true"
-        content = _replace_in_section(content, "grammar", "enabled", enabled_val)
-        CONFIG_FILE.write_text(content)
+        fd = os.open(str(CONFIG_FILE), os.O_RDWR | os.O_CREAT)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            content = CONFIG_FILE.read_text()
+            content = _replace_in_section(content, "grammar", "backend", _serialize_toml_value(new_backend))
+            enabled_val = "false" if new_backend == "none" else "true"
+            content = _replace_in_section(content, "grammar", "enabled", enabled_val)
+            CONFIG_FILE.write_text(content)
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
         return True
     except Exception as e:
         print(f"Config write failed: {e}", file=sys.stderr)
@@ -597,8 +611,9 @@ def _serialize_toml_value(value) -> str:
         return str(value)
     if isinstance(value, float):
         return str(value)
-    # String: wrap in double quotes
-    return f'"{value}"'
+    # String: escape backslashes and quotes, wrap in double quotes
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
 
 
 def update_config_field(section: str, key: str, value) -> bool:
@@ -612,10 +627,16 @@ def update_config_field(section: str, key: str, value) -> bool:
     if section_obj is not None and hasattr(section_obj, key):
         setattr(section_obj, key, value)
     try:
-        content = CONFIG_FILE.read_text()
-        toml_value = _serialize_toml_value(value)
-        content = _replace_in_section(content, section, key, toml_value)
-        CONFIG_FILE.write_text(content)
+        fd = os.open(str(CONFIG_FILE), os.O_RDWR | os.O_CREAT)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            content = CONFIG_FILE.read_text()
+            toml_value = _serialize_toml_value(value)
+            content = _replace_in_section(content, section, key, toml_value)
+            CONFIG_FILE.write_text(content)
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
         return True
     except Exception as e:
         print(f"Config write failed: {e}", file=sys.stderr)

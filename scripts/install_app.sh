@@ -19,7 +19,7 @@ fi
 # Kill any running instance
 pkill -x "Local Whisper" 2>/dev/null || true
 pkill -f "whisper_voice" 2>/dev/null || true
-rm -f /tmp/local-whisper.lock
+rm -f "$HOME/.whisper/service.lock"
 sleep 1
 
 # Install to /Applications

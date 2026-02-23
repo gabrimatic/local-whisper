@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Soroush Yousefpour
 """
 WhisperKit integration for Local Whisper.
 
@@ -174,7 +176,7 @@ class Whisper:
         # (covers cases where server was already running before app started)
         try:
             import subprocess
-            result = subprocess.run(['pkill', '-9', '-f', 'whisperkit-cli'],
+            result = subprocess.run(['pkill', '-9', '-f', 'whisperkit-cli serve'],
                                    timeout=2, capture_output=True)
             if result.returncode == 0:
                 log("WhisperKit server killed via pkill", "OK")

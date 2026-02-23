@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Soroush Yousefpour
 #!/usr/bin/env python3
 """
 End-to-end test for Local Whisper flow.

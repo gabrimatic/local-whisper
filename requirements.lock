@@ -1,0 +1,20 @@
+certifi==2026.1.4
+cffi==2.0.0
+charset-normalizer==3.4.4
+filelock==3.24.3
+idna==3.11
+-e git+https://github.com/gabrimatic/local-whisper@99d96575566e9cf27c688ea8a56ddb91a6902477#egg=local_whisper
+numpy==2.4.2
+pillow==12.1.1
+pycparser==3.0
+pynput==1.8.1
+pyobjc-core==12.1
+pyobjc-framework-ApplicationServices==12.1
+pyobjc-framework-Cocoa==12.1
+pyobjc-framework-CoreText==12.1
+pyobjc-framework-Quartz==12.1
+requests==2.32.5
+rumps==0.4.0
+six==1.17.0
+sounddevice==0.5.5
+urllib3==2.6.3

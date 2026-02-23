@@ -246,10 +246,9 @@ language = "auto"  # e.g. "en", or "auto" for detection
 url = "http://localhost:50060/v1/audio/transcriptions"
 check_url = "http://localhost:50060/"
 timeout = 0  # no limit
-# Context prompt guides transcription style and vocabulary (professional/technical default)
-# Default prompt is English and only applied when language is "en".
-# Set to empty string ("") to disable, or set your own prompt for other languages.
-prompt = ""  # Optional vocabulary hint (technical terms, names). Leave empty unless needed.
+# Optional vocabulary hint for transcription (technical terms, names).
+# Leave empty unless you need to hint specific vocabulary.
+prompt = ""
 
 [grammar]
 # Backend: "apple_intelligence", "ollama", or "lm_studio"
@@ -280,14 +279,14 @@ max_chars = 0  # no limit
 max_tokens = 0  # no limit
 timeout = 0  # no limit
 
-[backup]
-directory = "~/.whisper"
-
 [audio]
 sample_rate = 16000
 min_duration = 0
 max_duration = 0  # no limit
 min_rms = 0.005  # silence threshold (0.0-1.0)
+
+[backup]
+directory = "~/.whisper"
 
 [ui]
 show_overlay = true
@@ -520,6 +519,20 @@ Set the model name in your config: `model = "whisper-large-v3-v20240930"`.
 | [Ollama](https://ollama.ai) | Local LLM server |
 | [rumps](https://github.com/jaredks/rumps) | macOS menu bar apps in Python |
 | [LM Studio](https://lmstudio.ai) | Local LLM interface |
+
+## Legal Notices
+
+### Trademarks
+
+"Whisper" is a trademark of OpenAI. "Apple Intelligence" is a trademark of Apple Inc. "WhisperKit" is a trademark of Argmax, Inc. "Ollama" and "LM Studio" are trademarks of their respective owners.
+
+This project is not affiliated with, endorsed by, or sponsored by OpenAI, Apple, Argmax, or any other trademark holder. All trademark names are used here solely to describe compatibility with their respective technologies.
+
+### Third-Party Licenses
+
+This project depends on [pynput](https://github.com/moses-palmer/pynput), which is licensed under LGPL-3.0. When installed via pip (the default), pynput is dynamically linked and fully compatible with this project's MIT license. If you redistribute the py2app bundle (`scripts/build_app.sh`), pynput is statically bundled; LGPL-3.0 requires that you allow end users to re-link against their own version of pynput. The complete source of this project (including build scripts) satisfies this requirement.
+
+All other dependencies use MIT, BSD, or Apache 2.0 licenses. See each package for details.
 
 ## License
 

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Soroush Yousefpour
 """
 Whisper - 100% Local Voice Transcription + Grammar Correction
 
@@ -17,6 +19,7 @@ Privacy: All processing on-device. No internet. No cloud. No tracking.
 
 import atexit
 import fcntl
+import os
 import subprocess
 import signal
 import sys
@@ -921,8 +924,9 @@ def service_main():
     _setup_service_logging()
 
     # Single-instance lock - only one instance can run at a time
-    lock_path = "/tmp/local-whisper.lock"
-    lock_file = open(lock_path, "w")
+    lock_path = str(Path.home() / ".whisper" / "service.lock")
+    lock_fd = os.open(lock_path, os.O_CREAT | os.O_WRONLY, 0o600)
+    lock_file = os.fdopen(lock_fd, "w")
     try:
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
