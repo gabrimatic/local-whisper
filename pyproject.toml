@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [
-    { name = "Soroush" }
+    { name = "Soroush Yousefpour" }
 ]
 keywords = ["voice", "transcription", "whisper", "macos", "local", "privacy"]
 classifiers = [
@@ -24,6 +24,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
 dependencies = [
@@ -42,6 +43,9 @@ wh = "whisper_voice:main"
 
 [project.urls]
 Homepage = "https://github.com/gabrimatic/local-whisper"
+Repository = "https://github.com/gabrimatic/local-whisper"
+"Bug Tracker" = "https://github.com/gabrimatic/local-whisper/issues"
+Changelog = "https://github.com/gabrimatic/local-whisper/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/whisper_voice"]

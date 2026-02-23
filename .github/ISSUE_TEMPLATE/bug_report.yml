@@ -1,0 +1,87 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: A single sentence describing what's broken.
+      placeholder: "Grammar correction returns empty text when using Apple Intelligence with long recordings."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Shortest path to reproduce the issue.
+      placeholder: |
+        1. Start recording with double-tap Right Option
+        2. Speak for ~30 seconds
+        3. Tap to stop
+        4. Observe empty clipboard
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What correct behavior looks like.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened, including any error messages.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Local Whisper version
+      description: Output of `wh version`.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: macOS version and chip
+      placeholder: "macOS 26.0, M4"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Grammar backend
+      options:
+        - Apple Intelligence
+        - Ollama
+        - LM Studio
+        - None (transcription only)
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant output from `wh log`. Redact any personal content.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else that might help with triage.
+    validations:
+      required: false
