@@ -235,7 +235,11 @@ class App(rumps.App):
             _perform_on_main_thread(lambda: setattr(self.status, "title", "Ready"))
             return
 
-        # Start new backend before persisting config
+        # Update in-memory config to new backend so Grammar() initializes the right one.
+        # If start() fails we rollback below.
+        self.config.grammar.backend = backend_id
+        self.config.grammar.enabled = True
+
         ok = False
         new_grammar = None
         try:
@@ -248,7 +252,7 @@ class App(rumps.App):
 
         with self._grammar_lock:
             if ok:
-                # Only persist config after confirmed successful start
+                # Persist confirmed successful start to TOML
                 update_config_backend(backend_id)
                 self.grammar = new_grammar
                 self._grammar_ready = True
@@ -266,6 +270,9 @@ class App(rumps.App):
             _perform_on_main_thread(lambda: setattr(self.status, "title", "Ready"))
         else:
             log(f"{display_name} unavailable", "ERR")
+            # Rollback menu checkmarks to the previous backend
+            prev = previous_backend_id
+            _perform_on_main_thread(lambda: self._update_backend_menu_checks(prev))
             def _show_error():
                 self.status.title = f"{display_name} unavailable"
                 threading.Timer(3.0, lambda: _perform_on_main_thread(
@@ -481,6 +488,7 @@ class App(rumps.App):
         self._set(ICON_IDLE, "Ready")
         self._set_icon(ICON_IMAGE)
         self.overlay.hide()
+        self.recorder.start_monitoring()
 
     def _start_recording(self):
         """Start audio recording."""
@@ -536,7 +544,17 @@ class App(rumps.App):
             if self._busy:
                 return
 
-            audio = self.recorder.stop()
+            try:
+                audio = self.recorder.stop()
+            except Exception as e:
+                log(f"Recorder stop error: {e}", "ERR")
+                self._set(ICON_ERROR, "Record error")
+                self._set_icon(ICON_IMAGE)
+                self._stop_animation()
+                self.overlay.set_status("error")
+                play_sound("Basso")
+                self._reset_with_overlay(ICON_RESET_ERROR)
+                return
             dur = len(audio) / self.config.audio.sample_rate if len(audio) > 0 else 0
 
             # Reject truly empty recordings (no audio data)
@@ -629,19 +647,26 @@ class App(rumps.App):
                 log("No speech detected (VAD)", "WARN")
                 self._show_error("No speech", "No speech detected in recording")
                 return
+
+            # Save raw (unprocessed) audio to backup so retry always works with clean audio
+            raw_backup_path = self.backup.save_audio(processed.raw_audio)
+            if not raw_backup_path:
+                self._show_error("Save failed", "Audio save failed")
+                return
+            log("Raw audio backed up", "OK")
+
+            # Use processed audio for transcription
             audio = processed.audio
 
             # 2. Long recording segmentation
             segments = self.audio_processor.segment_long_audio(audio, config.audio.sample_rate)
 
             if len(segments) == 1:
-                # Single segment - standard flow
-                self._set(ICON_PROCESSING, "Saving...")
-                path = self.backup.save_audio(segments[0])
+                # Single segment: save processed audio for transcription
+                path = self.backup.save_processed_audio(segments[0])
                 if not path:
-                    self._show_error("Save failed", "Audio save failed")
+                    self._show_error("Save failed", "Processed audio save failed")
                     return
-                log("Audio backed up", "OK")
 
                 raw_text, err = self._transcribe_and_validate(path)
                 if err:
@@ -673,8 +698,7 @@ class App(rumps.App):
                     send_notification("Transcription Failed", err)
                     return
 
-                # Also save the first segment as the main audio backup
-                self.backup.save_audio(segments[0])
+                # Raw audio already backed up above; no additional save needed here
 
             self.backup.save_raw(raw_text)
             log(f"Raw: {truncate(raw_text, LOG_TRUNCATE)}", "OK")

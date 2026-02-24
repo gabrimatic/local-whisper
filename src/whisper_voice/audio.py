@@ -150,5 +150,5 @@ class Recorder:
         # Check recording flag inside lock to prevent race with stop()
         with self._chunks_lock:
             if self._recording.is_set():
-                self._chunks.append(data.copy())
+                self._chunks.append(data[:, 0].copy())
         self._current_rms = float(np.sqrt(np.mean(data ** 2)))

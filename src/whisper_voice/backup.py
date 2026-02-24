@@ -36,8 +36,13 @@ class Backup:
 
     @property
     def audio_path(self) -> Path:
-        """Path to last recording audio file."""
+        """Path to last recording audio file (raw, unprocessed - for backup/retry)."""
         return self._dir / "last_recording.wav"
+
+    @property
+    def processed_audio_path(self) -> Path:
+        """Path to processed audio file (used only for transcription, not for retry)."""
+        return self._dir / "last_recording_processed.wav"
 
     @property
     def raw_path(self) -> Path:
@@ -120,6 +125,23 @@ class Backup:
                     path.write_text(payload, encoding='utf-8')
             except Exception as e:
                 log(f"Save history failed: {e}", "ERR")
+
+    def save_processed_audio(self, data: np.ndarray) -> Path:
+        """Save processed audio for transcription (separate from raw backup)."""
+        config = get_config()
+        with self._lock:
+            try:
+                safe = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+                audio = (safe * 32767).astype(np.int16)
+                with wave.open(str(self.processed_audio_path), 'wb') as w:
+                    w.setnchannels(1)
+                    w.setsampwidth(2)
+                    w.setframerate(config.audio.sample_rate)
+                    w.writeframes(audio.tobytes())
+                return self.processed_audio_path
+            except Exception as e:
+                log(f"Save processed audio failed: {e}", "ERR")
+                return None
 
     def save_audio_segment(self, data: np.ndarray, index: int) -> Path:
         """Save a segment of a long recording. Returns path."""

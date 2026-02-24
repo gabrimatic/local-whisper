@@ -72,12 +72,12 @@ class Whisper:
                 [
                     'whisperkit-cli', 'serve',
                     '--model', config.whisper.model,
-                    '--compression-ratio-threshold', str(config.whisper.compression_ratio_threshold),
-                    '--no-speech-threshold', str(config.whisper.no_speech_threshold),
-                    '--logprob-threshold', str(config.whisper.logprob_threshold),
-                    '--first-token-log-prob-threshold', '-1.5',
-                    '--temperature-increment-on-fallback', '0.2',
-                    '--temperature-fallback-count', str(config.whisper.temperature_fallback_count),
+                    f'--compression-ratio-threshold={config.whisper.compression_ratio_threshold}',
+                    f'--no-speech-threshold={config.whisper.no_speech_threshold}',
+                    f'--logprob-threshold={config.whisper.logprob_threshold}',
+                    '--first-token-log-prob-threshold=-1.5',
+                    '--temperature-increment-on-fallback=0.2',
+                    f'--temperature-fallback-count={config.whisper.temperature_fallback_count}',
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -156,27 +156,48 @@ class Whisper:
                             body = {}
 
                         # Try verbose_json segment filtering first
+                        # Client-side filtering is a light safety net only - server-side
+                        # thresholds already do strict filtering. Use lenient thresholds
+                        # and AND logic so both must fail to drop a segment.
+                        CLIENT_NO_SPEECH_THRESHOLD = 0.9
+                        CLIENT_COMPRESSION_RATIO_THRESHOLD = 3.5
                         segments = body.get('segments')
                         if segments is not None:
                             kept = []
                             for seg in segments:
                                 no_speech_prob = seg.get('no_speech_prob', 0.0)
                                 compression_ratio = seg.get('compression_ratio', 1.0)
-                                if no_speech_prob > config.whisper.no_speech_threshold:
-                                    log(f"Dropping segment (no_speech_prob={no_speech_prob:.2f})")
-                                    continue
-                                if compression_ratio > config.whisper.compression_ratio_threshold:
-                                    log(f"Dropping segment (compression_ratio={compression_ratio:.2f})")
+                                log(
+                                    f"Segment: no_speech_prob={no_speech_prob:.2f}, "
+                                    f"compression_ratio={compression_ratio:.2f}, "
+                                    f"text={seg.get('text', '').strip()[:40]!r}"
+                                )
+                                if (no_speech_prob > CLIENT_NO_SPEECH_THRESHOLD
+                                        and compression_ratio > CLIENT_COMPRESSION_RATIO_THRESHOLD):
+                                    log(
+                                        f"Dropping segment (no_speech_prob={no_speech_prob:.2f}, "
+                                        f"compression_ratio={compression_ratio:.2f})"
+                                    )
                                     continue
                                 seg_text = seg.get('text', '').strip()
                                 if seg_text:
                                     kept.append(seg_text)
+                            log(f"Segment filter: {len(kept)}/{len(segments)} kept")
                             if kept:
                                 text = ' '.join(kept).strip()
                                 return (text, None) if text else (None, "Empty")
                             elif segments:
-                                # All segments were filtered out
-                                log("All segments filtered (no speech / repetition)")
+                                # All segments filtered - fall back to full unfiltered text
+                                # rather than silently dropping a valid transcription.
+                                fallback = body.get('text', '').strip()
+                                if fallback:
+                                    log(
+                                        "All segments filtered but full text exists - "
+                                        "using unfiltered text as fallback",
+                                        "WARN"
+                                    )
+                                    return fallback, None
+                                log("All segments filtered and no fallback text", "WARN")
                                 return None, "Empty"
                             # segments list was empty, fall through to plain text
 

@@ -272,8 +272,12 @@ class RecordingOverlay:
             if self._wave_view and frame:
                 self._wave_view.setImage_(_AppKit.NSImage.alloc().initWithContentsOfFile_(frame))
             if self._level_bar:
-                lvl = max(0.0, min(1.0, self._audio_level))
-                bar_width = math.sqrt(lvl) * self._level_bar_max_width
+                lvl = max(0.0, self._audio_level)
+                if lvl > 0.001:
+                    scaled = min(1.0, max(0.0, math.log10(lvl / 0.001) / 2.5))
+                else:
+                    scaled = 0.0
+                bar_width = scaled * self._level_bar_max_width
                 self._level_bar.setFrame_(
                     _Foundation.NSMakeRect(
                         self._level_bar_margin, self._level_bar_y,

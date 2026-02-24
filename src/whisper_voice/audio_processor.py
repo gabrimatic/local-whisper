@@ -15,17 +15,20 @@ from .utils import log
 
 
 # VAD parameters
-_VAD_CHUNK_SIZE = 512          # samples per chunk (32ms at 16kHz)
 _SPEECH_THRESHOLD = 0.5        # probability above which a chunk is speech
+_PRE_SPEECH_THRESHOLD = 0.2    # lower threshold to detect the onset of speech before confirmation
 _MIN_SPEECH_CHUNKS = 8         # ~0.25s of consecutive speech to open a segment
 _MIN_SILENCE_CHUNKS = 10       # ~0.3s of consecutive silence to close a segment
-_SPEECH_PAD_SAMPLES = 1600     # 0.1s padding around speech segments at 16kHz
+_SPEECH_PAD_SAMPLES = 4800     # 0.3s padding around speech segments at 16kHz (must be >= min_speech_duration)
 
 # Noise reduction parameters
 _STFT_N_FFT = 1024
 _STFT_HOP = 512
-_NOISE_GATE_MULTIPLIER = 1.5   # noise floor multiplier for gating
-_NOISE_GATE_ATTENUATION = 0.1  # gain applied to gated bins
+_NOISE_GATE_MULTIPLIER = 2.0   # noise floor multiplier for gating (conservative: higher = less aggressive)
+_NOISE_GATE_ATTENUATION = 0.3  # gain applied to gated bins (conservative: higher = less speech removed)
+# Safety: skip noise reduction if estimated noise floor exceeds this fraction of signal RMS
+# (indicates the noise floor estimate is unreliable and gating would destroy speech)
+_NOISE_FLOOR_SAFETY_RATIO = 0.3
 
 # Normalization parameters
 _TARGET_RMS = 0.1              # -20 dBFS
@@ -40,7 +43,8 @@ _MAX_INTER_SEGMENT_GAP_FACTOR = 0.3  # 0.3s max silence between kept segments
 
 @dataclass
 class ProcessedAudio:
-    audio: np.ndarray            # cleaned float32 array
+    audio: np.ndarray            # cleaned float32 array (ready for transcription)
+    raw_audio: np.ndarray        # original unprocessed float32 array (for backup/retry)
     has_speech: bool             # VAD detected speech
     speech_ratio: float          # ratio of speech frames to total
     peak_level: float            # peak amplitude after normalization
@@ -66,8 +70,10 @@ class AudioProcessor:
     def process(self, audio: np.ndarray, sample_rate: int) -> ProcessedAudio:
         """Run the full processing pipeline on raw float32 audio."""
         if audio is None or len(audio) == 0:
+            empty = np.array([], dtype=np.float32)
             return ProcessedAudio(
-                audio=np.array([], dtype=np.float32),
+                audio=empty,
+                raw_audio=empty,
                 has_speech=False,
                 speech_ratio=0.0,
                 peak_level=0.0,
@@ -76,6 +82,9 @@ class AudioProcessor:
             )
 
         audio = audio.astype(np.float32)
+        raw_audio = audio.copy()  # preserve original for backup
+        input_duration = len(audio) / sample_rate
+        log(f"Audio pipeline: input {input_duration:.2f}s", "INFO")
         segments = []
 
         # Step 1: VAD speech detection
@@ -97,6 +106,7 @@ class AudioProcessor:
             log("VAD: no speech detected", "INFO")
             return ProcessedAudio(
                 audio=audio,
+                raw_audio=raw_audio,
                 has_speech=False,
                 speech_ratio=0.0,
                 peak_level=float(np.max(np.abs(audio))) if len(audio) > 0 else 0.0,
@@ -106,25 +116,35 @@ class AudioProcessor:
 
         # Step 2: Silence trimming
         if self._config.audio.vad_enabled and segments:
-            audio = self._trim_silence(audio, segments, sample_rate)
-            # Re-run VAD on trimmed audio to get updated segments
-            segments = self._detect_speech(audio, sample_rate)
+            audio, segments = self._trim_silence(audio, segments, sample_rate)
+            trimmed_duration = len(audio) / sample_rate
+            log(f"Audio pipeline: after trim {trimmed_duration:.2f}s (removed {input_duration - trimmed_duration:.2f}s silence)", "INFO")
             if not segments:
                 segments = [(0, len(audio))]
 
         # Step 3: Noise reduction
         if self._config.audio.noise_reduction:
             audio = self._reduce_noise(audio, segments, sample_rate)
+        else:
+            log("Audio pipeline: noise reduction skipped (disabled)", "INFO")
 
         # Step 4: Normalization
         if self._config.audio.normalize_audio:
+            pre_rms = float(np.sqrt(np.mean(audio ** 2))) if len(audio) > 0 else 0.0
             audio = self._normalize(audio)
+            post_rms = float(np.sqrt(np.mean(audio ** 2))) if len(audio) > 0 else 0.0
+            if pre_rms > 1e-6:
+                gain_db = 20 * np.log10(post_rms / pre_rms)
+                log(f"Audio pipeline: normalization applied {gain_db:+.1f} dB", "INFO")
+        else:
+            log("Audio pipeline: normalization skipped (disabled)", "INFO")
 
         peak_level = float(np.max(np.abs(audio))) if len(audio) > 0 else 0.0
         duration = len(audio) / sample_rate
 
         return ProcessedAudio(
             audio=audio,
+            raw_audio=raw_audio,
             has_speech=has_speech,
             speech_ratio=speech_ratio,
             peak_level=peak_level,
@@ -157,8 +177,9 @@ class AudioProcessor:
             return
         self._vad_initialized = True
         try:
-            from silero_vad import SileroVAD
-            self._vad = SileroVAD()
+            from silero_vad_lite import SileroVAD
+            sample_rate = self._config.audio.sample_rate
+            self._vad = SileroVAD(sample_rate)
             log("VAD model loaded", "INFO")
         except Exception as e:
             log(f"VAD init failed: {e}", "WARN")
@@ -173,21 +194,18 @@ class AudioProcessor:
         if len(audio) == 0:
             return []
 
-        try:
-            self._vad.reset()
-        except Exception:
-            pass
-
         total_samples = len(audio)
+        chunk_size = self._vad.window_size_samples
         probs = []
-        for i in range(0, total_samples, _VAD_CHUNK_SIZE):
-            chunk = audio[i:i + _VAD_CHUNK_SIZE]
-            if len(chunk) < _VAD_CHUNK_SIZE:
+        for i in range(0, total_samples, chunk_size):
+            chunk = audio[i:i + chunk_size]
+            if len(chunk) < chunk_size:
                 # Pad short final chunk
-                chunk = np.concatenate([chunk, np.zeros(_VAD_CHUNK_SIZE - len(chunk), dtype=np.float32)])
+                chunk = np.concatenate([chunk, np.zeros(chunk_size - len(chunk), dtype=np.float32)])
+            else:
+                chunk = chunk.astype(np.float32)
             try:
-                chunk_bytes = chunk.astype(np.float32).tobytes()
-                prob = self._vad.process(chunk_bytes)
+                prob = self._vad.process(memoryview(chunk.data))
                 probs.append(float(prob))
             except Exception:
                 probs.append(0.0)
@@ -201,20 +219,35 @@ class AudioProcessor:
         segment_start = 0
         speech_run = 0
         silence_run = 0
+        # Track the first chunk where probability crossed the lower pre-speech threshold.
+        # This captures the true onset of an utterance before the confirmation window.
+        first_above_low_threshold = None
 
         for idx, prob in enumerate(probs):
             is_speech_chunk = prob >= _SPEECH_THRESHOLD
-            sample_pos = idx * _VAD_CHUNK_SIZE
+            sample_pos = idx * chunk_size
 
             if not in_speech:
+                if prob >= _PRE_SPEECH_THRESHOLD:
+                    if first_above_low_threshold is None:
+                        first_above_low_threshold = idx
+                else:
+                    # Probability dropped below even the low threshold: reset onset tracking
+                    if not is_speech_chunk:
+                        first_above_low_threshold = None
+
                 if is_speech_chunk:
                     speech_run += 1
                     silence_run = 0
                     if speech_run >= _MIN_SPEECH_CHUNKS:
-                        # Open segment going back to where speech run started
+                        # Open segment: use the earliest chunk that crossed the pre-speech
+                        # threshold as the true speech onset, then subtract padding.
                         in_speech = True
-                        segment_start = max(0, sample_pos - (speech_run - 1) * _VAD_CHUNK_SIZE - _SPEECH_PAD_SAMPLES)
+                        onset_idx = first_above_low_threshold if first_above_low_threshold is not None else (idx - speech_run + 1)
+                        onset_sample = onset_idx * chunk_size
+                        segment_start = max(0, onset_sample - _SPEECH_PAD_SAMPLES)
                         speech_run = 0
+                        first_above_low_threshold = None
                 else:
                     speech_run = 0
             else:
@@ -227,6 +260,7 @@ class AudioProcessor:
                         segment_end = min(total_samples, sample_pos + _SPEECH_PAD_SAMPLES)
                         segments.append((segment_start, segment_end))
                         silence_run = 0
+                        first_above_low_threshold = None
                 else:
                     silence_run = 0
                     speech_run += 1
@@ -238,15 +272,24 @@ class AudioProcessor:
         log(f"VAD: {len(segments)} speech segment(s) detected", "INFO")
         return segments
 
-    def _trim_silence(self, audio: np.ndarray, segments: list, sample_rate: int) -> np.ndarray:
-        """Trim non-speech from beginning and end; compress inter-segment gaps."""
+    def _trim_silence(self, audio: np.ndarray, segments: list, sample_rate: int) -> tuple[np.ndarray, list]:
+        """Trim non-speech from beginning and end; compress inter-segment gaps.
+
+        Returns the trimmed audio and the segment positions adjusted to be
+        relative to the trimmed audio (so downstream steps use correct positions).
+        """
         if not segments:
-            return audio
+            return audio, segments
 
         max_gap = int(_MAX_INTER_SEGMENT_GAP_FACTOR * sample_rate)
 
-        # Build output by concatenating segments with capped gaps between them
+        # Build output by concatenating segments with capped gaps between them.
+        # Track where each piece of source audio maps to in the output so we can
+        # remap segment positions accurately.
         parts = []
+        write_pos = 0           # current write position in the output array
+        adjusted_segments = []
+
         for i, (start, end) in enumerate(segments):
             if i > 0:
                 prev_end = segments[i - 1][1]
@@ -255,15 +298,25 @@ class AudioProcessor:
                     # Insert a compressed gap
                     gap_audio = audio[prev_end:prev_end + max_gap]
                     parts.append(gap_audio)
+                    write_pos += len(gap_audio)
                 else:
                     # Keep the gap as-is
-                    parts.append(audio[prev_end:start])
+                    gap_audio = audio[prev_end:start]
+                    parts.append(gap_audio)
+                    write_pos += len(gap_audio)
+
+            seg_len = end - start
+            seg_start_out = write_pos
+            seg_end_out = write_pos + seg_len
+            adjusted_segments.append((seg_start_out, seg_end_out))
             parts.append(audio[start:end])
+            write_pos += seg_len
 
         if not parts:
-            return audio
+            return audio, segments
 
-        return np.concatenate(parts).astype(np.float32)
+        trimmed = np.concatenate(parts).astype(np.float32)
+        return trimmed, adjusted_segments
 
     # ------------------------------------------------------------------
     # Noise reduction
@@ -273,6 +326,7 @@ class AudioProcessor:
         """Spectral gating noise reduction using pure numpy STFT."""
         min_frame_samples = _STFT_N_FFT
         if len(audio) < min_frame_samples:
+            log("Audio pipeline: noise reduction skipped (audio too short)", "INFO")
             return audio
 
         # Build a Hann window
@@ -286,6 +340,15 @@ class AudioProcessor:
         # Estimate noise floor
         noise_floor = self._estimate_noise_floor(magnitude, audio, segments, sample_rate)
 
+        # Safety check: if estimated noise floor is suspiciously high relative to signal,
+        # the noise floor estimate is unreliable (likely captured speech in "silence" frames).
+        # Skip noise reduction rather than destroy speech.
+        signal_rms = float(np.sqrt(np.mean(audio ** 2)))
+        noise_floor_rms = float(np.mean(noise_floor))
+        if signal_rms > 1e-6 and noise_floor_rms / signal_rms > _NOISE_FLOOR_SAFETY_RATIO:
+            log(f"Audio pipeline: noise reduction skipped (noise floor too high: {noise_floor_rms / signal_rms:.2f} of signal)", "WARN")
+            return audio
+
         # Spectral gating
         gate_threshold = noise_floor * _NOISE_GATE_MULTIPLIER
         mask = np.where(magnitude >= gate_threshold, 1.0, _NOISE_GATE_ATTENUATION)
@@ -295,6 +358,7 @@ class AudioProcessor:
         stft_filtered = magnitude_filtered * np.exp(1j * phase)
         audio_out = self._istft(stft_filtered, window, len(audio))
 
+        log(f"Audio pipeline: noise reduction applied (floor ratio: {noise_floor_rms / signal_rms:.3f})", "INFO")
         return audio_out.astype(np.float32)
 
     def _stft(self, audio: np.ndarray, window: np.ndarray) -> np.ndarray:
