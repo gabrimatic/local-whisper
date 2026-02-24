@@ -194,6 +194,9 @@ notifications_enabled = false
 # Backup directory
 directory = "~/.whisper"
 
+# Maximum number of history entries to keep (for both text and audio)
+history_limit = 100
+
 [shortcuts]
 # Enable/disable keyboard shortcuts for text transformation
 enabled = true
@@ -307,6 +310,7 @@ class UIConfig:
 @dataclass
 class BackupConfig:
     directory: str = "~/.whisper"
+    history_limit: int = 100
 
     @property
     def path(self) -> Path:
@@ -464,6 +468,7 @@ def load_config() -> Config:
     if 'backup' in data:
         config.backup = BackupConfig(
             directory=data['backup'].get('directory', config.backup.directory),
+            history_limit=data['backup'].get('history_limit', config.backup.history_limit),
         )
 
     # Shortcuts settings
@@ -595,6 +600,14 @@ def _validate_config(config: Config):
     if config.whisper.prompt_preset not in _valid_prompt_presets:
         print(f"Config warning: invalid prompt_preset '{config.whisper.prompt_preset}', using 'none'", file=sys.stderr)
         config.whisper.prompt_preset = "none"
+
+    # Backup validation
+    if not isinstance(config.backup.history_limit, int) or config.backup.history_limit < 1:
+        print("Config warning: history_limit must be a positive integer, using 100", file=sys.stderr)
+        config.backup.history_limit = 100
+    elif config.backup.history_limit > 1000:
+        print("Config warning: history_limit clamped to 1000", file=sys.stderr)
+        config.backup.history_limit = 1000
 
     # UI validation
     if not 0.0 <= config.ui.overlay_opacity <= 1.0:

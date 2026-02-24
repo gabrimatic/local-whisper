@@ -274,6 +274,30 @@ def truncate(text: str, length: int = LOG_TRUNCATE) -> str:
     return text
 
 
+def time_ago(dt: datetime) -> str:
+    """Return a human-readable relative time string for a datetime.
+
+    Examples: "Just now", "2m ago", "1h ago", "Yesterday", "3d ago", "Feb 20".
+    """
+    now = datetime.now()
+    diff = now - dt
+    seconds = int(diff.total_seconds())
+    if seconds < 60:
+        return "Just now"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h ago"
+    days = hours // 24
+    if days == 1:
+        return "Yesterday"
+    if days < 30:
+        return f"{days}d ago"
+    return dt.strftime("%b %-d")
+
+
 def check_accessibility_trusted() -> bool:
     """Return True if this process has Accessibility permission."""
     try:

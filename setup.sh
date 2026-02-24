@@ -75,7 +75,7 @@ ARCH=$(uname -m)
 if [[ "$ARCH" == "arm64" ]]; then
     log_ok "Apple Silicon (M1/M2/M3/M4) detected"
 elif [[ "$ARCH" == "x86_64" ]]; then
-    fail "Intel Mac detected - Apple Intelligence requires Apple Silicon"
+    fail "Intel Mac detected. Local Whisper requires Apple Silicon (M1 or later)."
 else
     fail "Unknown architecture: $ARCH"
 fi
@@ -104,11 +104,7 @@ if ! command -v brew &> /dev/null; then
         fail "Failed to install Homebrew. Visit https://brew.sh for manual installation."
 
     # Add brew to PATH for this session
-    if [[ "$ARCH" == "arm64" ]]; then
-        eval "$(/opt/homebrew/bin/brew shellenv)"
-    else
-        eval "$(/usr/local/bin/brew shellenv)"
-    fi
+    eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 log_ok "Homebrew ready"
 

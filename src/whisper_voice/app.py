@@ -36,7 +36,7 @@ from pynput import keyboard
 
 from .config import get_config, CONFIG_FILE
 from .utils import (
-    log, play_sound, is_hallucination, hide_dock_icon, truncate,
+    log, play_sound, is_hallucination, hide_dock_icon, truncate, time_ago,
     strip_hallucination_lines, check_microphone_permission,
     check_accessibility_trusted, request_accessibility_permission, send_notification,
     ICON_IDLE, ICON_RECORDING, ICON_PROCESSING, ICON_SUCCESS, ICON_ERROR,
@@ -115,6 +115,10 @@ class App(rumps.App):
         self.grammar_menu = rumps.MenuItem("Grammar")
         self._build_backend_submenu()
 
+        # History submenus (two standalone submenus replacing the old single History menu)
+        self.transcriptions_menu = rumps.MenuItem("Transcriptions")
+        self.audio_files_menu = rumps.MenuItem("Recordings")
+
         # State flags
         self._busy = False
         self._ready = False
@@ -147,13 +151,17 @@ class App(rumps.App):
             None,
             rumps.MenuItem("Retry Last", callback=self._retry),
             rumps.MenuItem("Copy Last", callback=self._copy),
-            rumps.MenuItem("History", callback=self._open_history),
             None,
-            rumps.MenuItem("Backups", callback=self._open_backups),
-            rumps.MenuItem("Config", callback=self._open_config),
+            self.transcriptions_menu,
+            self.audio_files_menu,
+            None,
             rumps.MenuItem("Settings...", callback=self._open_settings),
             rumps.MenuItem("Quit", callback=self._quit)
         ]
+
+        # Wire up lazy-rebuild delegates for the two history submenus
+        self._setup_transcriptions_delegate()
+        self._setup_audio_files_delegate()
 
         # Start initialization in background
         threading.Thread(target=self._init, daemon=True).start()
@@ -289,6 +297,139 @@ class App(rumps.App):
                     lambda: setattr(self.status, "title", "Ready")
                 )).start()
             _perform_on_main_thread(_show_error)
+
+    def _setup_transcriptions_delegate(self):
+        """Wire up an NSMenu delegate so the Transcriptions submenu rebuilds on every open."""
+        from AppKit import NSObject
+
+        parent = self
+
+        class _TranscriptionsMenuDelegate(NSObject):
+            def menuNeedsUpdate_(self, menu):
+                parent._rebuild_transcriptions()
+
+        self._transcriptions_delegate = _TranscriptionsMenuDelegate.alloc().init()
+        # Force rumps to create the underlying NSMenu by adding a placeholder item first
+        self.transcriptions_menu.add(rumps.MenuItem("Loading..."))
+        ns_menu = self.transcriptions_menu._menuitem.submenu()
+        if ns_menu is not None:
+            ns_menu.setDelegate_(self._transcriptions_delegate)
+
+    def _setup_audio_files_delegate(self):
+        """Wire up an NSMenu delegate so the Recordings submenu rebuilds on every open."""
+        from AppKit import NSObject
+
+        parent = self
+
+        class _AudioFilesMenuDelegate(NSObject):
+            def menuNeedsUpdate_(self, menu):
+                parent._rebuild_audio_files()
+
+        self._audio_files_delegate = _AudioFilesMenuDelegate.alloc().init()
+        # Force rumps to create the underlying NSMenu by adding a placeholder item first
+        self.audio_files_menu.add(rumps.MenuItem("Loading..."))
+        ns_menu = self.audio_files_menu._menuitem.submenu()
+        if ns_menu is not None:
+            ns_menu.setDelegate_(self._audio_files_delegate)
+
+    def _rebuild_transcriptions(self):
+        """Rebuild all items in the Transcriptions submenu."""
+        for key in list(self.transcriptions_menu.keys()):
+            del self.transcriptions_menu[key]
+
+        try:
+            entries = self.backup.get_history(self.config.backup.history_limit)
+        except Exception as e:
+            log(f"History load error: {e}", "WARN")
+            entries = []
+
+        if entries:
+            for i, entry in enumerate(entries):
+                label = time_ago(entry["timestamp"])
+                preview = (entry["fixed"] or entry["raw"] or "").strip()
+                if len(preview) > 60:
+                    preview = preview[:60] + "..."
+                title = f"{label}  {preview}" + '\u200b' * (i + 1)
+                item = rumps.MenuItem(title, callback=self._on_history_copy)
+                item._full_text = (entry["fixed"] or entry["raw"] or "").strip()
+                self.transcriptions_menu.add(item)
+        else:
+            placeholder = rumps.MenuItem("No transcriptions yet")
+            placeholder.set_callback(None)
+            self.transcriptions_menu.add(placeholder)
+
+        self.transcriptions_menu.add(None)
+        self.transcriptions_menu.add(rumps.MenuItem("Open History Folder", callback=self._open_history_folder))
+
+    def _rebuild_audio_files(self):
+        """Rebuild all items in the Recordings submenu."""
+        for key in list(self.audio_files_menu.keys()):
+            del self.audio_files_menu[key]
+
+        try:
+            audio_entries = self.backup.get_audio_history()
+        except Exception as e:
+            log(f"Audio history load error: {e}", "WARN")
+            audio_entries = []
+
+        if audio_entries:
+            for i, entry in enumerate(audio_entries):
+                label = time_ago(entry["timestamp"])
+                filename = entry["path"].name
+                title = f"{label}  {filename}" + '\u200b' * (i + 1)
+                item = rumps.MenuItem(title, callback=self._on_audio_reveal)
+                item._file_path = str(entry["path"])
+                self.audio_files_menu.add(item)
+        else:
+            placeholder = rumps.MenuItem("No audio files")
+            placeholder.set_callback(None)
+            self.audio_files_menu.add(placeholder)
+
+        self.audio_files_menu.add(None)
+        self.audio_files_menu.add(rumps.MenuItem("Open Audio Folder", callback=self._open_audio_folder))
+
+    def _on_history_copy(self, sender):
+        """Copy a history entry's text to clipboard."""
+        text = getattr(sender, "_full_text", None)
+        if not text:
+            return
+        if self._copy_to_clipboard(text, show_error=False):
+            play_sound("Glass")
+            self.overlay.set_status("done")
+            log(f"History copied: {truncate(text, LOG_TRUNCATE)}", "OK")
+        else:
+            self.overlay.set_status("error")
+
+    def _on_audio_reveal(self, sender):
+        """Reveal an audio history file in Finder."""
+        file_path = getattr(sender, "_file_path", None)
+        if not file_path:
+            return
+        try:
+            subprocess.run(['open', '-R', file_path], timeout=5)
+        except Exception as e:
+            log(f"Reveal failed: {e}", "WARN")
+            self.overlay.set_status("error")
+
+    def _open_history_folder(self, _):
+        """Open history folder in Finder."""
+        try:
+            path = self.backup.history_dir
+            path.mkdir(parents=True, exist_ok=True)
+            subprocess.run(['open', str(path)], timeout=5)
+        except Exception as e:
+            log(f"Open history folder failed: {e}", "WARN")
+            self.overlay.set_status("error")
+
+    def _open_audio_folder(self, _):
+        """Open audio history folder in Finder."""
+        try:
+            path = self.backup.audio_history_dir
+            path.mkdir(parents=True, exist_ok=True)
+            subprocess.run(['open', str(path)], timeout=5)
+        except Exception as e:
+            log(f"Open audio folder failed: {e}", "WARN")
+            self.overlay.set_status("error")
 
     def _open_settings(self, _=None):
         """Open the Settings window."""
@@ -954,17 +1095,7 @@ class App(rumps.App):
         log(f"Copied: {truncate(text, LOG_TRUNCATE)}", "OK")
         self._reset(ICON_RESET_SUCCESS)
 
-    def _open_backups(self, _):
-        """Open backup folder in Finder."""
-        subprocess.run(['open', str(self.config.backup.path)], timeout=5)
 
-    def _open_history(self, _):
-        """Open history folder in Finder."""
-        subprocess.run(['open', str(self.backup.history_dir)], timeout=5)
-
-    def _open_config(self, _):
-        """Open config file in default editor."""
-        subprocess.run(['open', str(CONFIG_FILE)], timeout=5)
 
     def _quit(self, _):
         """Quit application with cleanup."""

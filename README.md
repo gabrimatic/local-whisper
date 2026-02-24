@@ -156,23 +156,21 @@ wh uninstall        # Completely remove Local Whisper
 | Grammar: [Backend] | Active backend; submenu to switch in-place |
 | Retry Last | Re-transcribe the last recording |
 | Copy Last | Copy last transcription again |
-| History | Open saved session transcripts |
-| Backups | Open backup folder |
-| Config | Open configuration file |
+| Transcriptions | Submenu showing last 100 transcriptions; click any entry to copy |
+| Recordings | Submenu showing audio recordings; click any entry to reveal in Finder |
 | Settings... | Full settings GUI |
 | Quit | Exit |
 
+**Transcriptions** and **Recordings** are separate submenus directly in the main menu. Both rebuild lazily on hover via NSMenu delegates, so they always reflect the latest data without any mode switching.
+
 ### Settings Window
 
-**Settings...** in the menu bar opens a native panel with six tabs:
+**Settings...** in the menu bar opens a native panel with three tabs:
 
 | Tab | What you configure |
 |-----|-------------------|
-| Recording | Trigger key, double-tap window, min/max duration, silence threshold, VAD, noise reduction, pre-buffer |
-| Transcription | Engine selection (Qwen3-ASR / WhisperKit), model, language, vocabulary preset, decoding quality thresholds, timeout |
-| Grammar | Backend selection, per-backend settings, keyboard shortcuts |
-| Interface | Overlay visibility/opacity, sounds, notifications |
-| Advanced | Backup directory, WhisperKit server URLs |
+| General | Recording, transcription engine, grammar backend, keyboard shortcuts, interface, and history settings |
+| Advanced | Audio processing, transcription params, backend config, and storage |
 | About | Version, author, credits |
 
 <p align="center">
@@ -185,7 +183,7 @@ Changes save to `~/.whisper/config.toml`. Fields that require a restart show a w
 
 ## Configuration
 
-Settings live in `~/.whisper/config.toml`. Edit via the Settings window, the Config menu item, `wh config edit`, or directly.
+Settings live in `~/.whisper/config.toml`. Edit via the Settings window, `wh config edit`, or directly.
 
 <details>
 <summary><strong>Full config reference</strong></summary>
@@ -263,6 +261,7 @@ pre_buffer = 0.0    # seconds of audio captured before hotkey (0.0 to disable, e
 
 [backup]
 directory = "~/.whisper"
+history_limit = 100  # max entries kept for both text and audio history (1-1000)
 
 [ui]
 show_overlay = true
@@ -506,7 +505,7 @@ local-whisper/
     ├── grammar.py          # Backend factory
     ├── overlay.py          # Floating UI + audio level indicator
     ├── theme.py            # Centralized styling (colors, typography, dimensions)
-    ├── settings.py         # Settings window (6-tab NSPanel)
+    ├── settings.py         # Settings window (3-tab NSPanel)
     ├── transcriber.py      # Engine routing wrapper
     ├── utils.py            # Helpers
     ├── shortcuts.py        # Keyboard shortcuts
@@ -532,7 +531,8 @@ Data stored in `~/.whisper/`:
 ├── last_recording.wav      # Audio file
 ├── last_raw.txt            # Before grammar fix
 ├── last_transcription.txt  # Final text
-└── history/                # All session transcripts
+├── audio_history/          # Audio recording history
+└── history/                # Transcription history (last 100)
 ```
 
 </details>

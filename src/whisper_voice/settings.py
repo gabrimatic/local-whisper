@@ -3,8 +3,8 @@
 """
 Settings window for Local Whisper.
 
-Comprehensive NSPanel covering every configurable option across 6 tabs:
-Recording, Transcription, Grammar, Interface, Advanced, About.
+Covers every configurable option across 3 tabs:
+General, Advanced, About.
 """
 
 import objc
@@ -13,7 +13,7 @@ import subprocess
 import threading
 from typing import Optional, Callable
 
-from .config import get_config, update_config_field, _is_valid_url
+from .config import get_config, update_config_field, _is_valid_url, CONFIG_FILE
 from .engines import ENGINE_REGISTRY
 from .utils import log
 from .theme import Colors, Typography, Dimensions as D, create_glass_background
@@ -231,6 +231,7 @@ class SettingsWindow:
 
         # Grammar tab
         self._grammar_enabled_checkbox = None
+        self._grammar_backend_popup = None
         self._ollama_model_field = None
         self._ollama_url_field = None
         self._ollama_keep_alive_field = None
@@ -263,6 +264,12 @@ class SettingsWindow:
         self._backup_dir_field = None
         self._whisper_url_field = None
         self._whisper_check_url_field = None
+        self._history_limit_field = None
+        self._advanced_scroll_view = None
+        self._engine_sections_y = 0.0
+        self._qwen3_actual_h = 90.0
+        self._whisperkit_actual_h = 500.0
+        self._post_engine_container = None
 
         # Bottom bar
         self._restart_label = None
@@ -460,7 +467,11 @@ class SettingsWindow:
             False,
         )
         self._panel.setTitle_("Local Whisper \u2014 Settings")
-        self._panel.setLevel_(_AppKit.NSFloatingWindowLevel)
+        self._panel.setLevel_(_AppKit.NSStatusWindowLevel)
+        # Allow window to appear in all spaces including fullscreen
+        self._panel.setCollectionBehavior_(
+            1 | 256  # NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary
+        )
         self._panel.setReleasedWhenClosed_(False)
 
         content = self._panel.contentView()
@@ -486,10 +497,7 @@ class SettingsWindow:
 
         # Build tabs — each builder receives the NSTabViewItem, not its view
         tabs = [
-            ("recording", "Recording", self._build_recording_tab),
-            ("transcription", "Transcription", self._build_transcription_tab),
-            ("grammar", "Grammar", self._build_grammar_tab),
-            ("interface", "Interface", self._build_interface_tab),
+            ("general", "General", self._build_general_tab),
             ("advanced", "Advanced", self._build_advanced_tab),
             ("about", "About", self._build_about_tab),
         ]
@@ -547,16 +555,29 @@ class SettingsWindow:
     # item.setView_() with a flipped view it creates internally           #
     # ------------------------------------------------------------------ #
 
-    def _build_recording_tab(self, item):
+    def _build_general_tab(self, item):
+        """General tab: everyday settings, grouped cleanly."""
         config = get_config()
-        view = _FlippedViewClass.alloc().initWithFrame_(
+
+        scroll_view = _AppKit.NSScrollView.alloc().initWithFrame_(
             _Foundation.NSMakeRect(0, 0, D.SETTINGS_CONTENT_W, D.SETTINGS_CONTENT_H)
         )
-        item.setView_(view)
+        scroll_view.setHasVerticalScroller_(True)
+        scroll_view.setAutohidesScrollers_(True)
+        scroll_view.setBorderType_(_AppKit.NSNoBorder)
+        item.setView_(scroll_view)
+
+        view = _FlippedViewClass.alloc().initWithFrame_(
+            _Foundation.NSMakeRect(0, 0, D.SETTINGS_CONTENT_W, 900)
+        )
+        scroll_view.setDocumentView_(view)
+        scroll_view.contentView().scrollToPoint_(_Foundation.NSMakePoint(0, 0))
+        scroll_view.reflectScrolledClipView_(scroll_view.contentView())
+
         y = 20.0
 
-        # Hotkey section
-        y = self._add_section_header(view, y, "Hotkey")
+        # ---- Recording ----
+        y = self._add_section_header(view, y, "Recording")
 
         self._hotkey_popup = self._make_popup(
             _HOTKEY_OPTIONS, config.hotkey.key,
@@ -565,7 +586,6 @@ class SettingsWindow:
         self._connect_button(self._hotkey_popup, self._on_restart_required_change)
         y = self._add_row(view, y, "Trigger key", self._hotkey_popup)
 
-        # Double-tap threshold slider
         threshold = config.hotkey.double_tap_threshold
 
         def _tap_changed(sender):
@@ -574,77 +594,16 @@ class SettingsWindow:
             self._on_restart_required_change(sender)
 
         self._tap_threshold_slider, self._tap_threshold_label, y = self._make_slider_row(
-            view, y, "Double-tap window",
+            view, y, "Double-tap speed",
             threshold, 0.1, 1.0,
             lambda v: f"{v:.2f}s",
             _tap_changed,
         )
-
         y = self._add_note(view, y, "Restart required to apply hotkey changes")
         y += D.SETTINGS_SECTION_GAP
 
-        # Audio section
-        y = self._add_section_header(view, y, "Audio")
-
-        self._min_duration_field = self._make_text_field_for_row(
-            config.audio.min_duration,
-            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
-        )
-        y = self._add_row(view, y, "Min duration (s)", self._min_duration_field)
-
-        self._max_duration_field = self._make_text_field_for_row(
-            config.audio.max_duration,
-            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
-        )
-        y = self._add_row(view, y, "Max duration (s)", self._max_duration_field)
-
-        rms = config.audio.min_rms
-
-        def _rms_changed(sender):
-            self._min_rms_label.setStringValue_(f"{sender.floatValue():.4f}")
-
-        self._min_rms_slider, self._min_rms_label, y = self._make_slider_row(
-            view, y, "Min silence RMS",
-            rms, 0.0, 0.05,
-            lambda v: f"{v:.4f}",
-            _rms_changed,
-        )
-
-        self._add_note(view, y, "0 = disabled / unlimited for duration fields")
-        y += 20 + D.SETTINGS_SECTION_GAP
-
-        # Audio Processing section
-        y = self._add_section_header(view, y, "Audio Processing")
-
-        self._vad_enabled_checkbox, y = self._make_checkbox_row(
-            view, y, "Enable VAD", config.audio.vad_enabled
-        )
-
-        self._noise_reduction_checkbox, y = self._make_checkbox_row(
-            view, y, "Noise reduction", config.audio.noise_reduction
-        )
-
-        self._normalize_audio_checkbox, y = self._make_checkbox_row(
-            view, y, "Normalize audio", config.audio.normalize_audio
-        )
-
-        self._pre_buffer_field = self._make_text_field_for_row(
-            config.audio.pre_buffer,
-            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
-        )
-        y = self._add_row(view, y, "Pre-buffer (s)", self._pre_buffer_field)
-        self._add_note(view, y, "Lead-in audio captured before hotkey press (0.0\u20131.0 s)")
-
-    def _build_transcription_tab(self, item):
-        config = get_config()
-        view = _FlippedViewClass.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(0, 0, D.SETTINGS_CONTENT_W, D.SETTINGS_CONTENT_H)
-        )
-        item.setView_(view)
-        y = 20.0
-
-        # Engine selector (restart required)
-        y = self._add_section_header(view, y, "Engine")
+        # ---- Transcription ----
+        y = self._add_section_header(view, y, "Transcription")
 
         self._engine_popup = self._make_popup(
             _ENGINE_OPTIONS, config.transcription.engine,
@@ -653,17 +612,204 @@ class SettingsWindow:
         self._connect_button(self._engine_popup, self._on_engine_change)
         self._connect_button(self._engine_popup, self._on_restart_required_change)
         y = self._add_row(view, y, "Engine", self._engine_popup)
+
+        # Language: show Qwen3 language when qwen3 selected, Whisper language otherwise.
+        # We create both popups but only one is visible at a time.
+        # For simplicity in General tab we show only the active engine's language.
+        # The inactive one is hidden but still serialized on save.
+        self._qwen3_language_popup = self._make_popup(
+            _LANGUAGE_OPTIONS, config.qwen3_asr.language,
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
+        )
+        self._whisper_language_popup = self._make_popup(
+            _LANGUAGE_OPTIONS, config.whisper.language,
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
+        )
+        view.addSubview_(self._qwen3_language_popup)
+        view.addSubview_(self._whisper_language_popup)
+
+        lang_lbl = _AppKit.NSTextField.alloc().initWithFrame_(
+            _Foundation.NSMakeRect(D.SETTINGS_LEFT_MARGIN, y + 2, D.SETTINGS_LABEL_W, D.SETTINGS_ROW_H)
+        )
+        lang_lbl.setStringValue_("Language")
+        lang_lbl.setBezeled_(False)
+        lang_lbl.setDrawsBackground_(False)
+        lang_lbl.setEditable_(False)
+        lang_lbl.setSelectable_(False)
+        lang_lbl.setAlignment_(_AppKit.NSTextAlignmentRight)
+        lang_lbl.setFont_(Typography.row_label())
+        view.addSubview_(lang_lbl)
+        y += D.SETTINGS_ROW_H + D.SETTINGS_ROW_GAP
+
         y = self._add_note(view, y, "Restart required to switch engines")
         y += D.SETTINGS_SECTION_GAP
 
-        # ── Qwen3-ASR section ────────────────────────────────────────────
-        # Estimate height: section header (28) + model row (30) + note (20) + gap (8)
-        #                  + language row (30) + gap (20)  = ~136
-        qwen3_h = 136
-        self._qwen3_section_view = _FlippedViewClass.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(0, y, D.SETTINGS_CONTENT_W, qwen3_h)
+        # ---- Grammar ----
+        y = self._add_section_header(view, y, "Grammar")
+
+        self._grammar_enabled_checkbox, y = self._make_checkbox_row(
+            view, y, "Enable grammar correction", config.grammar.enabled
         )
-        view.addSubview_(self._qwen3_section_view)
+
+        # Grammar backend selector (informational; backend details are in Advanced)
+        from .backends import BACKEND_REGISTRY
+        backend_options = [(info.name, bid) for bid, info in BACKEND_REGISTRY.items()]
+        current_backend = config.grammar.backend if hasattr(config.grammar, "backend") else (
+            backend_options[0][1] if backend_options else ""
+        )
+        self._grammar_backend_popup = self._make_popup(
+            backend_options, current_backend,
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
+        ) if backend_options else None
+        if self._grammar_backend_popup:
+            y = self._add_row(view, y, "Backend", self._grammar_backend_popup)
+        y += D.SETTINGS_SECTION_GAP
+
+        # ---- Shortcuts ----
+        y = self._add_section_header(view, y, "Shortcuts")
+
+        self._shortcuts_enabled_checkbox, y = self._make_checkbox_row(
+            view, y, "Enable shortcuts", config.shortcuts.enabled
+        )
+        self._connect_button(self._shortcuts_enabled_checkbox, self._on_restart_required_change)
+
+        self._shortcuts_proofread_field = self._make_text_field_for_row(
+            config.shortcuts.proofread,
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 140, D.SETTINGS_ROW_H + 4),
+        )
+        y = self._add_row(view, y, "Proofread", self._shortcuts_proofread_field)
+
+        self._shortcuts_rewrite_field = self._make_text_field_for_row(
+            config.shortcuts.rewrite,
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 140, D.SETTINGS_ROW_H + 4),
+        )
+        y = self._add_row(view, y, "Rewrite", self._shortcuts_rewrite_field)
+
+        self._shortcuts_prompt_field = self._make_text_field_for_row(
+            config.shortcuts.prompt_engineer,
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 140, D.SETTINGS_ROW_H + 4),
+        )
+        y = self._add_row(view, y, "Prompt engineer", self._shortcuts_prompt_field)
+        y = self._add_note(view, y, "Shortcut changes require restart")
+        y += D.SETTINGS_SECTION_GAP
+
+        # ---- Interface ----
+        y = self._add_section_header(view, y, "Interface")
+
+        self._show_overlay_checkbox, y = self._make_checkbox_row(
+            view, y, "Show recording overlay", config.ui.show_overlay
+        )
+        self._sounds_checkbox, y = self._make_checkbox_row(
+            view, y, "Sounds enabled", config.ui.sounds_enabled
+        )
+        self._notifications_checkbox, y = self._make_checkbox_row(
+            view, y, "Notifications enabled", config.ui.notifications_enabled
+        )
+        y += D.SETTINGS_SECTION_GAP
+
+        # ---- History ----
+        y = self._add_section_header(view, y, "History")
+
+        self._history_limit_field = self._make_text_field_for_row(
+            config.backup.history_limit,
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
+        )
+        y = self._add_row(view, y, "History limit", self._history_limit_field)
+        self._add_note(view, y, "Number of transcriptions to keep (1\u20131000)")
+
+        # Apply initial language visibility
+        self._update_engine_sections(config.transcription.engine)
+
+    def _build_advanced_tab(self, item):
+        """Advanced tab: power-user settings in a scrollable view."""
+        config = get_config()
+
+        # Scrollable outer view
+        scroll_view = _AppKit.NSScrollView.alloc().initWithFrame_(
+            _Foundation.NSMakeRect(0, 0, D.SETTINGS_CONTENT_W, D.SETTINGS_CONTENT_H)
+        )
+        scroll_view.setHasVerticalScroller_(True)
+        scroll_view.setAutohidesScrollers_(True)
+        scroll_view.setBorderType_(_AppKit.NSNoBorder)
+        item.setView_(scroll_view)
+        self._advanced_scroll_view = scroll_view
+
+        # Tall document view
+        doc_h = 1800
+        doc = _FlippedViewClass.alloc().initWithFrame_(
+            _Foundation.NSMakeRect(0, 0, D.SETTINGS_CONTENT_W, doc_h)
+        )
+        scroll_view.setDocumentView_(doc)
+        scroll_view.contentView().scrollToPoint_(_Foundation.NSMakePoint(0, 0))
+        scroll_view.reflectScrolledClipView_(scroll_view.contentView())
+
+        y = 20.0
+
+        # ---- Audio Processing ----
+        y = self._add_section_header(doc, y, "Audio Processing")
+
+        self._min_duration_field = self._make_text_field_for_row(
+            config.audio.min_duration,
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
+        )
+        y = self._add_row(doc, y, "Min duration (s)", self._min_duration_field)
+        y = self._add_note(doc, y, "Minimum recording length before transcription runs (0 = no minimum)")
+
+        self._max_duration_field = self._make_text_field_for_row(
+            config.audio.max_duration,
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
+        )
+        y = self._add_row(doc, y, "Max duration (s)", self._max_duration_field)
+        y = self._add_note(doc, y, "Hard cap on recording length (0 = unlimited)")
+
+        rms = config.audio.min_rms
+
+        def _rms_changed(sender):
+            self._min_rms_label.setStringValue_(f"{sender.floatValue():.4f}")
+
+        self._min_rms_slider, self._min_rms_label, y = self._make_slider_row(
+            doc, y, "Silence threshold",
+            rms, 0.0, 0.05,
+            lambda v: f"{v:.4f}",
+            _rms_changed,
+        )
+        y = self._add_note(doc, y, "Controls how aggressively silence is detected at the end of a recording")
+
+        self._vad_enabled_checkbox, y = self._make_checkbox_row(
+            doc, y, "Enable VAD", config.audio.vad_enabled
+        )
+        y = self._add_note(doc, y, "Voice activity detection trims non-speech regions before transcription")
+
+        self._noise_reduction_checkbox, y = self._make_checkbox_row(
+            doc, y, "Noise reduction", config.audio.noise_reduction
+        )
+        y = self._add_note(doc, y, "Spectral gating to suppress background noise")
+
+        self._normalize_audio_checkbox, y = self._make_checkbox_row(
+            doc, y, "Normalize audio", config.audio.normalize_audio
+        )
+        y = self._add_note(doc, y, "Adjusts volume to a consistent level before transcription")
+
+        self._pre_buffer_field = self._make_text_field_for_row(
+            config.audio.pre_buffer,
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
+        )
+        y = self._add_row(doc, y, "Pre-buffer (s)", self._pre_buffer_field)
+        y = self._add_note(doc, y, "Lead-in audio captured before hotkey press (0.0\u20131.0 s)")
+        y += D.SETTINGS_SECTION_GAP
+
+        # ---- Transcription Tuning ----
+        y = self._add_section_header(doc, y, "Transcription Tuning")
+
+        # Record where engine sections start so _relayout_advanced_tab() can use it
+        self._engine_sections_y = y
+
+        # ── Qwen3-ASR sub-section ─────────────────────────────────────────
+        # Use a large placeholder height; actual height tracked via qy
+        self._qwen3_section_view = _FlippedViewClass.alloc().initWithFrame_(
+            _Foundation.NSMakeRect(0, y, D.SETTINGS_CONTENT_W, 200)
+        )
+        doc.addSubview_(self._qwen3_section_view)
 
         qy = 0.0
         qy = self._add_section_header(self._qwen3_section_view, qy, "Qwen3-ASR")
@@ -673,25 +819,21 @@ class SettingsWindow:
             _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, qy, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
         qy = self._add_row(self._qwen3_section_view, qy, "Model", self._qwen3_model_field)
-        qy = self._add_note(self._qwen3_section_view, qy, "Restart required")
-        qy += D.SETTINGS_ROW_GAP
+        qy = self._add_note(self._qwen3_section_view, qy, "Restart required after changing the model")
 
-        self._qwen3_language_popup = self._make_popup(
-            _LANGUAGE_OPTIONS, config.qwen3_asr.language,
-            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, qy, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
+        # Store actual height and resize the frame to match
+        self._qwen3_actual_h = qy
+        f = self._qwen3_section_view.frame()
+        self._qwen3_section_view.setFrame_(
+            _Foundation.NSMakeRect(f.origin.x, f.origin.y, f.size.width, self._qwen3_actual_h)
         )
-        qy = self._add_row(self._qwen3_section_view, qy, "Language", self._qwen3_language_popup)
 
-        # ── WhisperKit section ───────────────────────────────────────────
-        # Estimate height: section header (28) + model row (30) + note (20) + gap (8)
-        #                  + language row (30) + gap (8) + vocab hint label + text area (64)
-        #                  + note (32) + gap (8) + timeout row (30) + gap (20)
-        #                  + decoding header (28) + 6 rows (180) + note (16) = ~482
-        wk_h = 500
+        # ── WhisperKit sub-section ────────────────────────────────────────
+        # Placed at the same y; only one is visible at a time
         self._whisperkit_section_view = _FlippedViewClass.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(0, y, D.SETTINGS_CONTENT_W, wk_h)
+            _Foundation.NSMakeRect(0, y, D.SETTINGS_CONTENT_W, 600)
         )
-        view.addSubview_(self._whisperkit_section_view)
+        doc.addSubview_(self._whisperkit_section_view)
 
         wy = 0.0
         wy = self._add_section_header(self._whisperkit_section_view, wy, "WhisperKit")
@@ -702,13 +844,6 @@ class SettingsWindow:
         )
         wy = self._add_row(self._whisperkit_section_view, wy, "Model", self._whisper_model_field)
         wy = self._add_note(self._whisperkit_section_view, wy, "Restart required")
-        wy += D.SETTINGS_ROW_GAP
-
-        self._whisper_language_popup = self._make_popup(
-            _LANGUAGE_OPTIONS, config.whisper.language,
-            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, wy, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
-        )
-        wy = self._add_row(self._whisperkit_section_view, wy, "Language", self._whisper_language_popup)
         wy += D.SETTINGS_ROW_GAP
 
         # Vocabulary hint (NSTextView in scroll view)
@@ -760,6 +895,15 @@ class SettingsWindow:
         )
         wy += D.SETTINGS_ROW_GAP
 
+        self._whisper_prompt_preset_popup = self._make_popup(
+            _PROMPT_PRESET_OPTIONS, config.whisper.prompt_preset,
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, wy, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
+        )
+        self._connect_button(self._whisper_prompt_preset_popup, self._on_prompt_preset_change)
+        self._connect_button(self._whisper_prompt_preset_popup, self._on_restart_required_change)
+        wy = self._add_row(self._whisperkit_section_view, wy, "Prompt preset", self._whisper_prompt_preset_popup)
+        wy += D.SETTINGS_ROW_GAP
+
         self._whisper_timeout_field = self._make_text_field_for_row(
             config.whisper.timeout,
             _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, wy, 80, D.SETTINGS_ROW_H + 4),
@@ -767,7 +911,6 @@ class SettingsWindow:
         wy = self._add_row(self._whisperkit_section_view, wy, "Timeout (s, 0=auto)", self._whisper_timeout_field)
         wy += D.SETTINGS_SECTION_GAP
 
-        # Decoding Parameters section
         wy = self._add_section_header(self._whisperkit_section_view, wy, "Decoding Parameters")
 
         self._whisper_temperature_field = self._make_text_field_for_row(
@@ -800,53 +943,33 @@ class SettingsWindow:
         )
         wy = self._add_row(self._whisperkit_section_view, wy, "Temp fallback count", self._whisper_temperature_fallback_field)
 
-        self._whisper_prompt_preset_popup = self._make_popup(
-            _PROMPT_PRESET_OPTIONS, config.whisper.prompt_preset,
-            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, wy, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
-        )
-        self._connect_button(self._whisper_prompt_preset_popup, self._on_prompt_preset_change)
-        self._connect_button(self._whisper_prompt_preset_popup, self._on_restart_required_change)
-        wy = self._add_row(self._whisperkit_section_view, wy, "Prompt preset", self._whisper_prompt_preset_popup)
-
-        self._add_note(self._whisperkit_section_view, wy, "All decoding parameters require restart. Preset updates the vocabulary hint above.")
+        wy = self._add_note(self._whisperkit_section_view, wy, "All decoding parameters require restart. Preset updates the vocabulary hint above.")
         self._update_prompt_preset_ui(config.whisper.prompt_preset, config.whisper.prompt)
 
-        # Apply initial visibility based on current engine
-        self._update_engine_sections(config.transcription.engine)
-
-    def _build_grammar_tab(self, item):
-        config = get_config()
-
-        # Outer NSScrollView fills the entire tab content area
-        scroll_view = _AppKit.NSScrollView.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(0, 0, D.SETTINGS_CONTENT_W, D.SETTINGS_CONTENT_H)
+        # Store actual height and resize the frame to match
+        self._whisperkit_actual_h = wy
+        f = self._whisperkit_section_view.frame()
+        self._whisperkit_section_view.setFrame_(
+            _Foundation.NSMakeRect(f.origin.x, f.origin.y, f.size.width, self._whisperkit_actual_h)
         )
-        scroll_view.setHasVerticalScroller_(True)
-        scroll_view.setAutohidesScrollers_(True)
-        scroll_view.setBorderType_(_AppKit.NSNoBorder)
-        item.setView_(scroll_view)
 
-        # Flipped document view — taller than the scroll view
-        doc = _FlippedViewClass.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(0, 0, D.SETTINGS_CONTENT_W, D.SETTINGS_GRAMMAR_DOC_H)
+        # Build all content after engine sections into a container view.
+        # Its y-origin is set dynamically by _relayout_advanced_tab().
+        post_h = 800  # generous placeholder; resized by _relayout_advanced_tab()
+        self._post_engine_container = _FlippedViewClass.alloc().initWithFrame_(
+            _Foundation.NSMakeRect(0, 0, D.SETTINGS_CONTENT_W, post_h)
         )
-        scroll_view.setDocumentView_(doc)
-        self._grammar_scroll_view = scroll_view
-        scroll_view.contentView().scrollToPoint_(_Foundation.NSMakePoint(0, 0))
-        scroll_view.reflectScrolledClipView_(scroll_view.contentView())
+        doc.addSubview_(self._post_engine_container)
 
-        y = 20.0
+        # Use a local y inside the container (starts at 0)
+        y = 0.0
 
-        # Grammar enabled toggle
-        self._grammar_enabled_checkbox, y = self._make_checkbox_row(
-            doc, y, "Enable grammar correction", config.grammar.enabled
-        )
-        y += D.SETTINGS_SECTION_GAP
+        # ---- Grammar Backends ----
+        y = self._add_section_header(self._post_engine_container, y, "Grammar Backends")
 
         # ---- Ollama ----
-        y = self._add_section_header(doc, y, "Ollama")
+        y = self._add_section_header(self._post_engine_container, y, "Ollama")
 
-        # Model field + Fetch button side-by-side
         btn_w = 72
         self._ollama_model_field = self._make_text_field_for_row(
             config.ollama.model,
@@ -860,17 +983,15 @@ class SettingsWindow:
         fetch_btn.setButtonType_(_AppKit.NSButtonTypeMomentaryPushIn)
         fetch_btn.setFont_(Typography.caption())
         self._connect_button(fetch_btn, self._on_fetch_ollama_models)
-        doc.addSubview_(fetch_btn)
-        y = self._add_row(doc, y, "Model", self._ollama_model_field)
+        self._post_engine_container.addSubview_(fetch_btn)
+        y = self._add_row(self._post_engine_container, y, "Model", self._ollama_model_field)
 
-        # Model picker popup (hidden until fetch populates it)
         self._ollama_model_popup = _AppKit.NSPopUpButton.alloc().initWithFrame_pullsDown_(
             _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4), False
         )
         self._ollama_model_popup.addItemWithTitle_("Pick model...")
         self._ollama_model_popup.setHidden_(True)
         self._connect_button(self._ollama_model_popup, self._on_ollama_popup_select)
-        # Empty label placeholder to consume row space
         blank_lbl = _AppKit.NSTextField.alloc().initWithFrame_(
             _Foundation.NSMakeRect(D.SETTINGS_LEFT_MARGIN, y, D.SETTINGS_LABEL_W, D.SETTINGS_ROW_H)
         )
@@ -879,11 +1000,10 @@ class SettingsWindow:
         blank_lbl.setDrawsBackground_(False)
         blank_lbl.setEditable_(False)
         blank_lbl.setSelectable_(False)
-        doc.addSubview_(blank_lbl)
-        doc.addSubview_(self._ollama_model_popup)
+        self._post_engine_container.addSubview_(blank_lbl)
+        self._post_engine_container.addSubview_(self._ollama_model_popup)
         y += D.SETTINGS_ROW_H + D.SETTINGS_ROW_GAP
 
-        # Status label (shown during/after fetch)
         self._ollama_status_label = _AppKit.NSTextField.alloc().initWithFrame_(
             _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, 14)
         )
@@ -894,131 +1014,114 @@ class SettingsWindow:
         self._ollama_status_label.setSelectable_(False)
         self._ollama_status_label.setFont_(Typography.note())
         self._ollama_status_label.setTextColor_(Colors.secondary_label())
-        doc.addSubview_(self._ollama_status_label)
+        self._post_engine_container.addSubview_(self._ollama_status_label)
         y += 18
 
         self._ollama_url_field = self._make_text_field_for_row(
             config.ollama.url,
             _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
-        y = self._add_row(doc, y, "API URL", self._ollama_url_field)
+        y = self._add_row(self._post_engine_container, y, "API URL", self._ollama_url_field)
 
         self._ollama_keep_alive_field = self._make_text_field_for_row(
             config.ollama.keep_alive,
             _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 100, D.SETTINGS_ROW_H + 4),
         )
-        y = self._add_row(doc, y, "Keep alive", self._ollama_keep_alive_field)
+        y = self._add_row(self._post_engine_container, y, "Keep alive", self._ollama_keep_alive_field)
 
         self._ollama_max_chars_field = self._make_text_field_for_row(
             config.ollama.max_chars,
             _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
         )
-        y = self._add_row(doc, y, "Max chars (0=unlimited)", self._ollama_max_chars_field)
+        y = self._add_row(self._post_engine_container, y, "Max chars (0=unlimited)", self._ollama_max_chars_field)
 
         self._ollama_timeout_field = self._make_text_field_for_row(
             config.ollama.timeout,
             _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
         )
-        y = self._add_row(doc, y, "Timeout (s)", self._ollama_timeout_field)
+        y = self._add_row(self._post_engine_container, y, "Timeout (s)", self._ollama_timeout_field)
 
         self._ollama_unload_checkbox, y = self._make_checkbox_row(
-            doc, y, "Unload model on exit", config.ollama.unload_on_exit
+            self._post_engine_container, y, "Unload model on exit", config.ollama.unload_on_exit
         )
         y += D.SETTINGS_SECTION_GAP
 
         # ---- Apple Intelligence ----
-        y = self._add_section_header(doc, y, "Apple Intelligence")
+        y = self._add_section_header(self._post_engine_container, y, "Apple Intelligence")
 
         self._ai_max_chars_field = self._make_text_field_for_row(
             config.apple_intelligence.max_chars,
             _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
         )
-        y = self._add_row(doc, y, "Max chars (0=unlimited)", self._ai_max_chars_field)
+        y = self._add_row(self._post_engine_container, y, "Max chars (0=unlimited)", self._ai_max_chars_field)
 
         self._ai_timeout_field = self._make_text_field_for_row(
             config.apple_intelligence.timeout,
             _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
         )
-        y = self._add_row(doc, y, "Timeout (s)", self._ai_timeout_field)
+        y = self._add_row(self._post_engine_container, y, "Timeout (s)", self._ai_timeout_field)
 
-        y = self._add_note(doc, y, "Requires macOS 26+, Apple Silicon")
+        y = self._add_note(self._post_engine_container, y, "Requires macOS 26+, Apple Silicon")
         y += D.SETTINGS_SECTION_GAP
 
         # ---- LM Studio ----
-        y = self._add_section_header(doc, y, "LM Studio")
+        y = self._add_section_header(self._post_engine_container, y, "LM Studio")
 
         self._lm_model_field = self._make_text_field_for_row(
             config.lm_studio.model,
             _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
-        y = self._add_row(doc, y, "Model", self._lm_model_field)
+        y = self._add_row(self._post_engine_container, y, "Model", self._lm_model_field)
 
         self._lm_url_field = self._make_text_field_for_row(
             config.lm_studio.url,
             _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
-        y = self._add_row(doc, y, "API URL", self._lm_url_field)
+        y = self._add_row(self._post_engine_container, y, "API URL", self._lm_url_field)
 
         self._lm_max_chars_field = self._make_text_field_for_row(
             config.lm_studio.max_chars,
             _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
         )
-        y = self._add_row(doc, y, "Max chars (0=unlimited)", self._lm_max_chars_field)
+        y = self._add_row(self._post_engine_container, y, "Max chars (0=unlimited)", self._lm_max_chars_field)
 
         self._lm_max_tokens_field = self._make_text_field_for_row(
             config.lm_studio.max_tokens,
             _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
         )
-        y = self._add_row(doc, y, "Max tokens (0=default)", self._lm_max_tokens_field)
+        y = self._add_row(self._post_engine_container, y, "Max tokens (0=default)", self._lm_max_tokens_field)
 
         self._lm_timeout_field = self._make_text_field_for_row(
             config.lm_studio.timeout,
             _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
         )
-        y = self._add_row(doc, y, "Timeout (s)", self._lm_timeout_field)
+        y = self._add_row(self._post_engine_container, y, "Timeout (s)", self._lm_timeout_field)
         y += D.SETTINGS_SECTION_GAP
 
-        # ---- Shortcuts ----
-        y = self._add_section_header(doc, y, "Shortcuts")
+        # ---- Storage ----
+        y = self._add_section_header(self._post_engine_container, y, "Storage")
 
-        self._shortcuts_enabled_checkbox, y = self._make_checkbox_row(
-            doc, y, "Enable shortcuts", config.shortcuts.enabled
+        self._backup_dir_field = self._make_text_field_for_row(
+            config.backup.directory,
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
-        self._connect_button(self._shortcuts_enabled_checkbox, self._on_restart_required_change)
+        y = self._add_row(self._post_engine_container, y, "Backup directory", self._backup_dir_field)
 
-        self._shortcuts_proofread_field = self._make_text_field_for_row(
-            config.shortcuts.proofread,
-            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 140, D.SETTINGS_ROW_H + 4),
+        self._whisper_url_field = self._make_text_field_for_row(
+            config.whisper.url,
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
-        y = self._add_row(doc, y, "Proofread", self._shortcuts_proofread_field)
+        y = self._add_row(self._post_engine_container, y, "WhisperKit URL", self._whisper_url_field)
+        y = self._add_note(self._post_engine_container, y, "Restart required")
+        y += D.SETTINGS_ROW_GAP
 
-        self._shortcuts_rewrite_field = self._make_text_field_for_row(
-            config.shortcuts.rewrite,
-            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 140, D.SETTINGS_ROW_H + 4),
+        self._whisper_check_url_field = self._make_text_field_for_row(
+            config.whisper.check_url,
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
-        y = self._add_row(doc, y, "Rewrite", self._shortcuts_rewrite_field)
-
-        self._shortcuts_prompt_field = self._make_text_field_for_row(
-            config.shortcuts.prompt_engineer,
-            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 140, D.SETTINGS_ROW_H + 4),
-        )
-        y = self._add_row(doc, y, "Prompt engineer", self._shortcuts_prompt_field)
-
-        self._add_note(doc, y, "Shortcut changes require restart")
-
-    def _build_interface_tab(self, item):
-        config = get_config()
-        view = _FlippedViewClass.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(0, 0, D.SETTINGS_CONTENT_W, D.SETTINGS_CONTENT_H)
-        )
-        item.setView_(view)
-        y = 20.0
-
-        y = self._add_section_header(view, y, "Overlay")
-
-        self._show_overlay_checkbox, y = self._make_checkbox_row(
-            view, y, "Show recording overlay", config.ui.show_overlay
-        )
+        y = self._add_row(self._post_engine_container, y, "WhisperKit check URL", self._whisper_check_url_field)
+        y = self._add_note(self._post_engine_container, y, "Restart required")
+        y += D.SETTINGS_ROW_GAP
 
         opacity = config.ui.overlay_opacity
 
@@ -1026,69 +1129,37 @@ class SettingsWindow:
             self._overlay_opacity_label.setStringValue_(f"{sender.floatValue():.2f}")
 
         self._overlay_opacity_slider, self._overlay_opacity_label, y = self._make_slider_row(
-            view, y, "Overlay opacity",
+            self._post_engine_container, y, "Overlay opacity",
             opacity, 0.1, 1.0,
             lambda v: f"{v:.2f}",
             _opacity_changed,
         )
-
-        y = self._add_note(view, y, "Takes effect after restart")
+        y = self._add_note(self._post_engine_container, y, "Takes effect after restart")
         y += D.SETTINGS_SECTION_GAP
 
-        y = self._add_section_header(view, y, "Feedback")
+        # ---- Config File ----
+        y = self._add_section_header(self._post_engine_container, y, "Config File")
 
-        self._sounds_checkbox, y = self._make_checkbox_row(
-            view, y, "Sounds enabled", config.ui.sounds_enabled
+        btn_w = 110
+        open_config_btn = _AppKit.NSButton.alloc().initWithFrame_(
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, btn_w, D.SETTINGS_ROW_H + 4)
+        )
+        open_config_btn.setTitle_("Open in Editor")
+        open_config_btn.setBezelStyle_(_AppKit.NSBezelStyleRounded)
+        open_config_btn.setButtonType_(_AppKit.NSButtonTypeMomentaryPushIn)
+        open_config_btn.setFont_(Typography.caption())
+        self._connect_button(open_config_btn, lambda _: subprocess.run(['open', str(CONFIG_FILE)]))
+        y = self._add_row(self._post_engine_container, y, "Config file", open_config_btn)
+        y = self._add_note(self._post_engine_container, y, str(CONFIG_FILE))
+
+        # Resize the container to its actual content height
+        post_f = self._post_engine_container.frame()
+        self._post_engine_container.setFrame_(
+            _Foundation.NSMakeRect(post_f.origin.x, post_f.origin.y, post_f.size.width, y + 20)
         )
 
-        self._notifications_checkbox, y = self._make_checkbox_row(
-            view, y, "Notifications enabled", config.ui.notifications_enabled
-        )
-
-    def _build_advanced_tab(self, item):
-        config = get_config()
-        view = _FlippedViewClass.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(0, 0, D.SETTINGS_CONTENT_W, D.SETTINGS_CONTENT_H)
-        )
-        item.setView_(view)
-        y = 20.0
-
-        y = self._add_section_header(view, y, "Storage")
-
-        self._backup_dir_field = self._make_text_field_for_row(
-            config.backup.directory,
-            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
-        )
-        y = self._add_row(view, y, "Backup directory", self._backup_dir_field)
-        y += D.SETTINGS_SECTION_GAP
-
-        y = self._add_section_header(view, y, "WhisperKit Server")
-
-        self._whisper_url_field = self._make_text_field_for_row(
-            config.whisper.url,
-            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
-        )
-        y = self._add_row(view, y, "API URL", self._whisper_url_field)
-        y = self._add_note(view, y, "Restart required")
-        y += D.SETTINGS_ROW_GAP
-
-        self._whisper_check_url_field = self._make_text_field_for_row(
-            config.whisper.check_url,
-            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
-        )
-        y = self._add_row(view, y, "Check URL", self._whisper_check_url_field)
-        y = self._add_note(view, y, "Restart required")
-        y += D.SETTINGS_SECTION_GAP
-
-        y = self._add_section_header(view, y, "Audio Capture")
-
-        sample_rate_field = self._make_text_field_for_row(
-            config.audio.sample_rate,
-            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
-            enabled=False,
-        )
-        y = self._add_row(view, y, "Sample rate (Hz)", sample_rate_field)
-        self._add_note(view, y, "Fixed at 16000 Hz for Whisper")
+        # Apply initial engine section visibility and dynamic layout
+        self._update_engine_sections(config.transcription.engine)
 
     def _build_about_tab(self, item):
         view = _FlippedViewClass.alloc().initWithFrame_(
@@ -1242,6 +1313,37 @@ class SettingsWindow:
             engine_value = _ENGINE_OPTIONS[idx][1]
             self._update_engine_sections(engine_value)
 
+    def _relayout_advanced_tab(self):
+        """Reposition the post-engine container based on which engine section is visible."""
+        if self._post_engine_container is None or self._advanced_scroll_view is None:
+            return
+
+        # Determine the height of the currently visible engine section
+        if self._qwen3_section_view and not self._qwen3_section_view.isHidden():
+            visible_h = self._qwen3_actual_h
+        else:
+            visible_h = self._whisperkit_actual_h
+
+        # Move the post-engine container to sit just below the visible section
+        new_container_y = self._engine_sections_y + visible_h + D.SETTINGS_SECTION_GAP
+        container_frame = self._post_engine_container.frame()
+        self._post_engine_container.setFrame_(
+            _Foundation.NSMakeRect(0, new_container_y, container_frame.size.width, container_frame.size.height)
+        )
+
+        # Resize the document view to fit all content
+        doc_h = new_container_y + container_frame.size.height + 40
+        doc_view = self._advanced_scroll_view.documentView()
+        if doc_view:
+            doc_frame = doc_view.frame()
+            doc_view.setFrame_(
+                _Foundation.NSMakeRect(0, 0, doc_frame.size.width, doc_h)
+            )
+
+        self._advanced_scroll_view.reflectScrolledClipView_(
+            self._advanced_scroll_view.contentView()
+        )
+
     def _update_engine_sections(self, engine_value: str):
         """Show the section matching engine_value, hide the other."""
         is_qwen3 = (engine_value == "qwen3_asr")
@@ -1249,6 +1351,14 @@ class SettingsWindow:
             self._qwen3_section_view.setHidden_(not is_qwen3)
         if self._whisperkit_section_view:
             self._whisperkit_section_view.setHidden_(is_qwen3)
+        # Language popup visibility in General tab
+        if self._qwen3_language_popup:
+            self._qwen3_language_popup.setHidden_(not is_qwen3)
+        if self._whisper_language_popup:
+            self._whisper_language_popup.setHidden_(is_qwen3)
+        # Reposition post-engine content if advanced tab is built
+        if self._post_engine_container is not None:
+            self._relayout_advanced_tab()
 
     def _on_prompt_preset_change(self, sender):
         """Update the vocabulary hint text view when the prompt preset changes."""
@@ -1366,6 +1476,7 @@ class SettingsWindow:
             ("whisper", "url"): config.whisper.url,
             ("whisper", "check_url"): config.whisper.check_url,
             ("grammar", "enabled"): config.grammar.enabled,
+            ("grammar", "backend"): config.grammar.backend,
             ("ollama", "model"): config.ollama.model,
             ("ollama", "url"): config.ollama.url,
             ("ollama", "keep_alive"): config.ollama.keep_alive,
@@ -1401,6 +1512,7 @@ class SettingsWindow:
             ("shortcuts", "proofread"): config.shortcuts.proofread,
             ("shortcuts", "rewrite"): config.shortcuts.rewrite,
             ("shortcuts", "prompt_engineer"): config.shortcuts.prompt_engineer,
+            ("backup", "history_limit"): config.backup.history_limit,
         }
 
     def _load_values(self):
@@ -1489,23 +1601,32 @@ class SettingsWindow:
                     break
             self._update_prompt_preset_ui(config.whisper.prompt_preset, config.whisper.prompt)
 
-        # Grammar tab
+        # Advanced tab scroll reset
+        if self._advanced_scroll_view:
+            self._advanced_scroll_view.contentView().scrollToPoint_(
+                _Foundation.NSMakePoint(0, 0)
+            )
+            self._advanced_scroll_view.reflectScrolledClipView_(
+                self._advanced_scroll_view.contentView()
+            )
+
+        # Grammar / ollama fields
         if self._ollama_model_popup:
             self._ollama_model_popup.removeAllItems()
             self._ollama_model_popup.addItemWithTitle_("Pick model...")
             self._ollama_model_popup.setHidden_(True)
         if self._ollama_status_label:
             self._ollama_status_label.setStringValue_("")
-        if self._grammar_scroll_view:
-            self._grammar_scroll_view.contentView().scrollToPoint_(
-                _Foundation.NSMakePoint(0, 0)
-            )
-            self._grammar_scroll_view.reflectScrolledClipView_(
-                self._grammar_scroll_view.contentView()
-            )
         if self._grammar_enabled_checkbox:
             state = _AppKit.NSControlStateValueOn if config.grammar.enabled else _AppKit.NSControlStateValueOff
             self._grammar_enabled_checkbox.setState_(state)
+        if self._grammar_backend_popup:
+            from .backends import BACKEND_REGISTRY
+            backend_options = [(info.name, bid) for bid, info in BACKEND_REGISTRY.items()]
+            for i, (_, val) in enumerate(backend_options):
+                if val == config.grammar.backend:
+                    self._grammar_backend_popup.selectItemAtIndex_(i)
+                    break
         if self._ollama_model_field:
             self._ollama_model_field.setStringValue_(config.ollama.model)
         if self._ollama_url_field:
@@ -1543,20 +1664,20 @@ class SettingsWindow:
         if self._shortcuts_prompt_field:
             self._shortcuts_prompt_field.setStringValue_(config.shortcuts.prompt_engineer)
 
-        # Interface tab
+        # Interface / General tab fields
         if self._show_overlay_checkbox:
             state = _AppKit.NSControlStateValueOn if config.ui.show_overlay else _AppKit.NSControlStateValueOff
             self._show_overlay_checkbox.setState_(state)
-        if self._overlay_opacity_slider:
-            self._overlay_opacity_slider.setFloatValue_(config.ui.overlay_opacity)
-        if self._overlay_opacity_label:
-            self._overlay_opacity_label.setStringValue_(f"{config.ui.overlay_opacity:.2f}")
         if self._sounds_checkbox:
             state = _AppKit.NSControlStateValueOn if config.ui.sounds_enabled else _AppKit.NSControlStateValueOff
             self._sounds_checkbox.setState_(state)
         if self._notifications_checkbox:
             state = _AppKit.NSControlStateValueOn if config.ui.notifications_enabled else _AppKit.NSControlStateValueOff
             self._notifications_checkbox.setState_(state)
+
+        # General tab: history limit
+        if self._history_limit_field:
+            self._history_limit_field.setStringValue_(str(config.backup.history_limit))
 
         # Advanced tab
         if self._backup_dir_field:
@@ -1565,6 +1686,10 @@ class SettingsWindow:
             self._whisper_url_field.setStringValue_(config.whisper.url)
         if self._whisper_check_url_field:
             self._whisper_check_url_field.setStringValue_(config.whisper.check_url)
+        if self._overlay_opacity_slider:
+            self._overlay_opacity_slider.setFloatValue_(config.ui.overlay_opacity)
+        if self._overlay_opacity_label:
+            self._overlay_opacity_label.setStringValue_(f"{config.ui.overlay_opacity:.2f}")
 
     def _checkbox_bool(self, checkbox) -> bool:
         return checkbox.state() == _AppKit.NSControlStateValueOn
@@ -1680,6 +1805,10 @@ class SettingsWindow:
         # Grammar
         if self._grammar_enabled_checkbox:
             new_values[("grammar", "enabled")] = self._checkbox_bool(self._grammar_enabled_checkbox)
+        if self._grammar_backend_popup:
+            from .backends import BACKEND_REGISTRY
+            backend_options = [(info.name, bid) for bid, info in BACKEND_REGISTRY.items()]
+            new_values[("grammar", "backend")] = self._popup_value(self._grammar_backend_popup, backend_options)
         if self._ollama_model_field:
             new_values[("ollama", "model")] = self._ollama_model_field.stringValue().strip()
         if self._ollama_url_field:
@@ -1731,6 +1860,11 @@ class SettingsWindow:
             new_values[("ui", "sounds_enabled")] = self._checkbox_bool(self._sounds_checkbox)
         if self._notifications_checkbox:
             new_values[("ui", "notifications_enabled")] = self._checkbox_bool(self._notifications_checkbox)
+
+        # General: history limit
+        if self._history_limit_field:
+            new_values[("backup", "history_limit")] = self._parse_int(
+                self._history_limit_field.stringValue(), 100)
 
         # Advanced
         if self._backup_dir_field:
@@ -1858,6 +1992,8 @@ class SettingsWindow:
             self._load_values()
             _AppKit.NSApp.activateIgnoringOtherApps_(True)
             self._panel.makeKeyAndOrderFront_(None)
+            # Re-assert window level; some macOS versions reset it on orderOut
+            self._panel.setLevel_(_AppKit.NSStatusWindowLevel)
 
         _perform_on_main_thread(_show, wait=False)
 
