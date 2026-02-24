@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "local-whisper"
-version = "1.0.0"
+version = "1.0.1"
 description = "Local voice transcription with grammar correction for macOS"
 readme = "README.md"
 license = "MIT"
@@ -33,6 +33,7 @@ dependencies = [
     "pynput>=1.7.0",
     "pyobjc-framework-Cocoa>=8.0",
     "pyobjc-framework-Quartz>=8.0",
+    "mlx-audio>=0.3.0",
 ]
 
 [project.scripts]

@@ -6,11 +6,13 @@ Floating overlay window for Local Whisper.
 Shows recording status in a transparent window at center-bottom of screen.
 """
 
+import math
 import threading
 import queue
 from typing import Optional, Callable
 
 from .config import get_config
+from .theme import Colors, Typography, Dimensions as D, create_glass_background, apply_glass_border
 from .utils import ICON_IMAGE, OVERLAY_WAVE_FRAMES, log
 
 # Will be imported lazily to avoid issues on non-macOS
@@ -79,9 +81,11 @@ class RecordingOverlay:
         self._duration_field = None
         self._app_field = None
         self._wave_view = None
+        self._level_bar = None
         self._font = None
         self._lock = threading.Lock()
         self._visible = False
+        self._audio_level = 0.0
 
     def _create_window(self):
         """Create the overlay window on the main thread."""
@@ -95,13 +99,13 @@ class RecordingOverlay:
         screen_width = screen_frame.size.width
         screen_height = screen_frame.size.height
 
-        # Compact pill (expands for status text)
-        window_width = 160
-        window_height = 32
+        # Substantial pill (expands for status text)
+        window_width = D.OVERLAY_WIDTH
+        window_height = D.OVERLAY_HEIGHT
 
-        # Center, lower third
-        x = (screen_width - window_width) / 2
-        y = screen_height * 0.33
+        # Perfectly centered horizontally, ~22% up from the bottom of the screen
+        x = round((screen_width - window_width) / 2)
+        y = round(screen_height * D.OVERLAY_VERTICAL_POSITION)
 
         # Window
         self._window = _AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
@@ -121,21 +125,17 @@ class RecordingOverlay:
             _AppKit.NSWindowCollectionBehaviorStationary
         )
 
-        # Frosted dark background
-        content = _AppKit.NSView.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(0, 0, window_width, window_height)
+        # Frosted glass background
+        content = create_glass_background(
+            _Foundation.NSMakeRect(0, 0, window_width, window_height),
+            corner_radius=D.OVERLAY_CORNER_RADIUS,
         )
-        content.setWantsLayer_(True)
-        layer = content.layer()
-        layer.setCornerRadius_(window_height / 2)
-        layer.setBackgroundColor_(
-            _Quartz.CGColorCreateGenericRGB(0.12, 0.12, 0.14, 0.88)
-        )
+        apply_glass_border(content)
 
         # Wave image
-        self._wave_size = 22
-        self._wave_gap = 8
-        wave_x = 12
+        self._wave_size = D.OVERLAY_WAVE_SIZE
+        self._wave_gap = D.OVERLAY_WAVE_GAP
+        wave_x = D.OVERLAY_WAVE_X
         wave_y = (window_height - self._wave_size) / 2
         self._wave_view = _AppKit.NSImageView.alloc().initWithFrame_(
             _Foundation.NSMakeRect(wave_x, wave_y, self._wave_size, self._wave_size)
@@ -146,19 +146,39 @@ class RecordingOverlay:
 
         # Text field
         text_x = wave_x + self._wave_size + self._wave_gap
+        text_h = 20
         self._duration_field = _AppKit.NSTextField.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(text_x, (window_height - 18) / 2, window_width - text_x - 10, 18)
+            _Foundation.NSMakeRect(text_x, (window_height - text_h) / 2, window_width - text_x - 14, text_h)
         )
         self._duration_field.setStringValue_("0.0")
         self._duration_field.setBezeled_(False)
         self._duration_field.setDrawsBackground_(False)
         self._duration_field.setEditable_(False)
         self._duration_field.setSelectable_(False)
-        self._duration_field.setTextColor_(_AppKit.NSColor.whiteColor())
-        self._font = _AppKit.NSFont.monospacedSystemFontOfSize_weight_(13, _AppKit.NSFontWeightSemibold)
+        self._duration_field.setTextColor_(Colors.status_text())
+        self._font = Typography.overlay_duration()
         self._duration_field.setFont_(self._font)
         self._duration_field.setAlignment_(_AppKit.NSTextAlignmentLeft)
         content.addSubview_(self._duration_field)
+
+        # Audio level bar — strip at the bottom of the pill
+        bar_margin = D.OVERLAY_BAR_MARGIN
+        bar_height = D.OVERLAY_BAR_HEIGHT
+        bar_y = 5
+        bar_max_width = window_width - bar_margin * 2
+        self._level_bar = _AppKit.NSView.alloc().initWithFrame_(
+            _Foundation.NSMakeRect(bar_margin, bar_y, 0, bar_height)
+        )
+        self._level_bar.setWantsLayer_(True)
+        self._level_bar.layer().setCornerRadius_(bar_height / 2)
+        self._level_bar.layer().setBackgroundColor_(
+            _Quartz.CGColorCreateGenericRGB(0, 0, 0, 0)
+        )
+        content.addSubview_(self._level_bar)
+        self._level_bar_margin = bar_margin
+        self._level_bar_max_width = bar_max_width
+        self._level_bar_y = bar_y
+        self._level_bar_height = bar_height
 
         self._text_field = None
         self._app_field = None
@@ -178,9 +198,9 @@ class RecordingOverlay:
         wave_y = (self._window_height - self._wave_size) / 2
         self._wave_view.setFrame_(_Foundation.NSMakeRect(start_x, wave_y, self._wave_size, self._wave_size))
         text_x = start_x + self._wave_size + self._wave_gap
-        text_width = self._window_width - text_x - 8
+        text_width = self._window_width - text_x - 14
         self._duration_field.setFrame_(
-            _Foundation.NSMakeRect(text_x, (self._window_height - 18) / 2, text_width, 18)
+            _Foundation.NSMakeRect(text_x, (self._window_height - 20) / 2, text_width, 20)
         )
 
     def show(self):
@@ -197,8 +217,13 @@ class RecordingOverlay:
                     text = "0.0"
                     self._duration_field.setStringValue_(text)
                     self._layout_row(text)
-                    self._duration_field.setTextColor_(
-                        _AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(1.0, 0.35, 0.35, 1.0)
+                    self._duration_field.setTextColor_(Colors.recording())
+                if self._level_bar:
+                    self._audio_level = 0.0
+                    self._level_bar.setFrame_(
+                        _Foundation.NSMakeRect(
+                            self._level_bar_margin, self._level_bar_y, 0, self._level_bar_height
+                        )
                     )
                 if self._wave_view:
                     self._wave_view.setImage_(
@@ -219,7 +244,7 @@ class RecordingOverlay:
 
         _perform_on_main_thread(_hide)
 
-    def update_duration(self, seconds: float, frame: str = ""):
+    def update_duration(self, seconds: float, frame: str = "", level: float = 0.0):
         """Update the duration display."""
         config = get_config()
         if not config.ui.show_overlay:
@@ -228,6 +253,7 @@ class RecordingOverlay:
         with self._lock:
             if not self._visible or self._duration_field is None:
                 return
+            self._audio_level = level
 
         _import_macos()
 
@@ -236,11 +262,29 @@ class RecordingOverlay:
                 text = f"{seconds:.1f}"
                 self._duration_field.setStringValue_(text)
                 self._layout_row(text)
-                self._duration_field.setTextColor_(
-                    _AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(1.0, 0.35, 0.35, 1.0)
-                )
+                self._duration_field.setTextColor_(Colors.recording())
             if self._wave_view and frame:
                 self._wave_view.setImage_(_AppKit.NSImage.alloc().initWithContentsOfFile_(frame))
+            if self._level_bar:
+                lvl = max(0.0, self._audio_level)
+                if lvl > 0.001:
+                    scaled = min(1.0, max(0.0, math.log10(lvl / 0.001) / 2.5))
+                else:
+                    scaled = 0.0
+                bar_width = scaled * self._level_bar_max_width
+                self._level_bar.setFrame_(
+                    _Foundation.NSMakeRect(
+                        self._level_bar_margin, self._level_bar_y,
+                        bar_width, self._level_bar_height
+                    )
+                )
+                if lvl < 0.005:
+                    bar_color = Colors.level_silence().CGColor()
+                elif lvl < 0.05:
+                    bar_color = Colors.level_speech().CGColor()
+                else:
+                    bar_color = Colors.level_loud().CGColor()
+                self._level_bar.layer().setBackgroundColor_(bar_color)
 
         _perform_on_main_thread(_update, wait=True)
 
@@ -260,7 +304,7 @@ class RecordingOverlay:
 
                 self._duration_field.setStringValue_(text)
                 self._layout_row(text)
-                self._duration_field.setTextColor_(_AppKit.NSColor.whiteColor())
+                self._duration_field.setTextColor_(Colors.status_text())
 
                 # Show static wave image
                 if self._wave_view and OVERLAY_WAVE_FRAMES:
@@ -288,29 +332,31 @@ class RecordingOverlay:
                 if self._duration_field is None:
                     return
 
+                if self._level_bar:
+                    self._level_bar.setFrame_(
+                        _Foundation.NSMakeRect(
+                            self._level_bar_margin, self._level_bar_y, 0, self._level_bar_height
+                        )
+                    )
                 if status == "processing":
                     text = "···"
                     self._duration_field.setStringValue_(text)
                     self._layout_row(text)
-                    self._duration_field.setTextColor_(_AppKit.NSColor.lightGrayColor())
+                    self._duration_field.setTextColor_(Colors.processing())
                     if self._wave_view:
                         self._wave_view.setImage_(_AppKit.NSImage.alloc().initWithContentsOfFile_(OVERLAY_WAVE_FRAMES[0]))
                 elif status == "done":
                     text = "Copied"
                     self._duration_field.setStringValue_(text)
                     self._layout_row(text)
-                    self._duration_field.setTextColor_(
-                        _AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.4, 0.9, 0.5, 1.0)
-                    )
+                    self._duration_field.setTextColor_(Colors.done())
                     if self._wave_view:
                         self._wave_view.setImage_(_AppKit.NSImage.alloc().initWithContentsOfFile_(OVERLAY_WAVE_FRAMES[0]))
                 elif status == "error":
                     text = "Failed"
                     self._duration_field.setStringValue_(text)
                     self._layout_row(text)
-                    self._duration_field.setTextColor_(
-                        _AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(1.0, 0.4, 0.4, 1.0)
-                    )
+                    self._duration_field.setTextColor_(Colors.error())
                     if self._wave_view:
                         self._wave_view.setImage_(_AppKit.NSImage.alloc().initWithContentsOfFile_(OVERLAY_WAVE_FRAMES[0]))
 
@@ -336,7 +382,7 @@ class RecordingOverlay:
                 text = "···"
                 self._duration_field.setStringValue_(text)
                 self._layout_row(text)
-                self._duration_field.setTextColor_(_AppKit.NSColor.lightGrayColor())
+                self._duration_field.setTextColor_(Colors.processing())
                 if self._wave_view and frame:
                     self._wave_view.setImage_(_AppKit.NSImage.alloc().initWithContentsOfFile_(frame))
                 self._window.orderFront_(None)

@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.1] - 2026-02-24
+
+### Added
+
+- Qwen3-ASR is now the default transcription engine, running fully in-process with no server required. It handles recordings up to 20 minutes natively.
+- WhisperKit remains available as an alternative engine. Switch between engines via `wh engine <name>`, the Settings window, or by editing the config.
+- Audio pre-processing pipeline applied before every transcription: voice activity detection, silence trimming, spectral noise reduction, and level normalization.
+- Pre-recording buffer captures a short window of audio before the hotkey fires, so the first syllable is never clipped. Configurable via `pre_buffer` in config.
+- Real-time audio level indicator in the recording overlay, color-coded by loudness.
+- Engine selection and audio processing options exposed in the Settings window.
+- History menu replaced with two dedicated submenus: Transcriptions shows the last 100 transcribed texts (newest first, click to copy), Recordings shows audio recordings (click to reveal in Finder). Both submenus rebuild lazily and include an "Open Folder" item.
+- "Open Config File" button in Settings Advanced tab for quick access to config.toml.
+
+### Changed
+
+- Default transcription engine is now Qwen3-ASR instead of WhisperKit. Existing installs will continue using whichever engine is set in config; new installs default to Qwen3-ASR.
+- Long recordings (over 28 seconds) are only split into segments when using WhisperKit. Qwen3-ASR handles them as a single pass.
+- Completion notifications are now off by default.
+- Settings window reorganized from 6 tabs to 3 (General, Advanced, About). Everyday options in General, power-user tuning in Advanced.
+- Menu bar cleaned up: "Audio Files" renamed to "Recordings", "Backups" and "Config" items removed (redundant with in-app alternatives).
+- Settings window now reliably opens over fullscreen apps.
+
+---
+
 ## [1.0.0] - 2026-02-23
 
 ### Added
@@ -25,13 +49,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### 2026-02-22
 
 - In-process backend switching from the Grammar submenu (no restart needed)
-- Settings window with 6 tabs (Recording, Transcription, Grammar, Interface, Advanced, About)
+- Settings window with 3 tabs (General, Advanced, About)
 - `wh build` command for explicit Swift CLI rebuilds
 - Notifications toggle in Settings
 - macOS notifications on transcription success, failure, and errors
 - Long text chunking via `max_chars` for large transcriptions across all backends
 - One-step `setup.sh` with inline LaunchAgent install and WhisperKit model pre-compilation
-- Hardened `setup.sh` with binary verification, accessibility re-verify, and fish shell hint
+- Hardened `setup.sh` with binary verification, accessibility re-verification, and fish shell hint
 - About tab with version info, author, and credits (two-column row layout)
 - Config writes now update only changed fields instead of rewriting the file
 - Config writer appends missing keys instead of silently skipping them
@@ -71,7 +95,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### 2026-01-22 – 2026-01-24
 
 - Refactored entire codebase from "proofreading" to "grammar correction" terminology
-- Switched AI models to proofreading-only mode (no creative rewriting)
+- Switched grammar backends to proofreading-only mode (no creative rewriting)
 - Updated default WhisperKit model to `large-v3-v20240930_626MB`
 - Added transcription prompt parameter for professional guidance
 - Fixed conversational prompt that was confusing Whisper transcription output

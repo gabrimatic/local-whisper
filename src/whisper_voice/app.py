@@ -7,7 +7,7 @@ Double-tap Right Option (⌥) to start recording, single tap to stop.
 Transcribed and polished text is copied to clipboard.
 
 Architecture:
-    Voice -> WhisperKit (localhost:50060) -> Grammar Backend -> Clipboard
+    Voice -> Transcription Engine (Qwen3-ASR by default) -> Grammar Backend -> Clipboard
 
 Supported grammar backends:
     - apple_intelligence: Apple's on-device Foundation Models (macOS 15+)
@@ -36,19 +36,20 @@ from pynput import keyboard
 
 from .config import get_config, CONFIG_FILE
 from .utils import (
-    log, play_sound, is_silent, is_hallucination, hide_dock_icon, truncate,
+    log, play_sound, is_hallucination, hide_dock_icon, truncate, time_ago,
     strip_hallucination_lines, check_microphone_permission,
     check_accessibility_trusted, request_accessibility_permission, send_notification,
     ICON_IDLE, ICON_RECORDING, ICON_PROCESSING, ICON_SUCCESS, ICON_ERROR,
-    ICON_IMAGE, ICON_FRAMES, ICON_PROCESS_FRAMES, OVERLAY_WAVE_FRAMES,
+    ICON_IMAGE, APP_ICON, ICON_FRAMES, ICON_PROCESS_FRAMES, OVERLAY_WAVE_FRAMES,
     ICON_RESET_SUCCESS, ICON_RESET_ERROR, LOG_TRUNCATE, PREVIEW_TRUNCATE,
     ANIM_INTERVAL_RECORDING, ANIM_INTERVAL_PROCESSING, DURATION_UPDATE_INTERVAL,
     CLIPBOARD_TIMEOUT,
     C_RESET, C_BOLD, C_DIM, C_CYAN, C_GREEN, C_YELLOW
 )
 from .audio import Recorder
+from .audio_processor import AudioProcessor
 from .backup import Backup
-from .transcriber import Whisper
+from .transcriber import Transcriber
 from .grammar import Grammar
 from .overlay import get_overlay, _perform_on_main_thread
 from .backends import BACKEND_REGISTRY
@@ -89,19 +90,34 @@ class App(rumps.App):
     def __init__(self):
         super().__init__(name="Whisper", title=ICON_IDLE, icon=ICON_IMAGE, template=True, quit_button=None)
 
+        # Set the process-level app icon early so all system surfaces (notifications,
+        # Settings window, etc.) show the correct icon instead of Python's logo.
+        try:
+            from AppKit import NSApplication, NSImage
+            _app_icon = NSImage.alloc().initWithContentsOfFile_(APP_ICON)
+            if _app_icon:
+                NSApplication.sharedApplication().setApplicationIconImage_(_app_icon)
+        except Exception:
+            pass
+
         self.config = get_config()
         self.backup = Backup()
-        self.whisper = Whisper()
+        self.transcriber = Transcriber()
         # Only create Grammar if enabled (user selected a backend, not "Disabled")
         self.grammar = Grammar() if self.config.grammar.enabled else None
         self.recorder = Recorder()
         self.overlay = get_overlay()
+        self.audio_processor = AudioProcessor(self.config)
 
         # Grammar submenu state
         self._grammar_lock = threading.Lock()
         self._backend_menu_items: dict = {}  # backend_id -> MenuItem
         self.grammar_menu = rumps.MenuItem("Grammar")
         self._build_backend_submenu()
+
+        # History submenus (two standalone submenus replacing the old single History menu)
+        self.transcriptions_menu = rumps.MenuItem("Transcriptions")
+        self.audio_files_menu = rumps.MenuItem("Recordings")
 
         # State flags
         self._busy = False
@@ -135,13 +151,17 @@ class App(rumps.App):
             None,
             rumps.MenuItem("Retry Last", callback=self._retry),
             rumps.MenuItem("Copy Last", callback=self._copy),
-            rumps.MenuItem("History", callback=self._open_history),
             None,
-            rumps.MenuItem("Backups", callback=self._open_backups),
-            rumps.MenuItem("Config", callback=self._open_config),
+            self.transcriptions_menu,
+            self.audio_files_menu,
+            None,
             rumps.MenuItem("Settings...", callback=self._open_settings),
             rumps.MenuItem("Quit", callback=self._quit)
         ]
+
+        # Wire up lazy-rebuild delegates for the two history submenus
+        self._setup_transcriptions_delegate()
+        self._setup_audio_files_delegate()
 
         # Start initialization in background
         threading.Thread(target=self._init, daemon=True).start()
@@ -233,7 +253,11 @@ class App(rumps.App):
             _perform_on_main_thread(lambda: setattr(self.status, "title", "Ready"))
             return
 
-        # Start new backend before persisting config
+        # Update in-memory config to new backend so Grammar() initializes the right one.
+        # If start() fails we rollback below.
+        self.config.grammar.backend = backend_id
+        self.config.grammar.enabled = True
+
         ok = False
         new_grammar = None
         try:
@@ -246,7 +270,7 @@ class App(rumps.App):
 
         with self._grammar_lock:
             if ok:
-                # Only persist config after confirmed successful start
+                # Persist confirmed successful start to TOML
                 update_config_backend(backend_id)
                 self.grammar = new_grammar
                 self._grammar_ready = True
@@ -264,12 +288,148 @@ class App(rumps.App):
             _perform_on_main_thread(lambda: setattr(self.status, "title", "Ready"))
         else:
             log(f"{display_name} unavailable", "ERR")
+            # Rollback menu checkmarks to the previous backend
+            prev = previous_backend_id
+            _perform_on_main_thread(lambda: self._update_backend_menu_checks(prev))
             def _show_error():
                 self.status.title = f"{display_name} unavailable"
                 threading.Timer(3.0, lambda: _perform_on_main_thread(
                     lambda: setattr(self.status, "title", "Ready")
                 )).start()
             _perform_on_main_thread(_show_error)
+
+    def _setup_transcriptions_delegate(self):
+        """Wire up an NSMenu delegate so the Transcriptions submenu rebuilds on every open."""
+        from AppKit import NSObject
+
+        parent = self
+
+        class _TranscriptionsMenuDelegate(NSObject):
+            def menuNeedsUpdate_(self, menu):
+                parent._rebuild_transcriptions()
+
+        self._transcriptions_delegate = _TranscriptionsMenuDelegate.alloc().init()
+        # Force rumps to create the underlying NSMenu by adding a placeholder item first
+        self.transcriptions_menu.add(rumps.MenuItem("Loading..."))
+        ns_menu = self.transcriptions_menu._menuitem.submenu()
+        if ns_menu is not None:
+            ns_menu.setDelegate_(self._transcriptions_delegate)
+
+    def _setup_audio_files_delegate(self):
+        """Wire up an NSMenu delegate so the Recordings submenu rebuilds on every open."""
+        from AppKit import NSObject
+
+        parent = self
+
+        class _AudioFilesMenuDelegate(NSObject):
+            def menuNeedsUpdate_(self, menu):
+                parent._rebuild_audio_files()
+
+        self._audio_files_delegate = _AudioFilesMenuDelegate.alloc().init()
+        # Force rumps to create the underlying NSMenu by adding a placeholder item first
+        self.audio_files_menu.add(rumps.MenuItem("Loading..."))
+        ns_menu = self.audio_files_menu._menuitem.submenu()
+        if ns_menu is not None:
+            ns_menu.setDelegate_(self._audio_files_delegate)
+
+    def _rebuild_transcriptions(self):
+        """Rebuild all items in the Transcriptions submenu."""
+        for key in list(self.transcriptions_menu.keys()):
+            del self.transcriptions_menu[key]
+
+        try:
+            entries = self.backup.get_history(self.config.backup.history_limit)
+        except Exception as e:
+            log(f"History load error: {e}", "WARN")
+            entries = []
+
+        if entries:
+            for i, entry in enumerate(entries):
+                label = time_ago(entry["timestamp"])
+                preview = (entry["fixed"] or entry["raw"] or "").strip()
+                if len(preview) > 60:
+                    preview = preview[:60] + "..."
+                title = f"{label}  {preview}" + '\u200b' * (i + 1)
+                item = rumps.MenuItem(title, callback=self._on_history_copy)
+                item._full_text = (entry["fixed"] or entry["raw"] or "").strip()
+                self.transcriptions_menu.add(item)
+        else:
+            placeholder = rumps.MenuItem("No transcriptions yet")
+            placeholder.set_callback(None)
+            self.transcriptions_menu.add(placeholder)
+
+        self.transcriptions_menu.add(None)
+        self.transcriptions_menu.add(rumps.MenuItem("Open History Folder", callback=self._open_history_folder))
+
+    def _rebuild_audio_files(self):
+        """Rebuild all items in the Recordings submenu."""
+        for key in list(self.audio_files_menu.keys()):
+            del self.audio_files_menu[key]
+
+        try:
+            audio_entries = self.backup.get_audio_history()
+        except Exception as e:
+            log(f"Audio history load error: {e}", "WARN")
+            audio_entries = []
+
+        if audio_entries:
+            for i, entry in enumerate(audio_entries):
+                label = time_ago(entry["timestamp"])
+                filename = entry["path"].name
+                title = f"{label}  {filename}" + '\u200b' * (i + 1)
+                item = rumps.MenuItem(title, callback=self._on_audio_reveal)
+                item._file_path = str(entry["path"])
+                self.audio_files_menu.add(item)
+        else:
+            placeholder = rumps.MenuItem("No audio files")
+            placeholder.set_callback(None)
+            self.audio_files_menu.add(placeholder)
+
+        self.audio_files_menu.add(None)
+        self.audio_files_menu.add(rumps.MenuItem("Open Audio Folder", callback=self._open_audio_folder))
+
+    def _on_history_copy(self, sender):
+        """Copy a history entry's text to clipboard."""
+        text = getattr(sender, "_full_text", None)
+        if not text:
+            return
+        if self._copy_to_clipboard(text, show_error=False):
+            play_sound("Glass")
+            self.overlay.set_status("done")
+            log(f"History copied: {truncate(text, LOG_TRUNCATE)}", "OK")
+        else:
+            self.overlay.set_status("error")
+
+    def _on_audio_reveal(self, sender):
+        """Reveal an audio history file in Finder."""
+        file_path = getattr(sender, "_file_path", None)
+        if not file_path:
+            return
+        try:
+            subprocess.run(['open', '-R', file_path], timeout=5)
+        except Exception as e:
+            log(f"Reveal failed: {e}", "WARN")
+            self.overlay.set_status("error")
+
+    def _open_history_folder(self, _):
+        """Open history folder in Finder."""
+        try:
+            path = self.backup.history_dir
+            path.mkdir(parents=True, exist_ok=True)
+            subprocess.run(['open', str(path)], timeout=5)
+        except Exception as e:
+            log(f"Open history folder failed: {e}", "WARN")
+            self.overlay.set_status("error")
+
+    def _open_audio_folder(self, _):
+        """Open audio history folder in Finder."""
+        try:
+            path = self.backup.audio_history_dir
+            path.mkdir(parents=True, exist_ok=True)
+            subprocess.run(['open', str(path)], timeout=5)
+        except Exception as e:
+            log(f"Open audio folder failed: {e}", "WARN")
+            self.overlay.set_status("error")
 
     def _open_settings(self, _=None):
         """Open the Settings window."""
@@ -337,10 +497,10 @@ class App(rumps.App):
         log("Starting...")
         self._set(ICON_PROCESSING, "Starting servers...")
 
-        # Start Whisper - required
-        if not self.whisper.start():
-            self._set(ICON_ERROR, "Whisper failed")
-            log("Whisper server failed to start. Exiting.", "ERR")
+        # Start transcription engine - required
+        if not self.transcriber.start():
+            self._set(ICON_ERROR, f"{self.transcriber.name} failed")
+            log(f"{self.transcriber.name} failed to start. Exiting.", "ERR")
             self._exit_app()
             return
         self._ready = True
@@ -478,6 +638,7 @@ class App(rumps.App):
         self._set(ICON_IDLE, "Ready")
         self._set_icon(ICON_IMAGE)
         self.overlay.hide()
+        self.recorder.start_monitoring()
 
     def _start_recording(self):
         """Start audio recording."""
@@ -533,7 +694,18 @@ class App(rumps.App):
             if self._busy:
                 return
 
-            audio = self.recorder.stop()
+            try:
+                audio = self.recorder.stop()
+            except Exception as e:
+                log(f"Recorder stop error: {e}", "ERR")
+                self._set(ICON_ERROR, "Record error")
+                self._set_icon(ICON_IMAGE)
+                self._stop_animation()
+                self.overlay.set_status("error")
+                play_sound("Basso")
+                self._reset_with_overlay(ICON_RESET_ERROR)
+                self.recorder.start_monitoring()
+                return
             dur = len(audio) / self.config.audio.sample_rate if len(audio) > 0 else 0
 
             # Reject truly empty recordings (no audio data)
@@ -545,6 +717,7 @@ class App(rumps.App):
                 self.overlay.set_status("error")
                 play_sound("Basso")
                 self._reset_with_overlay(ICON_RESET_ERROR)
+                self.recorder.start_monitoring()
                 return
 
             # Detect all-zeros audio (mic permission issue)
@@ -556,6 +729,7 @@ class App(rumps.App):
                 self.overlay.set_status("error")
                 play_sound("Basso")
                 self._reset_with_overlay(ICON_RESET_ERROR)
+                self.recorder.start_monitoring()
                 return
 
             # Check min_duration if configured (0 = no minimum)
@@ -567,16 +741,7 @@ class App(rumps.App):
                 self.overlay.set_status("error")
                 play_sound("Basso")
                 self._reset_with_overlay(ICON_RESET_ERROR)
-                return
-
-            if is_silent(audio):
-                log("No speech detected (silent)", "WARN")
-                self._set(ICON_IDLE, "Ready")
-                self._set_icon(ICON_IMAGE)
-                self._stop_animation()
-                self.overlay.set_status("error")
-                play_sound("Basso")
-                self._reset_with_overlay(ICON_RESET_ERROR)
+                self.recorder.start_monitoring()
                 return
 
             log(f"Recorded {dur:.1f}s", "OK")
@@ -601,7 +766,8 @@ class App(rumps.App):
             def _set_title():
                 self.title = ICON_RECORDING
             _perform_on_main_thread(_set_title)
-            self.overlay.update_duration(dur, wave)
+            level = self.recorder.rms_level
+            self.overlay.update_duration(dur, wave, level)
             local_index += 1
             # Warn about very long recordings (memory usage)
             if dur > 1800 and not warned_long:  # 30 minutes
@@ -626,20 +792,104 @@ class App(rumps.App):
         self._frame_index = 0
         self._start_animation("processing")
         try:
-            # 1. Backup audio
-            self._set(ICON_PROCESSING, "Saving...")
-            path = self.backup.save_audio(audio)
-            if not path:
-                self._show_error("Save failed", "Audio save failed")
-                return
-            log("Audio backed up", "OK")
+            config = self.config
 
-            # 2. Transcribe and validate
-            raw_text, err = self._transcribe_and_validate(path)
-            if err:
-                self._show_error(err, f"Transcription failed: {err}")
-                send_notification("Transcription Failed", err)
+            # 0. CRITICAL: Save raw audio IMMEDIATELY before any processing.
+            # If anything crashes below (VAD, noise reduction, transcription, grammar),
+            # the raw recording is already safely on disk for retry/recovery.
+            raw_backup_path = self.backup.save_audio(audio)
+            if raw_backup_path:
+                log(f"Raw audio saved ({len(audio) / config.audio.sample_rate:.1f}s)", "OK")
+            else:
+                # Even if save fails, continue processing (don't lose the transcription
+                # just because disk write failed). Log the error prominently.
+                log("CRITICAL: Raw audio save failed! Recording exists only in memory.", "ERR")
+
+            # 1. Audio pre-processing (VAD, noise reduction, normalization)
+            self._set(ICON_PROCESSING, "Processing...")
+            try:
+                processed = self.audio_processor.process(audio, config.audio.sample_rate)
+            except Exception as e:
+                log(f"Audio processing failed: {e}", "ERR")
+                # Fall back to raw audio (skip VAD/noise reduction/normalization)
+                log("Falling back to raw audio for transcription", "WARN")
+                from .audio_processor import ProcessedAudio
+                processed = ProcessedAudio(
+                    audio=audio,
+                    raw_audio=audio,
+                    has_speech=True,
+                    speech_ratio=1.0,
+                    peak_level=float(np.max(np.abs(audio))) if len(audio) > 0 else 0.0,
+                    duration=len(audio) / config.audio.sample_rate,
+                    segments=[(0, len(audio))],
+                )
+
+            if not processed.has_speech:
+                log("No speech detected (VAD)", "WARN")
+                self._show_error("No speech", "No speech detected in recording")
                 return
+
+            # Use processed audio for transcription (keep raw_audio reference for retry path)
+            audio = processed.audio
+
+            # 2. Long recording segmentation
+            if self.transcriber.supports_long_audio:
+                # Engine handles long audio natively, no splitting needed
+                segments = [audio]
+            else:
+                segments = self.audio_processor.segment_long_audio(audio, config.audio.sample_rate)
+
+            if len(segments) == 1:
+                # Single segment: save processed audio for transcription
+                path = self.backup.save_processed_audio(segments[0])
+                if not path:
+                    self._show_error("Save failed", "Processed audio save failed")
+                    return
+
+                raw_text, err = self._transcribe_and_validate(path)
+                if err:
+                    self._show_error(err, f"Transcription failed: {err}")
+                    send_notification("Transcription Failed", err)
+                    return
+            else:
+                # Multi-segment: transcribe each and join
+                log(f"Long recording: {len(segments)} segments", "INFO")
+                all_text = []
+                failed_segments = []
+                for i, seg in enumerate(segments):
+                    self._set(ICON_PROCESSING, f"Transcribing {i + 1}/{len(segments)}...")
+                    path = self.backup.save_audio_segment(seg, i)
+                    if not path:
+                        log(f"Segment {i} save failed, skipping", "WARN")
+                        failed_segments.append(i)
+                        continue
+                    try:
+                        text, seg_err = self.transcriber.transcribe(path)
+                    except Exception as e:
+                        log(f"Segment {i} transcription error: {e}", "ERR")
+                        failed_segments.append(i)
+                        continue
+                    if seg_err:
+                        log(f"Segment {i} transcription failed: {seg_err}", "WARN")
+                        failed_segments.append(i)
+                        continue
+                    if text:
+                        cleaned, stripped = strip_hallucination_lines(text)
+                        if stripped:
+                            log(f"Segment {i}: stripped hallucination", "WARN")
+                        if cleaned and not is_hallucination(cleaned):
+                            all_text.append(cleaned)
+
+                if failed_segments:
+                    log(f"Warning: {len(failed_segments)}/{len(segments)} segments failed: {failed_segments}", "WARN")
+
+                raw_text = " ".join(all_text) if all_text else None
+                err = "No speech" if not raw_text else None
+
+                if err:
+                    self._show_error(err, f"Transcription failed: {err} (raw audio saved for retry)")
+                    send_notification("Transcription Failed", f"{err} (raw audio saved)")
+                    return
 
             self.backup.save_raw(raw_text)
             log(f"Raw: {truncate(raw_text, LOG_TRUNCATE)}", "OK")
@@ -648,24 +898,42 @@ class App(rumps.App):
             self._check_grammar_connection()
             final_text = self._apply_grammar(raw_text)
 
-            # 4. Copy to clipboard
-            if not self._copy_to_clipboard(final_text):
-                return
+            # 4. Copy to clipboard (non-fatal: still save text even if clipboard fails)
+            clipboard_ok = self._copy_to_clipboard(final_text, show_error=False)
 
-            # 5. Success
-            self._show_success(final_text)
-            send_notification("Transcription Complete", truncate(final_text, PREVIEW_TRUNCATE))
-
-            # 6. Backup
+            # 5. Always save backup text, even if clipboard failed
             self.backup.save_text(final_text)
             self.backup.save_history(raw_text, final_text)
 
+            # 6. Show result
+            if clipboard_ok:
+                self._show_success(final_text)
+                send_notification("Transcription Complete", truncate(final_text, PREVIEW_TRUNCATE))
+            else:
+                # Clipboard failed but text is saved; user can "Copy Last" to retry
+                log(f"Text saved but clipboard failed. Use 'Copy Last' to copy.", "WARN")
+                send_notification("Clipboard Failed", "Text saved. Use 'Copy Last' to copy.")
+
         except Exception as e:
-            self._show_error("Error", f"Error: {e}")
-            send_notification("Transcription Error", str(e))
+            log(f"Processing error: {e}", "ERR")
+            try:
+                self._show_error("Error", f"Error: {e}")
+                send_notification("Transcription Error", str(e))
+            except Exception:
+                pass  # Don't let notification/UI errors mask the real problem
         finally:
+            # Always clean up state, stop animation, and restart monitoring.
+            # These must succeed even if everything above failed.
+            try:
+                self._stop_animation()
+            except Exception:
+                pass
             with self._state_lock:
                 self._busy = False
+            try:
+                self.recorder.start_monitoring()
+            except Exception:
+                pass
 
     def _reset(self, seconds: float):
         """Reset icon to idle after delay."""
@@ -709,13 +977,15 @@ class App(rumps.App):
         log(f"Copied: {truncate(text, PREVIEW_TRUNCATE)}", "OK")
         self._reset_with_overlay(ICON_RESET_SUCCESS)
 
-    def _copy_to_clipboard(self, text: str) -> bool:
+    def _copy_to_clipboard(self, text: str, show_error: bool = True) -> bool:
         """Copy text to clipboard. Returns True on success."""
         try:
             subprocess.run(['pbcopy'], input=text.encode(), check=True, timeout=CLIPBOARD_TIMEOUT)
             return True
         except Exception as e:
-            self._show_error("Copy failed", f"Copy failed: {e}")
+            log(f"Copy failed: {e}", "ERR")
+            if show_error:
+                self._show_error("Copy failed", f"Copy failed: {e}")
             return False
 
     def _check_grammar_connection(self):
@@ -754,7 +1024,7 @@ class App(rumps.App):
         """Transcribe audio and validate result. Returns (raw_text, error)."""
         self._set(ICON_PROCESSING, "Transcribing...")
         log("Transcribing (this may take a moment)...")
-        raw_text, err = self.whisper.transcribe(path)
+        raw_text, err = self.transcriber.transcribe(path)
 
         if err:
             log(f"Transcription failed: {err}", "ERR")
@@ -825,17 +1095,7 @@ class App(rumps.App):
         log(f"Copied: {truncate(text, LOG_TRUNCATE)}", "OK")
         self._reset(ICON_RESET_SUCCESS)
 
-    def _open_backups(self, _):
-        """Open backup folder in Finder."""
-        subprocess.run(['open', str(self.config.backup.path)], timeout=5)
 
-    def _open_history(self, _):
-        """Open history folder in Finder."""
-        subprocess.run(['open', str(self.backup.history_dir)], timeout=5)
-
-    def _open_config(self, _):
-        """Open config file in default editor."""
-        subprocess.run(['open', str(CONFIG_FILE)], timeout=5)
 
     def _quit(self, _):
         """Quit application with cleanup."""
@@ -845,6 +1105,9 @@ class App(rumps.App):
     def _cleanup(self):
         """Clean up all resources before exit."""
         log("Shutting down...", "INFO")
+
+        # Stop monitor stream before anything else
+        self.recorder.stop_monitoring()
 
         # Cancel any running timer
         if self._max_timer:
@@ -893,11 +1156,11 @@ class App(rumps.App):
             except Exception as e:
                 log(f"Error closing grammar: {e}", "WARN")
 
-        # Kill WhisperKit server (this logs its own messages)
+        # Shut down transcription engine (this logs its own messages)
         try:
-            self.whisper.close()
+            self.transcriber.close()
         except Exception as e:
-            log(f"Error killing Whisper: {e}", "ERR")
+            log(f"Error closing transcription engine: {e}", "ERR")
 
         log("Goodbye!", "OK")
 
@@ -974,7 +1237,7 @@ def service_main():
     print(f"  {C_BOLD}│{C_RESET}  Tap once to stop → copy to clipboard {C_BOLD}│{C_RESET}")
     print(f"  {C_BOLD}╰────────────────────────────────────────╯{C_RESET}")
     print()
-    print(f"  {C_DIM}Whisper:{C_RESET} {config.whisper.check_url}")
+    print(f"  {C_DIM}Engine:{C_RESET}  {config.transcription.engine}")
     print(f"  {C_DIM}Grammar:{C_RESET} {grammar_info}")
     print(f"  {C_DIM}Config:{C_RESET}  {CONFIG_FILE}")
     print(f"  {C_DIM}Backup:{C_RESET}  {config.backup.path}")

@@ -41,6 +41,20 @@ key = "alt_r"
 # Double-tap threshold in seconds (how fast you need to tap twice)
 double_tap_threshold = 0.4
 
+[transcription]
+# Transcription engine: "qwen3_asr" (default) or "whisperkit"
+engine = "qwen3_asr"
+
+[qwen3_asr]
+# Model identifier from Hugging Face
+model = "mlx-community/Qwen3-ASR-1.7B-8bit"
+
+# Language code (en, fa, es, fr, de, etc.) or "auto" for detection
+language = "auto"
+
+# Transcription timeout in seconds (0 = no limit)
+timeout = 0
+
 [whisper]
 # WhisperKit server URL
 url = "http://localhost:50060/v1/audio/transcriptions"
@@ -60,6 +74,24 @@ timeout = 0
 # NOT conversational context. Using conversational prompts causes truncated or empty results.
 # Leave empty unless you need to hint specific vocabulary.
 prompt = ""
+
+# Decoding temperature (0.0 = greedy/deterministic, higher = more random)
+temperature = 0.0
+
+# Compression ratio threshold for fallback (higher = more tolerant of repetition)
+compression_ratio_threshold = 2.4
+
+# Probability threshold below which a segment is considered silence
+no_speech_threshold = 0.6
+
+# Log probability threshold for fallback (lower = stricter)
+logprob_threshold = -1.0
+
+# Number of temperature fallback steps before giving up
+temperature_fallback_count = 5
+
+# Prompt preset for transcription context ("none", "technical", "dictation", "custom")
+prompt_preset = "none"
 
 [grammar]
 # Grammar correction backend: "apple_intelligence", "ollama", or "lm_studio"
@@ -131,6 +163,20 @@ max_duration = 0
 # Minimum RMS level to consider as speech (0.0-1.0)
 min_rms = 0.005
 
+# Enable voice activity detection to trim silence
+vad_enabled = true
+
+# Apply noise reduction before transcription
+noise_reduction = true
+
+# Normalize audio levels before transcription
+normalize_audio = true
+
+# Seconds of audio to buffer before the hotkey press (captures lead-in)
+# Set to 0.0 to disable (default). Set to e.g. 0.2 to capture 200ms before the hotkey.
+# Note: enabling this keeps the microphone active between recordings.
+pre_buffer = 0.0
+
 [ui]
 # Show floating overlay window during recording
 show_overlay = true
@@ -147,6 +193,9 @@ notifications_enabled = false
 [backup]
 # Backup directory
 directory = "~/.whisper"
+
+# Maximum number of history entries to keep (for both text and audio)
+history_limit = 100
 
 [shortcuts]
 # Enable/disable keyboard shortcuts for text transformation
@@ -166,6 +215,18 @@ prompt_engineer = "ctrl+shift+p"
 
 
 @dataclass
+class TranscriptionConfig:
+    engine: str = "qwen3_asr"
+
+
+@dataclass
+class Qwen3ASRConfig:
+    model: str = "mlx-community/Qwen3-ASR-1.7B-8bit"
+    language: str = "auto"
+    timeout: int = 0
+
+
+@dataclass
 class HotkeyConfig:
     key: str = "alt_r"
     double_tap_threshold: float = 0.4
@@ -179,6 +240,12 @@ class WhisperConfig:
     language: str = "auto"
     timeout: int = 0
     prompt: str = DEFAULT_WHISPER_PROMPT
+    temperature: float = 0.0
+    compression_ratio_threshold: float = 2.4
+    no_speech_threshold: float = 0.6
+    logprob_threshold: float = -1.0
+    temperature_fallback_count: int = 5
+    prompt_preset: str = "none"
 
 
 @dataclass
@@ -226,6 +293,10 @@ class AudioConfig:
     min_duration: float = 0
     max_duration: int = 0
     min_rms: float = 0.005
+    vad_enabled: bool = True
+    noise_reduction: bool = True
+    normalize_audio: bool = True
+    pre_buffer: float = 0.0
 
 
 @dataclass
@@ -239,6 +310,7 @@ class UIConfig:
 @dataclass
 class BackupConfig:
     directory: str = "~/.whisper"
+    history_limit: int = 100
 
     @property
     def path(self) -> Path:
@@ -257,6 +329,8 @@ class ShortcutsConfig:
 @dataclass
 class Config:
     hotkey: HotkeyConfig = field(default_factory=HotkeyConfig)
+    transcription: TranscriptionConfig = field(default_factory=TranscriptionConfig)
+    qwen3_asr: Qwen3ASRConfig = field(default_factory=Qwen3ASRConfig)
     whisper: WhisperConfig = field(default_factory=WhisperConfig)
     grammar: GrammarConfig = field(default_factory=GrammarConfig)
     ollama: OllamaConfig = field(default_factory=OllamaConfig)
@@ -298,6 +372,20 @@ def load_config() -> Config:
             double_tap_threshold=data['hotkey'].get('double_tap_threshold', config.hotkey.double_tap_threshold),
         )
 
+    # Transcription settings
+    if 'transcription' in data:
+        config.transcription = TranscriptionConfig(
+            engine=data['transcription'].get('engine', config.transcription.engine),
+        )
+
+    # Qwen3 ASR settings
+    if 'qwen3_asr' in data:
+        config.qwen3_asr = Qwen3ASRConfig(
+            model=data['qwen3_asr'].get('model', config.qwen3_asr.model),
+            language=data['qwen3_asr'].get('language', config.qwen3_asr.language),
+            timeout=data['qwen3_asr'].get('timeout', config.qwen3_asr.timeout),
+        )
+
     # Whisper settings
     if 'whisper' in data:
         config.whisper = WhisperConfig(
@@ -307,6 +395,12 @@ def load_config() -> Config:
             language=data['whisper'].get('language', config.whisper.language),
             timeout=data['whisper'].get('timeout', config.whisper.timeout),
             prompt=data['whisper'].get('prompt', config.whisper.prompt),
+            temperature=data['whisper'].get('temperature', config.whisper.temperature),
+            compression_ratio_threshold=data['whisper'].get('compression_ratio_threshold', config.whisper.compression_ratio_threshold),
+            no_speech_threshold=data['whisper'].get('no_speech_threshold', config.whisper.no_speech_threshold),
+            logprob_threshold=data['whisper'].get('logprob_threshold', config.whisper.logprob_threshold),
+            temperature_fallback_count=data['whisper'].get('temperature_fallback_count', config.whisper.temperature_fallback_count),
+            prompt_preset=data['whisper'].get('prompt_preset', config.whisper.prompt_preset),
         )
 
     # Grammar settings
@@ -355,6 +449,10 @@ def load_config() -> Config:
             min_duration=data['audio'].get('min_duration', config.audio.min_duration),
             max_duration=data['audio'].get('max_duration', config.audio.max_duration),
             min_rms=data['audio'].get('min_rms', config.audio.min_rms),
+            vad_enabled=data['audio'].get('vad_enabled', config.audio.vad_enabled),
+            noise_reduction=data['audio'].get('noise_reduction', config.audio.noise_reduction),
+            normalize_audio=data['audio'].get('normalize_audio', config.audio.normalize_audio),
+            pre_buffer=data['audio'].get('pre_buffer', config.audio.pre_buffer),
         )
 
     # UI settings
@@ -370,6 +468,7 @@ def load_config() -> Config:
     if 'backup' in data:
         config.backup = BackupConfig(
             directory=data['backup'].get('directory', config.backup.directory),
+            history_limit=data['backup'].get('history_limit', config.backup.history_limit),
         )
 
     # Shortcuts settings
@@ -425,6 +524,11 @@ def _validate_config(config: Config):
         print(f"Config warning: Invalid lm_studio check_url '{config.lm_studio.check_url}', using default", file=sys.stderr)
         config.lm_studio.check_url = "http://localhost:1234/"
 
+    # Transcription engine validation
+    if config.transcription.engine not in ("qwen3_asr", "whisperkit"):
+        print(f"Config warning: Invalid transcription engine '{config.transcription.engine}', using 'qwen3_asr'", file=sys.stderr)
+        config.transcription.engine = "qwen3_asr"
+
     # Grammar backend validation
     if config.grammar.backend == "none":
         config.grammar.enabled = False
@@ -469,6 +573,42 @@ def _validate_config(config: Config):
         print("Config warning: min_rms must be between 0.0 and 1.0, using 0.005", file=sys.stderr)
         config.audio.min_rms = 0.005
 
+    # pre_buffer: clamp to 0.0-1.0
+    if config.audio.pre_buffer < 0.0:
+        config.audio.pre_buffer = 0.0
+    elif config.audio.pre_buffer > 1.0:
+        config.audio.pre_buffer = 1.0
+
+    # Whisper decoding parameters
+    if not 0.0 <= config.whisper.temperature <= 1.0:
+        print("Config warning: whisper temperature must be between 0.0 and 1.0, using 0.0", file=sys.stderr)
+        config.whisper.temperature = 0.0
+
+    if config.whisper.compression_ratio_threshold <= 0:
+        print("Config warning: compression_ratio_threshold must be positive, using 2.4", file=sys.stderr)
+        config.whisper.compression_ratio_threshold = 2.4
+
+    if not 0.0 <= config.whisper.no_speech_threshold <= 1.0:
+        print("Config warning: no_speech_threshold must be between 0.0 and 1.0, using 0.6", file=sys.stderr)
+        config.whisper.no_speech_threshold = 0.6
+
+    if config.whisper.temperature_fallback_count < 0:
+        print("Config warning: temperature_fallback_count cannot be negative, using 5", file=sys.stderr)
+        config.whisper.temperature_fallback_count = 5
+
+    _valid_prompt_presets = ("none", "technical", "dictation", "custom")
+    if config.whisper.prompt_preset not in _valid_prompt_presets:
+        print(f"Config warning: invalid prompt_preset '{config.whisper.prompt_preset}', using 'none'", file=sys.stderr)
+        config.whisper.prompt_preset = "none"
+
+    # Backup validation
+    if not isinstance(config.backup.history_limit, int) or config.backup.history_limit < 1:
+        print("Config warning: history_limit must be a positive integer, using 100", file=sys.stderr)
+        config.backup.history_limit = 100
+    elif config.backup.history_limit > 1000:
+        print("Config warning: history_limit clamped to 1000", file=sys.stderr)
+        config.backup.history_limit = 1000
+
     # UI validation
     if not 0.0 <= config.ui.overlay_opacity <= 1.0:
         print("Config warning: overlay_opacity must be between 0.0 and 1.0, using 0.92", file=sys.stderr)
@@ -509,6 +649,10 @@ def _find_in_section(content: str, section: str, key: str) -> Optional[str]:
                 return m.group(1)
             # Also match unquoted booleans
             m = re.match(rf'{key}\s*=\s*(true|false)', stripped)
+            if m:
+                return m.group(1)
+            # Also match unquoted numeric values (integer or float)
+            m = re.match(rf'{key}\s*=\s*([-+]?[0-9]*\.?[0-9]+)', stripped)
             if m:
                 return m.group(1)
     return None
@@ -578,7 +722,7 @@ def update_config_backend(new_backend: str) -> bool:
         config.grammar.backend = new_backend
         config.grammar.enabled = (new_backend != "none")
     try:
-        fd = os.open(str(CONFIG_FILE), os.O_RDWR | os.O_CREAT)
+        fd = os.open(str(CONFIG_FILE), os.O_RDWR | os.O_CREAT, 0o644)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
             content = CONFIG_FILE.read_text()
@@ -619,7 +763,7 @@ def update_config_field(section: str, key: str, value) -> bool:
     if section_obj is not None and hasattr(section_obj, key):
         setattr(section_obj, key, value)
     try:
-        fd = os.open(str(CONFIG_FILE), os.O_RDWR | os.O_CREAT)
+        fd = os.open(str(CONFIG_FILE), os.O_RDWR | os.O_CREAT, 0o644)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
             content = CONFIG_FILE.read_text()

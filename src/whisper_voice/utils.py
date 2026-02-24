@@ -12,8 +12,6 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
-
 from .config import get_config
 
 # Console colors
@@ -47,6 +45,7 @@ def _validate_asset(path: str) -> str:
     return path
 
 ICON_IMAGE = _validate_asset(str(ASSETS_DIR / "icon_waveform.png"))
+APP_ICON = _validate_asset(str(ASSETS_DIR / "icon_app.png"))
 ICON_FRAMES = [
     _validate_asset(str(ASSETS_DIR / "icon_waveform_1.png")),
     _validate_asset(str(ASSETS_DIR / "icon_waveform_2.png")),
@@ -127,14 +126,6 @@ def play_sound(name: str):
         )
     except Exception:
         pass  # Silent failure
-
-
-def is_silent(audio: np.ndarray) -> bool:
-    """Check if audio is mostly silence based on RMS level."""
-    # Only reject truly empty audio - let WhisperKit handle silence detection
-    if len(audio) == 0:
-        return True
-    return False
 
 
 def strip_hallucination_lines(text: str) -> tuple[str, bool]:
@@ -281,6 +272,30 @@ def truncate(text: str, length: int = LOG_TRUNCATE) -> str:
     if len(text) > length:
         return text[:length] + "..."
     return text
+
+
+def time_ago(dt: datetime) -> str:
+    """Return a human-readable relative time string for a datetime.
+
+    Examples: "Just now", "2m ago", "1h ago", "Yesterday", "3d ago", "Feb 20".
+    """
+    now = datetime.now()
+    diff = now - dt
+    seconds = int(diff.total_seconds())
+    if seconds < 60:
+        return "Just now"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h ago"
+    days = hours // 24
+    if days == 1:
+        return "Yesterday"
+    if days < 30:
+        return f"{days}d ago"
+    return dt.strftime("%b %-d")
 
 
 def check_accessibility_trusted() -> bool:

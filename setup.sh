@@ -75,7 +75,7 @@ ARCH=$(uname -m)
 if [[ "$ARCH" == "arm64" ]]; then
     log_ok "Apple Silicon (M1/M2/M3/M4) detected"
 elif [[ "$ARCH" == "x86_64" ]]; then
-    fail "Intel Mac detected - Apple Intelligence requires Apple Silicon"
+    fail "Intel Mac detected. Local Whisper requires Apple Silicon (M1 or later)."
 else
     fail "Unknown architecture: $ARCH"
 fi
@@ -104,11 +104,7 @@ if ! command -v brew &> /dev/null; then
         fail "Failed to install Homebrew. Visit https://brew.sh for manual installation."
 
     # Add brew to PATH for this session
-    if [[ "$ARCH" == "arm64" ]]; then
-        eval "$(/opt/homebrew/bin/brew shellenv)"
-    else
-        eval "$(/usr/local/bin/brew shellenv)"
-    fi
+    eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 log_ok "Homebrew ready"
 
@@ -165,6 +161,22 @@ pip install -e "$SCRIPT_DIR" || fail "Failed to install package"
 log_ok "Package installed (editable mode)"
 
 # ============================================================================
+# Pre-download Qwen3-ASR model (default transcription engine)
+# ============================================================================
+
+echo ""
+log_step "Pre-downloading Qwen3-ASR model..."
+log_info "Downloads and caches the speech model to ~/.cache/huggingface/."
+log_info "This only happens once."
+
+"$VENV_DIR/bin/python3" -c "
+from mlx_audio.stt.utils import load_model
+print('Downloading Qwen3-ASR model (this may take a moment)...')
+load_model('mlx-community/Qwen3-ASR-1.7B-8bit')
+print('Qwen3-ASR model ready')
+" 2>&1 | tail -1 && log_ok "Qwen3-ASR model ready" || log_warn "Qwen3-ASR model download failed - first use may download automatically"
+
+# ============================================================================
 # WhisperKit CLI
 # ============================================================================
 
@@ -183,7 +195,7 @@ log_ok "WhisperKit CLI ready"
 
 echo ""
 log_step "Pre-compiling WhisperKit model..."
-log_info "First-time setup: downloads and compiles the speech model (~600MB)."
+log_info "First-time setup: downloads and compiles the speech model."
 log_info "This can take 5-15 minutes. Only happens once."
 
 WHISPER_MODEL="whisper-large-v3-v20240930"
@@ -477,6 +489,16 @@ echo ""
 echo -e "${GREEN}${BOLD}╭────────────────────────────────────────╮${NC}"
 echo -e "${GREEN}${BOLD}│${NC}  ${GREEN}✓ Setup complete!${NC}                     ${GREEN}${BOLD}│${NC}"
 echo -e "${GREEN}${BOLD}╰────────────────────────────────────────╯${NC}"
+echo ""
+echo -e "${BOLD}Transcription Engine:${NC}"
+echo ""
+echo -e "  ${CYAN}Qwen3-ASR${NC} (default):"
+echo -e "     - On-device, Apple Silicon (MLX)"
+echo -e "     - Model cached at ${DIM}~/.cache/huggingface/${NC}"
+echo ""
+echo -e "  ${CYAN}WhisperKit${NC} (alternative):"
+echo -e "     - CoreML, Apple Silicon"
+echo -e "     - Switch via ${DIM}wh engine${NC} or Settings"
 echo ""
 echo -e "${BOLD}Grammar Backends:${NC}"
 echo ""
