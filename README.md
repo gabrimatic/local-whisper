@@ -86,7 +86,7 @@ ollama serve
 - **Engine selection**: switch transcription engines via Settings, `wh engine`, or config
 - **Real-time audio level indicator** in the overlay while recording (color-coded by level)
 - **Real-time duration** display while recording
-- **Floating overlay** showing status (recording, processing, copied)
+- **Floating overlay** showing status (recording, processing, copied) with modern macOS 26 Liquid Glass design
 - **Automatic grammar correction** that removes filler words and fixes punctuation
 - **Clipboard integration** for immediate paste
 - **Settings window** with full GUI for all config options
@@ -505,6 +505,7 @@ local-whisper/
     ├── config.py           # Config management
     ├── grammar.py          # Backend factory
     ├── overlay.py          # Floating UI + audio level indicator
+    ├── theme.py            # Centralized styling (colors, typography, dimensions)
     ├── settings.py         # Settings window (6-tab NSPanel)
     ├── transcriber.py      # Engine routing wrapper
     ├── utils.py            # Helpers

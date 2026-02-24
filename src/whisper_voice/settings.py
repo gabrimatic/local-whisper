@@ -15,6 +15,7 @@ from typing import Optional, Callable
 
 from .config import get_config, update_config_field, _is_valid_url
 from .utils import log
+from .theme import Colors, Typography, Dimensions as D, create_glass_background
 
 # Lazily imported macOS frameworks
 _AppKit = None
@@ -22,19 +23,6 @@ _Foundation = None
 _Performer = None
 _FlippedViewClass = None  # Defined in _import_macos(); module-level to survive GC
 _callback_queue = queue.Queue(maxsize=100)
-
-# Layout constants (based on known tab content dimensions — never queried at runtime)
-CONTENT_W = 516    # tab content width
-CONTENT_H = 560    # tab content height
-GRAMMAR_DOC_H = 880  # grammar scrollable doc height
-BAR_H = 52         # bottom button bar height
-LEFT_MARGIN = 20
-LABEL_W = 155
-FIELD_X = 185
-FIELD_W = 311      # CONTENT_W - FIELD_X - LEFT_MARGIN
-ROW_H = 22
-ROW_GAP = 8
-SECTION_GAP = 20
 
 # Hotkey options: (display_label, config_value)
 _HOTKEY_OPTIONS = [
@@ -206,9 +194,6 @@ def _make_slider_delegate_class():
 class SettingsWindow:
     """Floating settings panel covering all configurable options."""
 
-    WIDTH = 560
-    HEIGHT = 650
-
     def __init__(self):
         self._panel = None
         self._lock = threading.Lock()
@@ -314,19 +299,19 @@ class SettingsWindow:
     def _add_section_header(self, parent, y: float, text: str) -> float:
         """Uppercase bold 10pt label + thin separator line. Returns y + 28."""
         lbl = _AppKit.NSTextField.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(LEFT_MARGIN, y, CONTENT_W - LEFT_MARGIN * 2, 14)
+            _Foundation.NSMakeRect(D.SETTINGS_LEFT_MARGIN, y, D.SETTINGS_CONTENT_W - D.SETTINGS_LEFT_MARGIN * 2, 14)
         )
         lbl.setStringValue_(text.upper())
         lbl.setBezeled_(False)
         lbl.setDrawsBackground_(False)
         lbl.setEditable_(False)
         lbl.setSelectable_(False)
-        lbl.setFont_(_AppKit.NSFont.boldSystemFontOfSize_(10))
-        lbl.setTextColor_(_AppKit.NSColor.secondaryLabelColor())
+        lbl.setFont_(Typography.section_header())
+        lbl.setTextColor_(Colors.secondary_label())
         parent.addSubview_(lbl)
 
         sep = _AppKit.NSBox.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(LEFT_MARGIN, y + 16, CONTENT_W - LEFT_MARGIN * 2, 1)
+            _Foundation.NSMakeRect(D.SETTINGS_LEFT_MARGIN, y + 16, D.SETTINGS_CONTENT_W - D.SETTINGS_LEFT_MARGIN * 2, 1)
         )
         sep.setBoxType_(_AppKit.NSBoxSeparator)
         parent.addSubview_(sep)
@@ -334,9 +319,9 @@ class SettingsWindow:
         return y + 28
 
     def _add_row(self, parent, y: float, label_text: str, widget) -> float:
-        """Right-aligned label + pre-framed widget. Returns y + ROW_H + ROW_GAP."""
+        """Right-aligned label + pre-framed widget. Returns y + D.SETTINGS_ROW_H + D.SETTINGS_ROW_GAP."""
         lbl = _AppKit.NSTextField.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(LEFT_MARGIN, y + 2, LABEL_W, ROW_H)
+            _Foundation.NSMakeRect(D.SETTINGS_LEFT_MARGIN, y + 2, D.SETTINGS_LABEL_W, D.SETTINGS_ROW_H)
         )
         lbl.setStringValue_(label_text)
         lbl.setBezeled_(False)
@@ -344,23 +329,23 @@ class SettingsWindow:
         lbl.setEditable_(False)
         lbl.setSelectable_(False)
         lbl.setAlignment_(_AppKit.NSTextAlignmentRight)
-        lbl.setFont_(_AppKit.NSFont.systemFontOfSize_(12))
+        lbl.setFont_(Typography.row_label())
         parent.addSubview_(lbl)
         parent.addSubview_(widget)
-        return y + ROW_H + ROW_GAP
+        return y + D.SETTINGS_ROW_H + D.SETTINGS_ROW_GAP
 
     def _add_note(self, parent, y: float, text: str, height: int = 16) -> float:
-        """Secondary 10pt note at FIELD_X. Returns y + height + 4."""
+        """Secondary 10pt note at D.SETTINGS_FIELD_X. Returns y + height + 4."""
         lbl = _AppKit.NSTextField.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, height)
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, height)
         )
         lbl.setStringValue_(text)
         lbl.setBezeled_(False)
         lbl.setDrawsBackground_(False)
         lbl.setEditable_(False)
         lbl.setSelectable_(False)
-        lbl.setFont_(_AppKit.NSFont.systemFontOfSize_(10))
-        lbl.setTextColor_(_AppKit.NSColor.secondaryLabelColor())
+        lbl.setFont_(Typography.note())
+        lbl.setTextColor_(Colors.secondary_label())
         lbl.cell().setWraps_(True)
         parent.addSubview_(lbl)
         return y + height + 4
@@ -374,32 +359,32 @@ class SettingsWindow:
         field.setDrawsBackground_(True)
         field.setEditable_(enabled)
         field.setSelectable_(True)
-        field.setFont_(_AppKit.NSFont.systemFontOfSize_(12))
+        field.setFont_(Typography.row_label())
         if not enabled:
-            field.setTextColor_(_AppKit.NSColor.secondaryLabelColor())
+            field.setTextColor_(Colors.secondary_label())
         return field
 
     def _make_checkbox_row(self, parent, y: float, title: str, state: bool):
-        """Full-width checkbox at FIELD_X. Returns (button, y + ROW_H + ROW_GAP)."""
+        """Full-width checkbox at D.SETTINGS_FIELD_X. Returns (button, y + D.SETTINGS_ROW_H + D.SETTINGS_ROW_GAP)."""
         btn = _AppKit.NSButton.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, ROW_H)
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H)
         )
         btn.setTitle_(title)
         btn.setButtonType_(_AppKit.NSButtonTypeSwitch)
         btn.setState_(
             _AppKit.NSControlStateValueOn if state else _AppKit.NSControlStateValueOff
         )
-        btn.setFont_(_AppKit.NSFont.systemFontOfSize_(12))
+        btn.setFont_(Typography.row_label())
         parent.addSubview_(btn)
-        return btn, y + ROW_H + ROW_GAP
+        return btn, y + D.SETTINGS_ROW_H + D.SETTINGS_ROW_GAP
 
     def _make_slider_row(self, parent, y: float, label: str,
                          value: float, min_val: float, max_val: float,
                          fmt, callback):
         """Slider + value label + row label. Returns (slider, val_lbl, new_y)."""
-        slider_w = FIELD_W - 52
+        slider_w = D.SETTINGS_FIELD_W - 52
         slider = _AppKit.NSSlider.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(FIELD_X, y + 2, slider_w, ROW_H)
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y + 2, slider_w, D.SETTINGS_ROW_H)
         )
         slider.setMinValue_(min_val)
         slider.setMaxValue_(max_val)
@@ -407,19 +392,19 @@ class SettingsWindow:
         slider.setContinuous_(True)
 
         val_lbl = _AppKit.NSTextField.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(FIELD_X + slider_w + 6, y + 2, 44, ROW_H)
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X + slider_w + 6, y + 2, 44, D.SETTINGS_ROW_H)
         )
         val_lbl.setStringValue_(fmt(value))
         val_lbl.setBezeled_(False)
         val_lbl.setDrawsBackground_(False)
         val_lbl.setEditable_(False)
         val_lbl.setSelectable_(False)
-        val_lbl.setFont_(_AppKit.NSFont.systemFontOfSize_(12))
+        val_lbl.setFont_(Typography.row_label())
 
         self._connect_slider(slider, callback)
 
         row_lbl = _AppKit.NSTextField.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(LEFT_MARGIN, y + 2, LABEL_W, ROW_H)
+            _Foundation.NSMakeRect(D.SETTINGS_LEFT_MARGIN, y + 2, D.SETTINGS_LABEL_W, D.SETTINGS_ROW_H)
         )
         row_lbl.setStringValue_(label)
         row_lbl.setBezeled_(False)
@@ -427,13 +412,13 @@ class SettingsWindow:
         row_lbl.setEditable_(False)
         row_lbl.setSelectable_(False)
         row_lbl.setAlignment_(_AppKit.NSTextAlignmentRight)
-        row_lbl.setFont_(_AppKit.NSFont.systemFontOfSize_(12))
+        row_lbl.setFont_(Typography.row_label())
 
         parent.addSubview_(row_lbl)
         parent.addSubview_(slider)
         parent.addSubview_(val_lbl)
 
-        return slider, val_lbl, y + ROW_H + ROW_GAP
+        return slider, val_lbl, y + D.SETTINGS_ROW_H + D.SETTINGS_ROW_GAP
 
     def _make_popup(self, options: list, selected_value: str, frame):
         """NSPopUpButton from (label, value) list."""
@@ -444,7 +429,7 @@ class SettingsWindow:
             if val == selected_value:
                 popup.selectItemAtIndex_(i)
                 break
-        popup.setFont_(_AppKit.NSFont.systemFontOfSize_(12))
+        popup.setFont_(Typography.row_label())
         return popup
 
     # ------------------------------------------------------------------ #
@@ -457,7 +442,7 @@ class SettingsWindow:
         self._ButtonDelegate = _make_button_delegate_class()
         self._SliderDelegate = _make_slider_delegate_class()
 
-        W, H = self.WIDTH, self.HEIGHT
+        W, H = D.SETTINGS_WIDTH, D.SETTINGS_HEIGHT
 
         screen = _AppKit.NSScreen.mainScreen()
         sf = screen.frame()
@@ -482,10 +467,22 @@ class SettingsWindow:
 
         content = self._panel.contentView()
 
+        # Add glass background
+        bg = create_glass_background(
+            content.bounds(),
+            material=20,  # NSVisualEffectMaterialWindowBackground
+        )
+        bg.setAutoresizingMask_(
+            _AppKit.NSViewWidthSizable | _AppKit.NSViewHeightSizable
+        )
+        content.addSubview_positioned_relativeTo_(
+            bg, _AppKit.NSWindowBelow, None
+        )
+
         # Tab view sits above the bottom bar
-        tab_margin = 12
+        tab_margin = D.SETTINGS_TAB_MARGIN
         tab_view = _AppKit.NSTabView.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(tab_margin, BAR_H, W - tab_margin * 2, H - BAR_H - 8)
+            _Foundation.NSMakeRect(tab_margin, D.SETTINGS_BAR_H, W - tab_margin * 2, H - D.SETTINGS_BAR_H - 8)
         )
         content.addSubview_(tab_view)
 
@@ -505,29 +502,29 @@ class SettingsWindow:
             builder(item)
 
         # Bottom bar
-        margin = 16
-        btn_w = 80
-        btn_h = 28
+        margin = D.BUTTON_MARGIN
+        btn_w = D.BUTTON_WIDTH
+        btn_h = D.BUTTON_HEIGHT
 
         # Restart-required warning label
         self._restart_label = _AppKit.NSTextField.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(margin, (BAR_H - 16) / 2, 260, 16)
+            _Foundation.NSMakeRect(margin, (D.SETTINGS_BAR_H - 16) / 2, 260, 16)
         )
         self._restart_label.setStringValue_("\u26a0 Some changes require restart")
         self._restart_label.setBezeled_(False)
         self._restart_label.setDrawsBackground_(False)
         self._restart_label.setEditable_(False)
         self._restart_label.setSelectable_(False)
-        self._restart_label.setFont_(_AppKit.NSFont.systemFontOfSize_(11))
+        self._restart_label.setFont_(Typography.caption())
         self._restart_label.setTextColor_(
-            _AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.9, 0.5, 0.1, 1.0)
+            Colors.warning()
         )
         self._restart_label.setHidden_(True)
         content.addSubview_(self._restart_label)
 
         # Cancel button
         cancel_btn = _AppKit.NSButton.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(W - margin - btn_w * 2 - 8, (BAR_H - btn_h) / 2, btn_w, btn_h)
+            _Foundation.NSMakeRect(W - margin - btn_w * 2 - D.BUTTON_GAP, (D.SETTINGS_BAR_H - btn_h) / 2, btn_w, btn_h)
         )
         cancel_btn.setTitle_("Cancel")
         cancel_btn.setBezelStyle_(_AppKit.NSBezelStyleRounded)
@@ -538,7 +535,7 @@ class SettingsWindow:
 
         # Save button
         save_btn = _AppKit.NSButton.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(W - margin - btn_w, (BAR_H - btn_h) / 2, btn_w, btn_h)
+            _Foundation.NSMakeRect(W - margin - btn_w, (D.SETTINGS_BAR_H - btn_h) / 2, btn_w, btn_h)
         )
         save_btn.setTitle_("Save")
         save_btn.setBezelStyle_(_AppKit.NSBezelStyleRounded)
@@ -555,7 +552,7 @@ class SettingsWindow:
     def _build_recording_tab(self, item):
         config = get_config()
         view = _FlippedViewClass.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(0, 0, CONTENT_W, CONTENT_H)
+            _Foundation.NSMakeRect(0, 0, D.SETTINGS_CONTENT_W, D.SETTINGS_CONTENT_H)
         )
         item.setView_(view)
         y = 20.0
@@ -565,7 +562,7 @@ class SettingsWindow:
 
         self._hotkey_popup = self._make_popup(
             _HOTKEY_OPTIONS, config.hotkey.key,
-            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
         self._connect_button(self._hotkey_popup, self._on_restart_required_change)
         y = self._add_row(view, y, "Trigger key", self._hotkey_popup)
@@ -586,20 +583,20 @@ class SettingsWindow:
         )
 
         y = self._add_note(view, y, "Restart required to apply hotkey changes")
-        y += SECTION_GAP
+        y += D.SETTINGS_SECTION_GAP
 
         # Audio section
         y = self._add_section_header(view, y, "Audio")
 
         self._min_duration_field = self._make_text_field_for_row(
             config.audio.min_duration,
-            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(view, y, "Min duration (s)", self._min_duration_field)
 
         self._max_duration_field = self._make_text_field_for_row(
             config.audio.max_duration,
-            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(view, y, "Max duration (s)", self._max_duration_field)
 
@@ -616,7 +613,7 @@ class SettingsWindow:
         )
 
         self._add_note(view, y, "0 = disabled / unlimited for duration fields")
-        y += 20 + SECTION_GAP
+        y += 20 + D.SETTINGS_SECTION_GAP
 
         # Audio Processing section
         y = self._add_section_header(view, y, "Audio Processing")
@@ -635,7 +632,7 @@ class SettingsWindow:
 
         self._pre_buffer_field = self._make_text_field_for_row(
             config.audio.pre_buffer,
-            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(view, y, "Pre-buffer (s)", self._pre_buffer_field)
         self._add_note(view, y, "Lead-in audio captured before hotkey press (0.0\u20131.0 s)")
@@ -643,7 +640,7 @@ class SettingsWindow:
     def _build_transcription_tab(self, item):
         config = get_config()
         view = _FlippedViewClass.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(0, 0, CONTENT_W, CONTENT_H)
+            _Foundation.NSMakeRect(0, 0, D.SETTINGS_CONTENT_W, D.SETTINGS_CONTENT_H)
         )
         item.setView_(view)
         y = 20.0
@@ -653,20 +650,20 @@ class SettingsWindow:
 
         self._engine_popup = self._make_popup(
             _ENGINE_OPTIONS, config.transcription.engine,
-            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
         self._connect_button(self._engine_popup, self._on_engine_change)
         self._connect_button(self._engine_popup, self._on_restart_required_change)
         y = self._add_row(view, y, "Engine", self._engine_popup)
         y = self._add_note(view, y, "Restart required to switch engines")
-        y += SECTION_GAP
+        y += D.SETTINGS_SECTION_GAP
 
         # ── Qwen3-ASR section ────────────────────────────────────────────
         # Estimate height: section header (28) + model row (30) + note (20) + gap (8)
         #                  + language row (30) + gap (20)  = ~136
         qwen3_h = 136
         self._qwen3_section_view = _FlippedViewClass.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(0, y, CONTENT_W, qwen3_h)
+            _Foundation.NSMakeRect(0, y, D.SETTINGS_CONTENT_W, qwen3_h)
         )
         view.addSubview_(self._qwen3_section_view)
 
@@ -675,15 +672,15 @@ class SettingsWindow:
 
         self._qwen3_model_field = self._make_text_field_for_row(
             config.qwen3_asr.model,
-            _Foundation.NSMakeRect(FIELD_X, qy, FIELD_W, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, qy, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
         qy = self._add_row(self._qwen3_section_view, qy, "Model", self._qwen3_model_field)
         qy = self._add_note(self._qwen3_section_view, qy, "Restart required")
-        qy += ROW_GAP
+        qy += D.SETTINGS_ROW_GAP
 
         self._qwen3_language_popup = self._make_popup(
             _LANGUAGE_OPTIONS, config.qwen3_asr.language,
-            _Foundation.NSMakeRect(FIELD_X, qy, FIELD_W, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, qy, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
         qy = self._add_row(self._qwen3_section_view, qy, "Language", self._qwen3_language_popup)
 
@@ -694,7 +691,7 @@ class SettingsWindow:
         #                  + decoding header (28) + 6 rows (180) + note (16) = ~482
         wk_h = 500
         self._whisperkit_section_view = _FlippedViewClass.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(0, y, CONTENT_W, wk_h)
+            _Foundation.NSMakeRect(0, y, D.SETTINGS_CONTENT_W, wk_h)
         )
         view.addSubview_(self._whisperkit_section_view)
 
@@ -703,22 +700,22 @@ class SettingsWindow:
 
         self._whisper_model_field = self._make_text_field_for_row(
             config.whisper.model,
-            _Foundation.NSMakeRect(FIELD_X, wy, FIELD_W, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, wy, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
         wy = self._add_row(self._whisperkit_section_view, wy, "Model", self._whisper_model_field)
         wy = self._add_note(self._whisperkit_section_view, wy, "Restart required")
-        wy += ROW_GAP
+        wy += D.SETTINGS_ROW_GAP
 
         self._whisper_language_popup = self._make_popup(
             _LANGUAGE_OPTIONS, config.whisper.language,
-            _Foundation.NSMakeRect(FIELD_X, wy, FIELD_W, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, wy, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
         wy = self._add_row(self._whisperkit_section_view, wy, "Language", self._whisper_language_popup)
-        wy += ROW_GAP
+        wy += D.SETTINGS_ROW_GAP
 
         # Vocabulary hint (NSTextView in scroll view)
         lbl_prompt = _AppKit.NSTextField.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(LEFT_MARGIN, wy + 2, LABEL_W, ROW_H)
+            _Foundation.NSMakeRect(D.SETTINGS_LEFT_MARGIN, wy + 2, D.SETTINGS_LABEL_W, D.SETTINGS_ROW_H)
         )
         lbl_prompt.setStringValue_("Vocabulary hint")
         lbl_prompt.setBezeled_(False)
@@ -726,36 +723,36 @@ class SettingsWindow:
         lbl_prompt.setEditable_(False)
         lbl_prompt.setSelectable_(False)
         lbl_prompt.setAlignment_(_AppKit.NSTextAlignmentRight)
-        lbl_prompt.setFont_(_AppKit.NSFont.systemFontOfSize_(12))
+        lbl_prompt.setFont_(Typography.row_label())
         self._whisperkit_section_view.addSubview_(lbl_prompt)
 
         prompt_h = 64
         prompt_scroll = _AppKit.NSScrollView.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(FIELD_X, wy, FIELD_W, prompt_h)
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, wy, D.SETTINGS_FIELD_W, prompt_h)
         )
         prompt_scroll.setBorderType_(_AppKit.NSBezelBorder)
         prompt_scroll.setHasVerticalScroller_(True)
         prompt_scroll.setAutohidesScrollers_(True)
 
         self._whisper_prompt_view = _AppKit.NSTextView.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(0, 0, FIELD_W, prompt_h)
+            _Foundation.NSMakeRect(0, 0, D.SETTINGS_FIELD_W, prompt_h)
         )
         self._whisper_prompt_view.setHorizontallyResizable_(False)
         self._whisper_prompt_view.setVerticallyResizable_(True)
         self._whisper_prompt_view.setMaxSize_(
-            _Foundation.NSMakeSize(FIELD_W, 10000)
+            _Foundation.NSMakeSize(D.SETTINGS_FIELD_W, 10000)
         )
         self._whisper_prompt_view.textContainer().setWidthTracksTextView_(True)
         self._whisper_prompt_view.textContainer().setContainerSize_(
-            _Foundation.NSMakeSize(FIELD_W, 10000)
+            _Foundation.NSMakeSize(D.SETTINGS_FIELD_W, 10000)
         )
         self._whisper_prompt_view.setString_(config.whisper.prompt or "")
-        self._whisper_prompt_view.setFont_(_AppKit.NSFont.systemFontOfSize_(12))
+        self._whisper_prompt_view.setFont_(Typography.row_label())
         self._whisper_prompt_view.setAutomaticSpellingCorrectionEnabled_(False)
         self._whisper_prompt_view.setAutomaticTextReplacementEnabled_(False)
         prompt_scroll.setDocumentView_(self._whisper_prompt_view)
         self._whisperkit_section_view.addSubview_(prompt_scroll)
-        wy += prompt_h + ROW_GAP
+        wy += prompt_h + D.SETTINGS_ROW_GAP
 
         wy = self._add_note(
             self._whisperkit_section_view, wy,
@@ -763,51 +760,51 @@ class SettingsWindow:
             "Conversational text causes truncated results.",
             height=28,
         )
-        wy += ROW_GAP
+        wy += D.SETTINGS_ROW_GAP
 
         self._whisper_timeout_field = self._make_text_field_for_row(
             config.whisper.timeout,
-            _Foundation.NSMakeRect(FIELD_X, wy, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, wy, 80, D.SETTINGS_ROW_H + 4),
         )
         wy = self._add_row(self._whisperkit_section_view, wy, "Timeout (s, 0=auto)", self._whisper_timeout_field)
-        wy += SECTION_GAP
+        wy += D.SETTINGS_SECTION_GAP
 
         # Decoding Parameters section
         wy = self._add_section_header(self._whisperkit_section_view, wy, "Decoding Parameters")
 
         self._whisper_temperature_field = self._make_text_field_for_row(
             config.whisper.temperature,
-            _Foundation.NSMakeRect(FIELD_X, wy, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, wy, 80, D.SETTINGS_ROW_H + 4),
         )
         wy = self._add_row(self._whisperkit_section_view, wy, "Temperature", self._whisper_temperature_field)
 
         self._whisper_compression_ratio_field = self._make_text_field_for_row(
             config.whisper.compression_ratio_threshold,
-            _Foundation.NSMakeRect(FIELD_X, wy, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, wy, 80, D.SETTINGS_ROW_H + 4),
         )
         wy = self._add_row(self._whisperkit_section_view, wy, "Compression ratio", self._whisper_compression_ratio_field)
 
         self._whisper_no_speech_threshold_field = self._make_text_field_for_row(
             config.whisper.no_speech_threshold,
-            _Foundation.NSMakeRect(FIELD_X, wy, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, wy, 80, D.SETTINGS_ROW_H + 4),
         )
         wy = self._add_row(self._whisperkit_section_view, wy, "No-speech threshold", self._whisper_no_speech_threshold_field)
 
         self._whisper_logprob_threshold_field = self._make_text_field_for_row(
             config.whisper.logprob_threshold,
-            _Foundation.NSMakeRect(FIELD_X, wy, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, wy, 80, D.SETTINGS_ROW_H + 4),
         )
         wy = self._add_row(self._whisperkit_section_view, wy, "Log prob threshold", self._whisper_logprob_threshold_field)
 
         self._whisper_temperature_fallback_field = self._make_text_field_for_row(
             config.whisper.temperature_fallback_count,
-            _Foundation.NSMakeRect(FIELD_X, wy, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, wy, 80, D.SETTINGS_ROW_H + 4),
         )
         wy = self._add_row(self._whisperkit_section_view, wy, "Temp fallback count", self._whisper_temperature_fallback_field)
 
         self._whisper_prompt_preset_popup = self._make_popup(
             _PROMPT_PRESET_OPTIONS, config.whisper.prompt_preset,
-            _Foundation.NSMakeRect(FIELD_X, wy, FIELD_W, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, wy, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
         self._connect_button(self._whisper_prompt_preset_popup, self._on_prompt_preset_change)
         self._connect_button(self._whisper_prompt_preset_popup, self._on_restart_required_change)
@@ -824,7 +821,7 @@ class SettingsWindow:
 
         # Outer NSScrollView fills the entire tab content area
         scroll_view = _AppKit.NSScrollView.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(0, 0, CONTENT_W, CONTENT_H)
+            _Foundation.NSMakeRect(0, 0, D.SETTINGS_CONTENT_W, D.SETTINGS_CONTENT_H)
         )
         scroll_view.setHasVerticalScroller_(True)
         scroll_view.setAutohidesScrollers_(True)
@@ -833,7 +830,7 @@ class SettingsWindow:
 
         # Flipped document view — taller than the scroll view
         doc = _FlippedViewClass.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(0, 0, CONTENT_W, GRAMMAR_DOC_H)
+            _Foundation.NSMakeRect(0, 0, D.SETTINGS_CONTENT_W, D.SETTINGS_GRAMMAR_DOC_H)
         )
         scroll_view.setDocumentView_(doc)
         self._grammar_scroll_view = scroll_view
@@ -846,7 +843,7 @@ class SettingsWindow:
         self._grammar_enabled_checkbox, y = self._make_checkbox_row(
             doc, y, "Enable grammar correction", config.grammar.enabled
         )
-        y += SECTION_GAP
+        y += D.SETTINGS_SECTION_GAP
 
         # ---- Ollama ----
         y = self._add_section_header(doc, y, "Ollama")
@@ -855,29 +852,29 @@ class SettingsWindow:
         btn_w = 72
         self._ollama_model_field = self._make_text_field_for_row(
             config.ollama.model,
-            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W - btn_w - 4, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W - btn_w - 4, D.SETTINGS_ROW_H + 4),
         )
         fetch_btn = _AppKit.NSButton.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(FIELD_X + FIELD_W - btn_w, y, btn_w, ROW_H + 4)
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X + D.SETTINGS_FIELD_W - btn_w, y, btn_w, D.SETTINGS_ROW_H + 4)
         )
         fetch_btn.setTitle_("Fetch \u25be")
         fetch_btn.setBezelStyle_(_AppKit.NSBezelStyleRounded)
         fetch_btn.setButtonType_(_AppKit.NSButtonTypeMomentaryPushIn)
-        fetch_btn.setFont_(_AppKit.NSFont.systemFontOfSize_(11))
+        fetch_btn.setFont_(Typography.caption())
         self._connect_button(fetch_btn, self._on_fetch_ollama_models)
         doc.addSubview_(fetch_btn)
         y = self._add_row(doc, y, "Model", self._ollama_model_field)
 
         # Model picker popup (hidden until fetch populates it)
         self._ollama_model_popup = _AppKit.NSPopUpButton.alloc().initWithFrame_pullsDown_(
-            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, ROW_H + 4), False
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4), False
         )
         self._ollama_model_popup.addItemWithTitle_("Pick model...")
         self._ollama_model_popup.setHidden_(True)
         self._connect_button(self._ollama_model_popup, self._on_ollama_popup_select)
         # Empty label placeholder to consume row space
         blank_lbl = _AppKit.NSTextField.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(LEFT_MARGIN, y, LABEL_W, ROW_H)
+            _Foundation.NSMakeRect(D.SETTINGS_LEFT_MARGIN, y, D.SETTINGS_LABEL_W, D.SETTINGS_ROW_H)
         )
         blank_lbl.setStringValue_("")
         blank_lbl.setBezeled_(False)
@@ -886,102 +883,102 @@ class SettingsWindow:
         blank_lbl.setSelectable_(False)
         doc.addSubview_(blank_lbl)
         doc.addSubview_(self._ollama_model_popup)
-        y += ROW_H + ROW_GAP
+        y += D.SETTINGS_ROW_H + D.SETTINGS_ROW_GAP
 
         # Status label (shown during/after fetch)
         self._ollama_status_label = _AppKit.NSTextField.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, 14)
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, 14)
         )
         self._ollama_status_label.setStringValue_("")
         self._ollama_status_label.setBezeled_(False)
         self._ollama_status_label.setDrawsBackground_(False)
         self._ollama_status_label.setEditable_(False)
         self._ollama_status_label.setSelectable_(False)
-        self._ollama_status_label.setFont_(_AppKit.NSFont.systemFontOfSize_(10))
-        self._ollama_status_label.setTextColor_(_AppKit.NSColor.secondaryLabelColor())
+        self._ollama_status_label.setFont_(Typography.note())
+        self._ollama_status_label.setTextColor_(Colors.secondary_label())
         doc.addSubview_(self._ollama_status_label)
         y += 18
 
         self._ollama_url_field = self._make_text_field_for_row(
             config.ollama.url,
-            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(doc, y, "API URL", self._ollama_url_field)
 
         self._ollama_keep_alive_field = self._make_text_field_for_row(
             config.ollama.keep_alive,
-            _Foundation.NSMakeRect(FIELD_X, y, 100, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 100, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(doc, y, "Keep alive", self._ollama_keep_alive_field)
 
         self._ollama_max_chars_field = self._make_text_field_for_row(
             config.ollama.max_chars,
-            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(doc, y, "Max chars (0=unlimited)", self._ollama_max_chars_field)
 
         self._ollama_timeout_field = self._make_text_field_for_row(
             config.ollama.timeout,
-            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(doc, y, "Timeout (s)", self._ollama_timeout_field)
 
         self._ollama_unload_checkbox, y = self._make_checkbox_row(
             doc, y, "Unload model on exit", config.ollama.unload_on_exit
         )
-        y += SECTION_GAP
+        y += D.SETTINGS_SECTION_GAP
 
         # ---- Apple Intelligence ----
         y = self._add_section_header(doc, y, "Apple Intelligence")
 
         self._ai_max_chars_field = self._make_text_field_for_row(
             config.apple_intelligence.max_chars,
-            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(doc, y, "Max chars (0=unlimited)", self._ai_max_chars_field)
 
         self._ai_timeout_field = self._make_text_field_for_row(
             config.apple_intelligence.timeout,
-            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(doc, y, "Timeout (s)", self._ai_timeout_field)
 
         y = self._add_note(doc, y, "Requires macOS 26+, Apple Silicon")
-        y += SECTION_GAP
+        y += D.SETTINGS_SECTION_GAP
 
         # ---- LM Studio ----
         y = self._add_section_header(doc, y, "LM Studio")
 
         self._lm_model_field = self._make_text_field_for_row(
             config.lm_studio.model,
-            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(doc, y, "Model", self._lm_model_field)
 
         self._lm_url_field = self._make_text_field_for_row(
             config.lm_studio.url,
-            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(doc, y, "API URL", self._lm_url_field)
 
         self._lm_max_chars_field = self._make_text_field_for_row(
             config.lm_studio.max_chars,
-            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(doc, y, "Max chars (0=unlimited)", self._lm_max_chars_field)
 
         self._lm_max_tokens_field = self._make_text_field_for_row(
             config.lm_studio.max_tokens,
-            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(doc, y, "Max tokens (0=default)", self._lm_max_tokens_field)
 
         self._lm_timeout_field = self._make_text_field_for_row(
             config.lm_studio.timeout,
-            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(doc, y, "Timeout (s)", self._lm_timeout_field)
-        y += SECTION_GAP
+        y += D.SETTINGS_SECTION_GAP
 
         # ---- Shortcuts ----
         y = self._add_section_header(doc, y, "Shortcuts")
@@ -993,19 +990,19 @@ class SettingsWindow:
 
         self._shortcuts_proofread_field = self._make_text_field_for_row(
             config.shortcuts.proofread,
-            _Foundation.NSMakeRect(FIELD_X, y, 140, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 140, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(doc, y, "Proofread", self._shortcuts_proofread_field)
 
         self._shortcuts_rewrite_field = self._make_text_field_for_row(
             config.shortcuts.rewrite,
-            _Foundation.NSMakeRect(FIELD_X, y, 140, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 140, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(doc, y, "Rewrite", self._shortcuts_rewrite_field)
 
         self._shortcuts_prompt_field = self._make_text_field_for_row(
             config.shortcuts.prompt_engineer,
-            _Foundation.NSMakeRect(FIELD_X, y, 140, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 140, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(doc, y, "Prompt engineer", self._shortcuts_prompt_field)
 
@@ -1014,7 +1011,7 @@ class SettingsWindow:
     def _build_interface_tab(self, item):
         config = get_config()
         view = _FlippedViewClass.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(0, 0, CONTENT_W, CONTENT_H)
+            _Foundation.NSMakeRect(0, 0, D.SETTINGS_CONTENT_W, D.SETTINGS_CONTENT_H)
         )
         item.setView_(view)
         y = 20.0
@@ -1038,7 +1035,7 @@ class SettingsWindow:
         )
 
         y = self._add_note(view, y, "Takes effect after restart")
-        y += SECTION_GAP
+        y += D.SETTINGS_SECTION_GAP
 
         y = self._add_section_header(view, y, "Feedback")
 
@@ -1053,7 +1050,7 @@ class SettingsWindow:
     def _build_advanced_tab(self, item):
         config = get_config()
         view = _FlippedViewClass.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(0, 0, CONTENT_W, CONTENT_H)
+            _Foundation.NSMakeRect(0, 0, D.SETTINGS_CONTENT_W, D.SETTINGS_CONTENT_H)
         )
         item.setView_(view)
         y = 20.0
@@ -1062,34 +1059,34 @@ class SettingsWindow:
 
         self._backup_dir_field = self._make_text_field_for_row(
             config.backup.directory,
-            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(view, y, "Backup directory", self._backup_dir_field)
-        y += SECTION_GAP
+        y += D.SETTINGS_SECTION_GAP
 
         y = self._add_section_header(view, y, "WhisperKit Server")
 
         self._whisper_url_field = self._make_text_field_for_row(
             config.whisper.url,
-            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(view, y, "API URL", self._whisper_url_field)
         y = self._add_note(view, y, "Restart required")
-        y += ROW_GAP
+        y += D.SETTINGS_ROW_GAP
 
         self._whisper_check_url_field = self._make_text_field_for_row(
             config.whisper.check_url,
-            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 4),
         )
         y = self._add_row(view, y, "Check URL", self._whisper_check_url_field)
         y = self._add_note(view, y, "Restart required")
-        y += SECTION_GAP
+        y += D.SETTINGS_SECTION_GAP
 
         y = self._add_section_header(view, y, "Audio Capture")
 
         sample_rate_field = self._make_text_field_for_row(
             config.audio.sample_rate,
-            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, 80, D.SETTINGS_ROW_H + 4),
             enabled=False,
         )
         y = self._add_row(view, y, "Sample rate (Hz)", sample_rate_field)
@@ -1097,23 +1094,23 @@ class SettingsWindow:
 
     def _build_about_tab(self, item):
         view = _FlippedViewClass.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(0, 0, CONTENT_W, CONTENT_H)
+            _Foundation.NSMakeRect(0, 0, D.SETTINGS_CONTENT_W, D.SETTINGS_CONTENT_H)
         )
         item.setView_(view)
 
-        LABEL_W = FIELD_X - LEFT_MARGIN - 8  # match other tabs' label width
+        label_w = D.SETTINGS_FIELD_X - D.SETTINGS_LEFT_MARGIN - 8  # match other tabs' label width
 
         def _sep(y):
             """Thin horizontal separator line."""
             box = _AppKit.NSBox.alloc().initWithFrame_(
-                _Foundation.NSMakeRect(LEFT_MARGIN, y, CONTENT_W - LEFT_MARGIN * 2, 1)
+                _Foundation.NSMakeRect(D.SETTINGS_LEFT_MARGIN, y, D.SETTINGS_CONTENT_W - D.SETTINGS_LEFT_MARGIN * 2, 1)
             )
             box.setBoxType_(_AppKit.NSBoxSeparator)
             view.addSubview_(box)
 
-        def _center_lbl(text, y, h, size, bold=False, secondary=False):
+        def _center_lbl(text, y, h, font, secondary=False):
             tf = _AppKit.NSTextField.alloc().initWithFrame_(
-                _Foundation.NSMakeRect(LEFT_MARGIN, y, CONTENT_W - LEFT_MARGIN * 2, h)
+                _Foundation.NSMakeRect(D.SETTINGS_LEFT_MARGIN, y, D.SETTINGS_CONTENT_W - D.SETTINGS_LEFT_MARGIN * 2, h)
             )
             tf.setStringValue_(text)
             tf.setBezeled_(False)
@@ -1121,18 +1118,15 @@ class SettingsWindow:
             tf.setEditable_(False)
             tf.setSelectable_(False)
             tf.setAlignment_(_AppKit.NSTextAlignmentCenter)
-            tf.setFont_(
-                _AppKit.NSFont.boldSystemFontOfSize_(size) if bold
-                else _AppKit.NSFont.systemFontOfSize_(size)
-            )
+            tf.setFont_(font)
             if secondary:
-                tf.setTextColor_(_AppKit.NSColor.secondaryLabelColor())
+                tf.setTextColor_(Colors.secondary_label())
             view.addSubview_(tf)
 
         def _row_label(text, y):
             """Right-aligned row label (matches other tabs)."""
             tf = _AppKit.NSTextField.alloc().initWithFrame_(
-                _Foundation.NSMakeRect(LEFT_MARGIN, y + 1, LABEL_W, ROW_H)
+                _Foundation.NSMakeRect(D.SETTINGS_LEFT_MARGIN, y + 1, label_w, D.SETTINGS_ROW_H)
             )
             tf.setStringValue_(text)
             tf.setBezeled_(False)
@@ -1140,27 +1134,27 @@ class SettingsWindow:
             tf.setEditable_(False)
             tf.setSelectable_(False)
             tf.setAlignment_(_AppKit.NSTextAlignmentRight)
-            tf.setFont_(_AppKit.NSFont.systemFontOfSize_(12))
-            tf.setTextColor_(_AppKit.NSColor.secondaryLabelColor())
+            tf.setFont_(Typography.row_label())
+            tf.setTextColor_(Colors.secondary_label())
             view.addSubview_(tf)
 
         def _row_text(text, y):
             """Plain value text in the right column."""
             tf = _AppKit.NSTextField.alloc().initWithFrame_(
-                _Foundation.NSMakeRect(FIELD_X, y + 1, FIELD_W, ROW_H)
+                _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y + 1, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H)
             )
             tf.setStringValue_(text)
             tf.setBezeled_(False)
             tf.setDrawsBackground_(False)
             tf.setEditable_(False)
             tf.setSelectable_(False)
-            tf.setFont_(_AppKit.NSFont.systemFontOfSize_(12))
+            tf.setFont_(Typography.row_label())
             view.addSubview_(tf)
 
         def _row_link(text, y, url):
             """Clickable link in the right column."""
             btn = _AppKit.NSButton.alloc().initWithFrame_(
-                _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, ROW_H + 2)
+                _Foundation.NSMakeRect(D.SETTINGS_FIELD_X, y, D.SETTINGS_FIELD_W, D.SETTINGS_ROW_H + 2)
             )
             btn.setBordered_(False)
             btn.setButtonType_(_AppKit.NSButtonTypeMomentaryPushIn)
@@ -1168,8 +1162,8 @@ class SettingsWindow:
             attr = _Foundation.NSAttributedString.alloc().initWithString_attributes_(
                 text,
                 {
-                    _AppKit.NSForegroundColorAttributeName: _AppKit.NSColor.linkColor(),
-                    _AppKit.NSFontAttributeName: _AppKit.NSFont.systemFontOfSize_(12),
+                    _AppKit.NSForegroundColorAttributeName: Colors.link(),
+                    _AppKit.NSFontAttributeName: Typography.row_label(),
                 },
             )
             btn.setAttributedTitle_(attr)
@@ -1182,11 +1176,11 @@ class SettingsWindow:
 
         # ── App identity header ──────────────────────────────────────────
         y = 32.0
-        _center_lbl("Local Whisper", y, 26, 20, bold=True)
+        _center_lbl("Local Whisper", y, 26, Typography.about_title())
         y += 28
         try:
             from whisper_voice import __version__
-            _center_lbl(f"Version {__version__}", y, 16, 11, secondary=True)
+            _center_lbl(f"Version {__version__}", y, 16, Typography.about_version(), secondary=True)
             y += 18
         except Exception:
             pass
@@ -1198,16 +1192,16 @@ class SettingsWindow:
         # ── Author ───────────────────────────────────────────────────────
         _row_label("Author", y)
         _row_text("Soroush Yousefpour", y)
-        y += ROW_H + ROW_GAP
+        y += D.SETTINGS_ROW_H + D.SETTINGS_ROW_GAP
 
         _row_label("Website", y)
         _row_link("gabrimatic.info", y, "https://gabrimatic.info")
-        y += ROW_H + ROW_GAP
+        y += D.SETTINGS_ROW_H + D.SETTINGS_ROW_GAP
 
         _row_label("Source", y)
         _row_link("github.com/gabrimatic/local-whisper", y,
                   "https://github.com/gabrimatic/local-whisper")
-        y += ROW_H + ROW_GAP
+        y += D.SETTINGS_ROW_H + D.SETTINGS_ROW_GAP
 
         y += 6
         _sep(y)
@@ -1229,7 +1223,7 @@ class SettingsWindow:
                 _row_link(name, y, url)
             else:
                 _row_text(name, y)
-            y += ROW_H + ROW_GAP
+            y += D.SETTINGS_ROW_H + D.SETTINGS_ROW_GAP
 
     # ------------------------------------------------------------------ #
     # Callbacks                                                            #
@@ -1279,8 +1273,8 @@ class SettingsWindow:
         elif current_prompt is not None:
             self._whisper_prompt_view.setString_(current_prompt)
         color = (
-            _AppKit.NSColor.labelColor() if is_custom
-            else _AppKit.NSColor.secondaryLabelColor()
+            Colors.label() if is_custom
+            else Colors.secondary_label()
         )
         self._whisper_prompt_view.setTextColor_(color)
 

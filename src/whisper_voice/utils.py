@@ -45,6 +45,7 @@ def _validate_asset(path: str) -> str:
     return path
 
 ICON_IMAGE = _validate_asset(str(ASSETS_DIR / "icon_waveform.png"))
+APP_ICON = _validate_asset(str(ASSETS_DIR / "icon_app.png"))
 ICON_FRAMES = [
     _validate_asset(str(ASSETS_DIR / "icon_waveform_1.png")),
     _validate_asset(str(ASSETS_DIR / "icon_waveform_2.png")),

@@ -40,7 +40,7 @@ from .utils import (
     strip_hallucination_lines, check_microphone_permission,
     check_accessibility_trusted, request_accessibility_permission, send_notification,
     ICON_IDLE, ICON_RECORDING, ICON_PROCESSING, ICON_SUCCESS, ICON_ERROR,
-    ICON_IMAGE, ICON_FRAMES, ICON_PROCESS_FRAMES, OVERLAY_WAVE_FRAMES,
+    ICON_IMAGE, APP_ICON, ICON_FRAMES, ICON_PROCESS_FRAMES, OVERLAY_WAVE_FRAMES,
     ICON_RESET_SUCCESS, ICON_RESET_ERROR, LOG_TRUNCATE, PREVIEW_TRUNCATE,
     ANIM_INTERVAL_RECORDING, ANIM_INTERVAL_PROCESSING, DURATION_UPDATE_INTERVAL,
     CLIPBOARD_TIMEOUT,
@@ -89,6 +89,16 @@ class App(rumps.App):
 
     def __init__(self):
         super().__init__(name="Whisper", title=ICON_IDLE, icon=ICON_IMAGE, template=True, quit_button=None)
+
+        # Set the process-level app icon early so all system surfaces (notifications,
+        # Settings window, etc.) show the correct icon instead of Python's logo.
+        try:
+            from AppKit import NSApplication, NSImage
+            _app_icon = NSImage.alloc().initWithContentsOfFile_(APP_ICON)
+            if _app_icon:
+                NSApplication.sharedApplication().setApplicationIconImage_(_app_icon)
+        except Exception:
+            pass
 
         self.config = get_config()
         self.backup = Backup()
