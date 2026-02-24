@@ -4,12 +4,13 @@
 Audio pre-processing pipeline for Local Whisper.
 
 Applies VAD, silence trimming, noise reduction, and normalization
-before audio is sent to WhisperKit for transcription.
+before audio is sent to the transcription engine.
 """
 
 from dataclasses import dataclass, field
 
 import numpy as np
+from numpy.lib.stride_tricks import as_strided
 
 from .utils import log
 
@@ -181,7 +182,6 @@ class AudioProcessor:
         trimmed = audio[:min(trimmed_len, len(audio))]
 
         # Use stride tricks for zero-copy windowed view
-        from numpy.lib.stride_tricks import as_strided
         item_size = trimmed.strides[0]
         windows = as_strided(
             trimmed,
@@ -391,7 +391,6 @@ class AudioProcessor:
             return np.zeros((n_fft // 2 + 1, 1), dtype=complex)
 
         # Build windowed frames using stride tricks (zero-copy view)
-        from numpy.lib.stride_tricks import as_strided
         item_size = audio.strides[0]
         frames = as_strided(
             audio,

@@ -638,6 +638,10 @@ def _find_in_section(content: str, section: str, key: str) -> Optional[str]:
             m = re.match(rf'{key}\s*=\s*(true|false)', stripped)
             if m:
                 return m.group(1)
+            # Also match unquoted numeric values (integer or float)
+            m = re.match(rf'{key}\s*=\s*([-+]?[0-9]*\.?[0-9]+)', stripped)
+            if m:
+                return m.group(1)
     return None
 
 
@@ -705,7 +709,7 @@ def update_config_backend(new_backend: str) -> bool:
         config.grammar.backend = new_backend
         config.grammar.enabled = (new_backend != "none")
     try:
-        fd = os.open(str(CONFIG_FILE), os.O_RDWR | os.O_CREAT)
+        fd = os.open(str(CONFIG_FILE), os.O_RDWR | os.O_CREAT, 0o644)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
             content = CONFIG_FILE.read_text()
@@ -746,7 +750,7 @@ def update_config_field(section: str, key: str, value) -> bool:
     if section_obj is not None and hasattr(section_obj, key):
         setattr(section_obj, key, value)
     try:
-        fd = os.open(str(CONFIG_FILE), os.O_RDWR | os.O_CREAT)
+        fd = os.open(str(CONFIG_FILE), os.O_RDWR | os.O_CREAT, 0o644)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
             content = CONFIG_FILE.read_text()

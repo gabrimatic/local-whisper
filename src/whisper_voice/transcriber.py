@@ -7,8 +7,8 @@ This module provides a unified interface to transcription engines.
 The engine is selected based on the [transcription] configuration.
 
 Supported engines:
-- whisperkit: Local WhisperKit server (default)
-- qwen3_asr: On-device MLX transcription via Qwen3-ASR
+- qwen3_asr: On-device MLX transcription via Qwen3-ASR (default)
+- whisperkit: Local WhisperKit server
 
 Usage:
     from whisper_voice.transcriber import Transcriber
@@ -79,7 +79,3 @@ class Transcriber:
     def name(self) -> str:
         """Human-readable name of the active engine."""
         return self._engine.name
-
-
-# Backward compatibility
-Whisper = Transcriber

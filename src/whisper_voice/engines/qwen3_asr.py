@@ -75,4 +75,11 @@ class Qwen3ASREngine(TranscriptionEngine):
 
     def close(self) -> None:
         self._model = None
+        try:
+            import gc
+            import mlx.core as mx
+            gc.collect()
+            mx.clear_cache()
+        except Exception:
+            pass
         log("Qwen3-ASR model unloaded", "INFO")

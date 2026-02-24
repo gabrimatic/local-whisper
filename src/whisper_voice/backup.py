@@ -100,7 +100,7 @@ class Backup:
 
                 # Also write a timestamped copy to audio_history/
                 try:
-                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
                     history_path = self._audio_history_dir / f"{ts}.wav"
                     with wave.open(str(history_path), 'wb') as w:
                         w.setnchannels(1)

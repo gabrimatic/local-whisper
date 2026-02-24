@@ -14,6 +14,7 @@ import threading
 from typing import Optional, Callable
 
 from .config import get_config, update_config_field, _is_valid_url
+from .engines import ENGINE_REGISTRY
 from .utils import log
 from .theme import Colors, Typography, Dimensions as D, create_glass_background
 
@@ -79,11 +80,8 @@ _RESTART_REQUIRED_FIELDS = {
     ("shortcuts", "prompt_engineer"),
 }
 
-# Engine options: (display_label, config_value)
-_ENGINE_OPTIONS = [
-    ("Qwen3-ASR", "qwen3_asr"),
-    ("WhisperKit", "whisperkit"),
-]
+# Engine options: (display_label, config_value) — derived from ENGINE_REGISTRY
+_ENGINE_OPTIONS = [(info.name, info.id) for info in ENGINE_REGISTRY.values()]
 
 # Prompt preset options: (display_label, config_value)
 _PROMPT_PRESET_OPTIONS = [

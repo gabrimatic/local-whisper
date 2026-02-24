@@ -129,22 +129,28 @@ def _write_config_backend(new_backend: str) -> bool:
         print(f"{C_RED}Config file not found: {config_file}{C_RESET}", file=sys.stderr)
         return False
     try:
-        content = config_file.read_text()
-        new_content = _replace_in_section(content, "grammar", "backend", f'"{new_backend}"')
-        if new_content == content:
-            # Key not found - add it
-            if "[grammar]" in new_content:
-                new_content = new_content.replace(
-                    "[grammar]",
-                    f'[grammar]\nbackend = "{new_backend}"',
-                    1
-                )
-            else:
-                new_content += f'\n[grammar]\nbackend = "{new_backend}"\n'
-        # Update enabled flag in [grammar] section only
-        enabled_val = "false" if new_backend == "none" else "true"
-        new_content = _replace_in_section(new_content, "grammar", "enabled", enabled_val)
-        config_file.write_text(new_content)
+        fd = os.open(str(config_file), os.O_RDWR | os.O_CREAT)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            content = config_file.read_text()
+            new_content = _replace_in_section(content, "grammar", "backend", f'"{new_backend}"')
+            if new_content == content:
+                # Key not found - add it
+                if "[grammar]" in new_content:
+                    new_content = new_content.replace(
+                        "[grammar]",
+                        f'[grammar]\nbackend = "{new_backend}"',
+                        1
+                    )
+                else:
+                    new_content += f'\n[grammar]\nbackend = "{new_backend}"\n'
+            # Update enabled flag in [grammar] section only
+            enabled_val = "false" if new_backend == "none" else "true"
+            new_content = _replace_in_section(new_content, "grammar", "enabled", enabled_val)
+            config_file.write_text(new_content)
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
         return True
     except Exception as e:
         print(f"{C_RED}Failed to write config: {e}{C_RESET}", file=sys.stderr)
@@ -180,19 +186,25 @@ def _write_config_engine(engine_id: str) -> bool:
         print(f"{C_RED}Config file not found: {config_file}{C_RESET}", file=sys.stderr)
         return False
     try:
-        content = config_file.read_text()
-        new_content = _replace_in_section(content, "transcription", "engine", f'"{engine_id}"')
-        if new_content == content:
-            # Key not found - add it
-            if "[transcription]" in new_content:
-                new_content = new_content.replace(
-                    "[transcription]",
-                    f'[transcription]\nengine = "{engine_id}"',
-                    1
-                )
-            else:
-                new_content += f'\n[transcription]\nengine = "{engine_id}"\n'
-        config_file.write_text(new_content)
+        fd = os.open(str(config_file), os.O_RDWR | os.O_CREAT)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            content = config_file.read_text()
+            new_content = _replace_in_section(content, "transcription", "engine", f'"{engine_id}"')
+            if new_content == content:
+                # Key not found - add it
+                if "[transcription]" in new_content:
+                    new_content = new_content.replace(
+                        "[transcription]",
+                        f'[transcription]\nengine = "{engine_id}"',
+                        1
+                    )
+                else:
+                    new_content += f'\n[transcription]\nengine = "{engine_id}"\n'
+            config_file.write_text(new_content)
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
         return True
     except Exception as e:
         print(f"{C_RED}Failed to write config: {e}{C_RESET}", file=sys.stderr)

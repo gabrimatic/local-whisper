@@ -228,23 +228,32 @@ class WhisperKitEngine(TranscriptionEngine):
 
         log("Killing WhisperKit server...", "INFO")
 
-        # First try to kill tracked process if we have one
-        if self._process and self._process.poll() is None:
-            try:
-                self._process.kill()
-                self._process.wait(timeout=3)
-                log("WhisperKit server killed", "OK")
-            except Exception as e:
-                log(f"Failed to kill tracked process: {e}", "WARN")
-            finally:
-                self._process = None
+        killed_via_pid = False
 
-        # Always use pkill to ensure any whisperkit-cli process is killed
-        # (covers cases where server was already running before app started)
-        try:
-            result = subprocess.run(['pkill', '-9', '-f', 'whisperkit-cli serve'],
-                                   timeout=2, capture_output=True)
-            if result.returncode == 0:
-                log("WhisperKit server killed via pkill", "OK")
-        except Exception:
-            pass
+        # Kill the tracked process if we started it
+        if self._process is not None:
+            if self._process.poll() is None:
+                try:
+                    self._process.kill()
+                    self._process.wait(timeout=3)
+                    log("WhisperKit server killed", "OK")
+                    killed_via_pid = True
+                except Exception as e:
+                    log(f"Failed to kill tracked process: {e}", "WARN")
+            else:
+                # Process already exited on its own
+                killed_via_pid = True
+            self._process = None
+
+        # Fall back to pkill only when we have no tracked PID (server was
+        # already running before this app started, i.e. an orphan process).
+        if not killed_via_pid:
+            try:
+                result = subprocess.run(
+                    ['pkill', '-f', 'whisperkit-cli serve'],
+                    timeout=2, capture_output=True
+                )
+                if result.returncode == 0:
+                    log("WhisperKit server killed via pkill (orphan cleanup)", "OK")
+            except Exception:
+                pass

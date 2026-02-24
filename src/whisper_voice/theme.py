@@ -26,6 +26,9 @@ def _ensure_imports():
     _Quartz = _qz
 
 
+# NSVisualEffectMaterial enum values (AppKit raw integers)
+_MATERIAL_HUD_WINDOW = 13  # NSVisualEffectMaterialHUDWindow
+
 # ---------------------------------------------------------------------------
 # Colors
 # ---------------------------------------------------------------------------
@@ -261,7 +264,7 @@ def create_glass_background(frame, corner_radius=None, material=None):
     """
     _ensure_imports()
     radius = corner_radius if corner_radius is not None else Dimensions.OVERLAY_CORNER_RADIUS
-    mat = material if material is not None else 13  # NSVisualEffectMaterialHUDWindow
+    mat = material if material is not None else _MATERIAL_HUD_WINDOW
 
     view = _AppKit.NSVisualEffectView.alloc().initWithFrame_(frame)
     view.setMaterial_(mat)

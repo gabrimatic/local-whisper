@@ -7,7 +7,7 @@ Double-tap Right Option (⌥) to start recording, single tap to stop.
 Transcribed and polished text is copied to clipboard.
 
 Architecture:
-    Voice -> WhisperKit (localhost:50060) -> Grammar Backend -> Clipboard
+    Voice -> Transcription Engine (Qwen3-ASR by default) -> Grammar Backend -> Clipboard
 
 Supported grammar backends:
     - apple_intelligence: Apple's on-device Foundation Models (macOS 15+)
