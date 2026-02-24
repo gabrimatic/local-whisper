@@ -17,7 +17,7 @@ Double-tap a key, speak, tap to stop. Polished text lands in your clipboard. No 
 
 ## Quick Start
 
-**Apple Silicon required.** ~4GB disk space for models, microphone access, Accessibility permission.
+**Apple Silicon required.** Microphone access and Accessibility permission required.
 
 ```bash
 git clone https://github.com/gabrimatic/local-whisper.git
@@ -25,7 +25,7 @@ cd local-whisper
 ./setup.sh
 ```
 
-`setup.sh` handles everything: Python venv, Homebrew, dependencies, model download, Swift CLI build, LaunchAgent for auto-start, Accessibility permission, and the `wh` shell alias. Qwen3-ASR (`mlx-community/Qwen3-ASR-1.7B-8bit`) is downloaded on first use. WhisperKit CLI and its model are installed only if you switch to the WhisperKit engine.
+`setup.sh` handles everything: Python venv, Homebrew, dependencies, model download, Swift CLI build, LaunchAgent for auto-start, Accessibility permission, and the `wh` shell alias. Qwen3-ASR (`mlx-community/Qwen3-ASR-1.7B-8bit`) is downloaded on first use. WhisperKit CLI and its model are also installed during setup alongside Qwen3-ASR.
 
 | Action | Key |
 |--------|-----|
@@ -79,10 +79,10 @@ ollama serve
 ## Features
 
 - **Double-tap to record** with no accidental triggers
-- **Pre-recording buffer** captures 200ms of audio before the hotkey fires, so the first syllable is never clipped
+- **Pre-recording buffer** (optional) captures audio before the hotkey fires, so the first syllable is never clipped (set `pre_buffer` to e.g. `0.2` to enable)
 - **Audio pre-processing pipeline**: VAD-based silence trimming, spectral noise reduction, and RMS normalization before transcription
 - **Qwen3-ASR by default**: on-device MLX transcription, no server process, handles long audio natively (up to 20 minutes)
-- **WhisperKit available as alternative**: local server on Apple Neural Engine; long recordings split at speech pauses
+- **WhisperKit available as alternative**: runs a local server on Apple Neural Engine; long recordings split at speech pauses
 - **Engine selection**: switch transcription engines via Settings, `wh engine`, or config
 - **Real-time audio level indicator** in the overlay while recording (color-coded by level)
 - **Real-time duration** display while recording
@@ -226,7 +226,7 @@ prompt = ""
 [grammar]
 # Backend: "apple_intelligence", "ollama", or "lm_studio"
 backend = "apple_intelligence"
-enabled = true
+enabled = false
 
 [ollama]
 url = "http://localhost:11434/api/generate"
@@ -259,7 +259,7 @@ min_rms = 0.005     # silence threshold (0.0-1.0)
 vad_enabled = true  # VAD-based silence trimming
 noise_reduction = true
 normalize_audio = true
-pre_buffer = 0.2    # seconds of audio captured before hotkey (0 to disable)
+pre_buffer = 0.0    # seconds of audio captured before hotkey (0.0 to disable, e.g. 0.2 for 200ms)
 
 [backup]
 directory = "~/.whisper"
@@ -313,7 +313,7 @@ Everything runs on your Mac. Zero data leaves your machine.
 │                                                           │
 │  Qwen3-ASR (default)       │  WhisperKit (alternative)    │
 │  In-process MLX model      │  localhost:50060             │
-│  Handles long audio native │  Split at 28s gaps           │
+│  Handles long audio natively│  Split at 28s gaps           │
 └──────────────────────────┬────────────────────────────────┘
                            ▼
 ┌───────────────────────────────────────────────────────────┐
@@ -346,14 +346,14 @@ Runs in-process via MLX. No server. Handles long audio (up to 20 minutes) native
 
 ### WhisperKit (alternative)
 
-Models by [Argmax](https://github.com/argmaxinc/WhisperKit), running locally on Apple Neural Engine. Requires `whisperkit-cli` (`brew install whisperkit-cli`).
+Whisper models from [Argmax](https://github.com/argmaxinc/WhisperKit), running locally on Apple Neural Engine. Requires `whisperkit-cli` (`brew install whisperkit-cli`).
 
-| Model | Size | Notes |
-|-------|------|-------|
-| `tiny` / `tiny.en` | ~39MB | Fastest, lowest accuracy |
-| `base` / `base.en` | ~74MB | |
-| `small` / `small.en` | ~244MB | |
-| `whisper-large-v3-v20240930` | ~1.5GB | Best accuracy |
+| Model | Notes |
+|-------|-------|
+| `tiny` / `tiny.en` | Fastest, lowest accuracy |
+| `base` / `base.en` | |
+| `small` / `small.en` | |
+| `whisper-large-v3-v20240930` | Best accuracy |
 
 Set `model` in the `[whisper]` section of your config. Switch engines with `wh engine whisperkit` or in Settings.
 
@@ -433,8 +433,8 @@ Build the Swift CLI: `wh build`. `setup.sh` does this automatically.
 
 First run downloads the transcription model. Subsequent runs load from disk.
 
-- **Qwen3-ASR** (default): downloads `mlx-community/Qwen3-ASR-1.7B-8bit` (~1GB) from Hugging Face on first use.
-- **WhisperKit**: downloads the Whisper model (~1.5GB) and starts a local server on first use.
+- **Qwen3-ASR** (default): downloads `mlx-community/Qwen3-ASR-1.7B-8bit` from Hugging Face on first use.
+- **WhisperKit**: downloads the Whisper model and starts a local server on first use.
 
 </details>
 

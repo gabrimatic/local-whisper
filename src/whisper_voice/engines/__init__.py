@@ -4,7 +4,7 @@
 Transcription engines for Local Whisper.
 
 To add a new engine:
-1. Create a new folder under engines/ with __init__.py and engine.py
+1. Create a file under engines/ implementing TranscriptionEngine from base.py
 2. Add an entry to ENGINE_REGISTRY below
 
 Usage:

@@ -170,7 +170,7 @@ log_ok "Package installed (editable mode)"
 
 echo ""
 log_step "Pre-downloading Qwen3-ASR model..."
-log_info "Downloads and caches the speech model (~2.5GB) to ~/.cache/huggingface/."
+log_info "Downloads and caches the speech model to ~/.cache/huggingface/."
 log_info "This only happens once."
 
 "$VENV_DIR/bin/python3" -c "
@@ -199,7 +199,7 @@ log_ok "WhisperKit CLI ready"
 
 echo ""
 log_step "Pre-compiling WhisperKit model..."
-log_info "First-time setup: downloads and compiles the speech model (~600MB)."
+log_info "First-time setup: downloads and compiles the speech model."
 log_info "This can take 5-15 minutes. Only happens once."
 
 WHISPER_MODEL="whisper-large-v3-v20240930"
