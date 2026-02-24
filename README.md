@@ -7,7 +7,7 @@
 
 **Local voice transcription with grammar correction for macOS.**
 
-Double-tap a key, speak, tap to stop. Polished text lands in your clipboard. No cloud, no internet, no tracking.
+Double-tap a key, speak, tap to stop. Polished text lands in your clipboard. No cloud, no internet, no tracking. Transcription runs entirely on-device via Qwen3-ASR (MLX) by default.
 
 <p align="center">
   <img src="assets/hero.png" width="600" alt="Local Whisper recording in Notes">
@@ -25,7 +25,7 @@ cd local-whisper
 ./setup.sh
 ```
 
-`setup.sh` handles everything: Python venv, Homebrew, WhisperKit CLI, model download (~1.5GB), Swift CLI build, dependencies, LaunchAgent for auto-start, Accessibility permission, and the `wh` shell alias.
+`setup.sh` handles everything: Python venv, Homebrew, dependencies, model download, Swift CLI build, LaunchAgent for auto-start, Accessibility permission, and the `wh` shell alias. Qwen3-ASR (`mlx-community/Qwen3-ASR-1.7B-8bit`) is downloaded on first use. WhisperKit CLI and its model are installed only if you switch to the WhisperKit engine.
 
 | Action | Key |
 |--------|-----|
@@ -81,7 +81,9 @@ ollama serve
 - **Double-tap to record** with no accidental triggers
 - **Pre-recording buffer** captures 200ms of audio before the hotkey fires, so the first syllable is never clipped
 - **Audio pre-processing pipeline**: VAD-based silence trimming, spectral noise reduction, and RMS normalization before transcription
-- **Long recording support**: recordings over 28s are split at natural speech pauses and transcribed in segments
+- **Qwen3-ASR by default**: on-device MLX transcription, no server process, handles long audio natively (up to 20 minutes)
+- **WhisperKit available as alternative**: local server on Apple Neural Engine; long recordings split at speech pauses
+- **Engine selection**: switch transcription engines via Settings, `wh engine`, or config
 - **Real-time audio level indicator** in the overlay while recording (color-coded by level)
 - **Real-time duration** display while recording
 - **Floating overlay** showing status (recording, processing, copied)
@@ -89,8 +91,8 @@ ollama serve
 - **Clipboard integration** for immediate paste
 - **Settings window** with full GUI for all config options
 - **Auto-backup** of every recording and transcription
-- **Hallucination filter** that blocks Whisper's common false outputs
-- **Vocabulary prompt presets** for technical or dictation use cases
+- **Hallucination filter** that blocks common false transcription outputs
+- **Vocabulary prompt presets** for technical or dictation use cases (WhisperKit engine)
 - **Retry function** if transcription fails
 
 ### Keyboard Shortcuts
@@ -130,7 +132,9 @@ wh start            # Launch the service
 wh stop             # Stop the service
 wh restart          # Restart (auto-rebuilds Swift CLI if sources changed)
 wh build            # Rebuild the Apple Intelligence Swift CLI
-wh backend          # Show current backend + list available
+wh engine           # Show current transcription engine + list available
+wh engine whisperkit  # Switch transcription engine
+wh backend          # Show current grammar backend + list available
 wh backend ollama   # Switch grammar backend
 wh config           # Show key config values
 wh config edit      # Open config in editor
@@ -165,7 +169,7 @@ wh uninstall        # Completely remove Local Whisper
 | Tab | What you configure |
 |-----|-------------------|
 | Recording | Trigger key, double-tap window, min/max duration, silence threshold, VAD, noise reduction, pre-buffer |
-| Transcription | Whisper model, language, vocabulary preset, decoding quality thresholds, timeout |
+| Transcription | Engine selection (Qwen3-ASR / WhisperKit), model, language, vocabulary preset, decoding quality thresholds, timeout |
 | Grammar | Backend selection, per-backend settings, keyboard shortcuts |
 | Interface | Overlay visibility/opacity, sounds, notifications |
 | Advanced | Backup directory, WhisperKit server URLs |
@@ -192,6 +196,15 @@ Settings live in `~/.whisper/config.toml`. Edit via the Settings window, the Con
 #              caps_lock, f1-f12
 key = "alt_r"
 double_tap_threshold = 0.4  # seconds
+
+[transcription]
+# Engine: "qwen3_asr" (default, in-process MLX) or "whisperkit" (local server)
+engine = "qwen3_asr"
+
+[qwen3_asr]
+model = "mlx-community/Qwen3-ASR-1.7B-8bit"
+language = "auto"  # e.g. "en", or "auto" for detection
+timeout = 0        # no limit
 
 [whisper]
 model = "whisper-large-v3-v20240930"
@@ -274,6 +287,7 @@ Everything runs on your Mac. Zero data leaves your machine.
 
 | Component | Location |
 |-----------|----------|
+| Qwen3-ASR | In-process (no network) |
 | WhisperKit | localhost:50060 |
 | Apple Intelligence | On-device |
 | Ollama | localhost:11434 |
@@ -291,13 +305,15 @@ Everything runs on your Mac. Zero data leaves your machine.
                            ▼
 ┌───────────────────────────────────────────────────────────┐
 │  Audio Pre-processing Pipeline                            │
-│  VAD (Silero) → Silence trim → Noise reduction → Normalize│
-│  Long recordings split at speech gaps (28s max per chunk) │
+│  VAD (energy) → Silence trim → Noise reduction → Normalize│
 └──────────────────────────┬────────────────────────────────┘
                            ▼
 ┌───────────────────────────────────────────────────────────┐
-│  WhisperKit (localhost:50060)                              │
-│  Runs on Apple Neural Engine · verbose_json + filtering   │
+│  Transcription Engine (selectable)                        │
+│                                                           │
+│  Qwen3-ASR (default)       │  WhisperKit (alternative)    │
+│  In-process MLX model      │  localhost:50060             │
+│  Handles long audio native │  Split at 28s gaps           │
 └──────────────────────────┬────────────────────────────────┘
                            ▼
 ┌───────────────────────────────────────────────────────────┐
@@ -316,18 +332,30 @@ Everything runs on your Mac. Zero data leaves your machine.
 
 ---
 
-## WhisperKit Models
+## Transcription Engines
 
-Models by [Argmax](https://github.com/argmaxinc/WhisperKit), running locally on Apple Neural Engine.
+### Qwen3-ASR (default)
+
+Runs in-process via MLX. No server. Handles long audio (up to 20 minutes) natively.
+
+| Setting | Default | Notes |
+|---------|---------|-------|
+| `model` | `mlx-community/Qwen3-ASR-1.7B-8bit` | Downloaded on first use |
+| `language` | `auto` | Set to `en`, `fa`, etc. to force a language |
+| `timeout` | `0` | 0 = no limit |
+
+### WhisperKit (alternative)
+
+Models by [Argmax](https://github.com/argmaxinc/WhisperKit), running locally on Apple Neural Engine. Requires `whisperkit-cli` (`brew install whisperkit-cli`).
 
 | Model | Size | Notes |
 |-------|------|-------|
 | `tiny` / `tiny.en` | ~39MB | Fastest, lowest accuracy |
 | `base` / `base.en` | ~74MB | |
 | `small` / `small.en` | ~244MB | |
-| `whisper-large-v3-v20240930` | ~1.5GB | **Default**, best accuracy |
+| `whisper-large-v3-v20240930` | ~1.5GB | Best accuracy |
 
-Set `model` in the `[whisper]` section of your config.
+Set `model` in the `[whisper]` section of your config. Switch engines with `wh engine whisperkit` or in Settings.
 
 ---
 
@@ -401,9 +429,12 @@ Build the Swift CLI: `wh build`. `setup.sh` does this automatically.
 </details>
 
 <details>
-<summary><strong>Transcription slow</strong></summary>
+<summary><strong>Transcription slow on first run</strong></summary>
 
-First run downloads the Whisper model (~1.5GB). Subsequent runs are faster.
+First run downloads the transcription model. Subsequent runs load from disk.
+
+- **Qwen3-ASR** (default): downloads `mlx-community/Qwen3-ASR-1.7B-8bit` (~1GB) from Hugging Face on first use.
+- **WhisperKit**: downloads the Whisper model (~1.5GB) and starts a local server on first use.
 
 </details>
 
@@ -442,12 +473,18 @@ wh
 python tests/test_flow.py
 ```
 
-### Adding a Backend
+### Adding a Grammar Backend
 
 1. Create a folder under `backends/` with `__init__.py` and `backend.py`
 2. Implement the `GrammarBackend` abstract class
 3. Add an entry to `BACKEND_REGISTRY` in `backends/__init__.py`
 4. Menu, CLI, and Settings auto-generate from the registry
+
+### Adding a Transcription Engine
+
+1. Create a file under `engines/` implementing `TranscriptionEngine` from `base.py`
+2. Add an entry to `ENGINE_REGISTRY` in `engines/__init__.py`
+3. Settings and `wh engine` auto-generate from the registry
 
 <details>
 <summary><strong>Project structure</strong></summary>
@@ -469,10 +506,14 @@ local-whisper/
     ├── grammar.py          # Backend factory
     ├── overlay.py          # Floating UI + audio level indicator
     ├── settings.py         # Settings window (6-tab NSPanel)
-    ├── transcriber.py      # WhisperKit client + quality tuning
+    ├── transcriber.py      # Engine routing wrapper
     ├── utils.py            # Helpers
     ├── shortcuts.py        # Keyboard shortcuts
     ├── key_interceptor.py  # CGEvent tap
+    ├── engines/
+    │   ├── base.py         # TranscriptionEngine abstract base
+    │   ├── qwen3_asr.py    # Qwen3-ASR engine (MLX in-process)
+    │   └── whisperkit.py   # WhisperKit engine (localhost server)
     └── backends/
         ├── base.py         # Abstract base
         ├── modes.py        # Transformation modes

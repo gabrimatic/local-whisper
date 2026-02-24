@@ -19,6 +19,9 @@ from .config import get_config
 from .utils import log
 
 
+_MAX_AUDIO_HISTORY = 5  # Keep last N recordings in audio history
+
+
 class Backup:
     """Manages backup of audio files and transcription text."""
 
@@ -32,6 +35,8 @@ class Backup:
             pass
         self._history_dir = self._dir / "history"
         self._history_dir.mkdir(parents=True, exist_ok=True)
+        self._audio_history_dir = self._dir / "audio_history"
+        self._audio_history_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
 
     @property
@@ -66,7 +71,12 @@ class Backup:
         return self._history_dir / f"{ts}.txt"
 
     def save_audio(self, data: np.ndarray) -> Path:
-        """Save audio data to WAV file."""
+        """Save audio data to WAV file.
+
+        Writes to last_recording.wav (for retry) AND a timestamped copy in
+        audio_history/ so previous recordings are never lost. Keeps the last
+        _MAX_AUDIO_HISTORY recordings and prunes older ones.
+        """
         config = get_config()
         # Clean up stale segment files from previous long recordings
         for seg_file in glob.glob(os.path.join(self._dir, "last_recording_[0-9]*.wav")):
@@ -77,16 +87,50 @@ class Backup:
         with self._lock:
             try:
                 safe = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
-                audio = (safe * 32767).astype(np.int16)
+                safe = np.clip(safe, -1.0, 1.0)
+                audio_int16 = (safe * 32767).astype(np.int16)
+                audio_bytes = audio_int16.tobytes()
+
+                # Write to the canonical last_recording.wav (for retry)
                 with wave.open(str(self.audio_path), 'wb') as w:
                     w.setnchannels(1)
                     w.setsampwidth(2)
                     w.setframerate(config.audio.sample_rate)
-                    w.writeframes(audio.tobytes())
+                    w.writeframes(audio_bytes)
+
+                # Also write a timestamped copy to audio_history/
+                try:
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    history_path = self._audio_history_dir / f"{ts}.wav"
+                    with wave.open(str(history_path), 'wb') as w:
+                        w.setnchannels(1)
+                        w.setsampwidth(2)
+                        w.setframerate(config.audio.sample_rate)
+                        w.writeframes(audio_bytes)
+                    self._prune_audio_history()
+                except Exception as e:
+                    log(f"Audio history save warning: {e}", "WARN")
+
                 return self.audio_path
             except Exception as e:
                 log(f"Save failed: {e}", "ERR")
                 return None
+
+    def _prune_audio_history(self):
+        """Remove oldest audio history files, keeping _MAX_AUDIO_HISTORY most recent."""
+        try:
+            wav_files = sorted(
+                self._audio_history_dir.glob("*.wav"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            for old_file in wav_files[_MAX_AUDIO_HISTORY:]:
+                try:
+                    old_file.unlink()
+                except OSError:
+                    pass
+        except Exception:
+            pass  # Non-critical; don't let pruning failures break anything
 
     def save_raw(self, text: str):
         """Save raw transcription (before grammar fix)."""
@@ -132,6 +176,7 @@ class Backup:
         with self._lock:
             try:
                 safe = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+                safe = np.clip(safe, -1.0, 1.0)
                 audio = (safe * 32767).astype(np.int16)
                 with wave.open(str(self.processed_audio_path), 'wb') as w:
                     w.setnchannels(1)
@@ -150,6 +195,7 @@ class Backup:
         with self._lock:
             try:
                 safe = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+                safe = np.clip(safe, -1.0, 1.0)
                 audio = (safe * 32767).astype(np.int16)
                 with wave.open(str(path), 'wb') as w:
                     w.setnchannels(1)

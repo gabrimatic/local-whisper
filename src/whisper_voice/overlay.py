@@ -98,13 +98,13 @@ class RecordingOverlay:
         screen_width = screen_frame.size.width
         screen_height = screen_frame.size.height
 
-        # Compact pill (expands for status text)
-        window_width = 160
-        window_height = 32
+        # Substantial pill (expands for status text)
+        window_width = 190
+        window_height = 37
 
-        # Center, lower third
-        x = (screen_width - window_width) / 2
-        y = screen_height * 0.33
+        # Perfectly centered horizontally, ~22% up from the bottom of the screen
+        x = round((screen_width - window_width) / 2)
+        y = round(screen_height * 0.22)
 
         # Window
         self._window = _AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
@@ -118,7 +118,7 @@ class RecordingOverlay:
         self._window.setAlphaValue_(config.ui.overlay_opacity)
         self._window.setBackgroundColor_(_AppKit.NSColor.clearColor())
         self._window.setIgnoresMouseEvents_(True)
-        self._window.setHasShadow_(True)
+        self._window.setHasShadow_(False)
         self._window.setCollectionBehavior_(
             _AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces |
             _AppKit.NSWindowCollectionBehaviorStationary
@@ -132,13 +132,13 @@ class RecordingOverlay:
         layer = content.layer()
         layer.setCornerRadius_(window_height / 2)
         layer.setBackgroundColor_(
-            _Quartz.CGColorCreateGenericRGB(0.12, 0.12, 0.14, 0.88)
+            _Quartz.CGColorCreateGenericRGB(0.10, 0.10, 0.12, 0.93)
         )
 
         # Wave image
-        self._wave_size = 22
-        self._wave_gap = 8
-        wave_x = 12
+        self._wave_size = 24
+        self._wave_gap = 9
+        wave_x = 16
         wave_y = (window_height - self._wave_size) / 2
         self._wave_view = _AppKit.NSImageView.alloc().initWithFrame_(
             _Foundation.NSMakeRect(wave_x, wave_y, self._wave_size, self._wave_size)
@@ -149,8 +149,9 @@ class RecordingOverlay:
 
         # Text field
         text_x = wave_x + self._wave_size + self._wave_gap
+        text_h = 20
         self._duration_field = _AppKit.NSTextField.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(text_x, (window_height - 18) / 2, window_width - text_x - 10, 18)
+            _Foundation.NSMakeRect(text_x, (window_height - text_h) / 2, window_width - text_x - 14, text_h)
         )
         self._duration_field.setStringValue_("0.0")
         self._duration_field.setBezeled_(False)
@@ -158,15 +159,15 @@ class RecordingOverlay:
         self._duration_field.setEditable_(False)
         self._duration_field.setSelectable_(False)
         self._duration_field.setTextColor_(_AppKit.NSColor.whiteColor())
-        self._font = _AppKit.NSFont.monospacedSystemFontOfSize_weight_(13, _AppKit.NSFontWeightSemibold)
+        self._font = _AppKit.NSFont.monospacedSystemFontOfSize_weight_(14, _AppKit.NSFontWeightBold)
         self._duration_field.setFont_(self._font)
         self._duration_field.setAlignment_(_AppKit.NSTextAlignmentLeft)
         content.addSubview_(self._duration_field)
 
-        # Audio level bar — thin strip at the bottom of the pill
-        bar_margin = 14
-        bar_height = 3
-        bar_y = 4
+        # Audio level bar — strip at the bottom of the pill
+        bar_margin = 18
+        bar_height = 3.5
+        bar_y = 5
         bar_max_width = window_width - bar_margin * 2
         self._level_bar = _AppKit.NSView.alloc().initWithFrame_(
             _Foundation.NSMakeRect(bar_margin, bar_y, 0, bar_height)
@@ -200,9 +201,9 @@ class RecordingOverlay:
         wave_y = (self._window_height - self._wave_size) / 2
         self._wave_view.setFrame_(_Foundation.NSMakeRect(start_x, wave_y, self._wave_size, self._wave_size))
         text_x = start_x + self._wave_size + self._wave_gap
-        text_width = self._window_width - text_x - 8
+        text_width = self._window_width - text_x - 14
         self._duration_field.setFrame_(
-            _Foundation.NSMakeRect(text_x, (self._window_height - 18) / 2, text_width, 18)
+            _Foundation.NSMakeRect(text_x, (self._window_height - 20) / 2, text_width, 20)
         )
 
     def show(self):

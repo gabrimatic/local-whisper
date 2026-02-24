@@ -33,7 +33,7 @@ dependencies = [
     "pynput>=1.7.0",
     "pyobjc-framework-Cocoa>=8.0",
     "pyobjc-framework-Quartz>=8.0",
-    "silero-vad-lite>=0.2.0",
+    "mlx-audio>=0.3.0",
 ]
 
 [project.scripts]

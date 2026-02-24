@@ -73,6 +73,8 @@ _LANGUAGE_OPTIONS = [
 _RESTART_REQUIRED_FIELDS = {
     ("hotkey", "key"),
     ("hotkey", "double_tap_threshold"),
+    ("transcription", "engine"),
+    ("qwen3_asr", "model"),
     ("whisper", "model"),
     ("whisper", "url"),
     ("whisper", "check_url"),
@@ -88,6 +90,12 @@ _RESTART_REQUIRED_FIELDS = {
     ("shortcuts", "rewrite"),
     ("shortcuts", "prompt_engineer"),
 }
+
+# Engine options: (display_label, config_value)
+_ENGINE_OPTIONS = [
+    ("Qwen3-ASR", "qwen3_asr"),
+    ("WhisperKit", "whisperkit"),
+]
 
 # Prompt preset options: (display_label, config_value)
 _PROMPT_PRESET_OPTIONS = [
@@ -222,6 +230,11 @@ class SettingsWindow:
         self._pre_buffer_field = None
 
         # Transcription tab
+        self._engine_popup = None
+        self._qwen3_section_view = None
+        self._whisperkit_section_view = None
+        self._qwen3_model_field = None
+        self._qwen3_language_popup = None
         self._whisper_model_field = None
         self._whisper_language_popup = None
         self._whisper_prompt_view = None
@@ -635,26 +648,77 @@ class SettingsWindow:
         item.setView_(view)
         y = 20.0
 
-        y = self._add_section_header(view, y, "WhisperKit")
+        # Engine selector (restart required)
+        y = self._add_section_header(view, y, "Engine")
+
+        self._engine_popup = self._make_popup(
+            _ENGINE_OPTIONS, config.transcription.engine,
+            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, ROW_H + 4),
+        )
+        self._connect_button(self._engine_popup, self._on_engine_change)
+        self._connect_button(self._engine_popup, self._on_restart_required_change)
+        y = self._add_row(view, y, "Engine", self._engine_popup)
+        y = self._add_note(view, y, "Restart required to switch engines")
+        y += SECTION_GAP
+
+        # ── Qwen3-ASR section ────────────────────────────────────────────
+        # Estimate height: section header (28) + model row (30) + note (20) + gap (8)
+        #                  + language row (30) + gap (20)  = ~136
+        qwen3_h = 136
+        self._qwen3_section_view = _FlippedViewClass.alloc().initWithFrame_(
+            _Foundation.NSMakeRect(0, y, CONTENT_W, qwen3_h)
+        )
+        view.addSubview_(self._qwen3_section_view)
+
+        qy = 0.0
+        qy = self._add_section_header(self._qwen3_section_view, qy, "Qwen3-ASR")
+
+        self._qwen3_model_field = self._make_text_field_for_row(
+            config.qwen3_asr.model,
+            _Foundation.NSMakeRect(FIELD_X, qy, FIELD_W, ROW_H + 4),
+        )
+        qy = self._add_row(self._qwen3_section_view, qy, "Model", self._qwen3_model_field)
+        qy = self._add_note(self._qwen3_section_view, qy, "Restart required")
+        qy += ROW_GAP
+
+        self._qwen3_language_popup = self._make_popup(
+            _LANGUAGE_OPTIONS, config.qwen3_asr.language,
+            _Foundation.NSMakeRect(FIELD_X, qy, FIELD_W, ROW_H + 4),
+        )
+        qy = self._add_row(self._qwen3_section_view, qy, "Language", self._qwen3_language_popup)
+
+        # ── WhisperKit section ───────────────────────────────────────────
+        # Estimate height: section header (28) + model row (30) + note (20) + gap (8)
+        #                  + language row (30) + gap (8) + vocab hint label + text area (64)
+        #                  + note (32) + gap (8) + timeout row (30) + gap (20)
+        #                  + decoding header (28) + 6 rows (180) + note (16) = ~482
+        wk_h = 500
+        self._whisperkit_section_view = _FlippedViewClass.alloc().initWithFrame_(
+            _Foundation.NSMakeRect(0, y, CONTENT_W, wk_h)
+        )
+        view.addSubview_(self._whisperkit_section_view)
+
+        wy = 0.0
+        wy = self._add_section_header(self._whisperkit_section_view, wy, "WhisperKit")
 
         self._whisper_model_field = self._make_text_field_for_row(
             config.whisper.model,
-            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, ROW_H + 4),
+            _Foundation.NSMakeRect(FIELD_X, wy, FIELD_W, ROW_H + 4),
         )
-        y = self._add_row(view, y, "Model", self._whisper_model_field)
-        y = self._add_note(view, y, "Restart required")
-        y += ROW_GAP
+        wy = self._add_row(self._whisperkit_section_view, wy, "Model", self._whisper_model_field)
+        wy = self._add_note(self._whisperkit_section_view, wy, "Restart required")
+        wy += ROW_GAP
 
         self._whisper_language_popup = self._make_popup(
             _LANGUAGE_OPTIONS, config.whisper.language,
-            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, ROW_H + 4),
+            _Foundation.NSMakeRect(FIELD_X, wy, FIELD_W, ROW_H + 4),
         )
-        y = self._add_row(view, y, "Language", self._whisper_language_popup)
-        y += ROW_GAP
+        wy = self._add_row(self._whisperkit_section_view, wy, "Language", self._whisper_language_popup)
+        wy += ROW_GAP
 
         # Vocabulary hint (NSTextView in scroll view)
         lbl_prompt = _AppKit.NSTextField.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(LEFT_MARGIN, y + 2, LABEL_W, ROW_H)
+            _Foundation.NSMakeRect(LEFT_MARGIN, wy + 2, LABEL_W, ROW_H)
         )
         lbl_prompt.setStringValue_("Vocabulary hint")
         lbl_prompt.setBezeled_(False)
@@ -663,11 +727,11 @@ class SettingsWindow:
         lbl_prompt.setSelectable_(False)
         lbl_prompt.setAlignment_(_AppKit.NSTextAlignmentRight)
         lbl_prompt.setFont_(_AppKit.NSFont.systemFontOfSize_(12))
-        view.addSubview_(lbl_prompt)
+        self._whisperkit_section_view.addSubview_(lbl_prompt)
 
         prompt_h = 64
         prompt_scroll = _AppKit.NSScrollView.alloc().initWithFrame_(
-            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, prompt_h)
+            _Foundation.NSMakeRect(FIELD_X, wy, FIELD_W, prompt_h)
         )
         prompt_scroll.setBorderType_(_AppKit.NSBezelBorder)
         prompt_scroll.setHasVerticalScroller_(True)
@@ -690,67 +754,70 @@ class SettingsWindow:
         self._whisper_prompt_view.setAutomaticSpellingCorrectionEnabled_(False)
         self._whisper_prompt_view.setAutomaticTextReplacementEnabled_(False)
         prompt_scroll.setDocumentView_(self._whisper_prompt_view)
-        view.addSubview_(prompt_scroll)
-        y += prompt_h + ROW_GAP
+        self._whisperkit_section_view.addSubview_(prompt_scroll)
+        wy += prompt_h + ROW_GAP
 
-        y = self._add_note(
-            view, y,
+        wy = self._add_note(
+            self._whisperkit_section_view, wy,
             "For technical terms only (names, jargon). "
             "Conversational text causes truncated results.",
             height=28,
         )
-        y += ROW_GAP
+        wy += ROW_GAP
 
         self._whisper_timeout_field = self._make_text_field_for_row(
             config.whisper.timeout,
-            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(FIELD_X, wy, 80, ROW_H + 4),
         )
-        y = self._add_row(view, y, "Timeout (s, 0=auto)", self._whisper_timeout_field)
-        y += SECTION_GAP
+        wy = self._add_row(self._whisperkit_section_view, wy, "Timeout (s, 0=auto)", self._whisper_timeout_field)
+        wy += SECTION_GAP
 
         # Decoding Parameters section
-        y = self._add_section_header(view, y, "Decoding Parameters")
+        wy = self._add_section_header(self._whisperkit_section_view, wy, "Decoding Parameters")
 
         self._whisper_temperature_field = self._make_text_field_for_row(
             config.whisper.temperature,
-            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(FIELD_X, wy, 80, ROW_H + 4),
         )
-        y = self._add_row(view, y, "Temperature", self._whisper_temperature_field)
+        wy = self._add_row(self._whisperkit_section_view, wy, "Temperature", self._whisper_temperature_field)
 
         self._whisper_compression_ratio_field = self._make_text_field_for_row(
             config.whisper.compression_ratio_threshold,
-            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(FIELD_X, wy, 80, ROW_H + 4),
         )
-        y = self._add_row(view, y, "Compression ratio", self._whisper_compression_ratio_field)
+        wy = self._add_row(self._whisperkit_section_view, wy, "Compression ratio", self._whisper_compression_ratio_field)
 
         self._whisper_no_speech_threshold_field = self._make_text_field_for_row(
             config.whisper.no_speech_threshold,
-            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(FIELD_X, wy, 80, ROW_H + 4),
         )
-        y = self._add_row(view, y, "No-speech threshold", self._whisper_no_speech_threshold_field)
+        wy = self._add_row(self._whisperkit_section_view, wy, "No-speech threshold", self._whisper_no_speech_threshold_field)
 
         self._whisper_logprob_threshold_field = self._make_text_field_for_row(
             config.whisper.logprob_threshold,
-            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(FIELD_X, wy, 80, ROW_H + 4),
         )
-        y = self._add_row(view, y, "Log prob threshold", self._whisper_logprob_threshold_field)
+        wy = self._add_row(self._whisperkit_section_view, wy, "Log prob threshold", self._whisper_logprob_threshold_field)
 
         self._whisper_temperature_fallback_field = self._make_text_field_for_row(
             config.whisper.temperature_fallback_count,
-            _Foundation.NSMakeRect(FIELD_X, y, 80, ROW_H + 4),
+            _Foundation.NSMakeRect(FIELD_X, wy, 80, ROW_H + 4),
         )
-        y = self._add_row(view, y, "Temp fallback count", self._whisper_temperature_fallback_field)
+        wy = self._add_row(self._whisperkit_section_view, wy, "Temp fallback count", self._whisper_temperature_fallback_field)
 
         self._whisper_prompt_preset_popup = self._make_popup(
             _PROMPT_PRESET_OPTIONS, config.whisper.prompt_preset,
-            _Foundation.NSMakeRect(FIELD_X, y, FIELD_W, ROW_H + 4),
+            _Foundation.NSMakeRect(FIELD_X, wy, FIELD_W, ROW_H + 4),
         )
         self._connect_button(self._whisper_prompt_preset_popup, self._on_prompt_preset_change)
         self._connect_button(self._whisper_prompt_preset_popup, self._on_restart_required_change)
-        y = self._add_row(view, y, "Prompt preset", self._whisper_prompt_preset_popup)
+        wy = self._add_row(self._whisperkit_section_view, wy, "Prompt preset", self._whisper_prompt_preset_popup)
 
-        y = self._add_note(view, y, "All decoding parameters require restart. Preset updates the vocabulary hint above.")
+        self._add_note(self._whisperkit_section_view, wy, "All decoding parameters require restart. Preset updates the vocabulary hint above.")
         self._update_prompt_preset_ui(config.whisper.prompt_preset, config.whisper.prompt)
+
+        # Apply initial visibility based on current engine
+        self._update_engine_sections(config.transcription.engine)
 
     def _build_grammar_tab(self, item):
         config = get_config()
@@ -1148,11 +1215,13 @@ class SettingsWindow:
 
         # ── Credits ──────────────────────────────────────────────────────
         credits = [
-            ("Speech",   "WhisperKit by Argmax",  "https://github.com/argmaxinc/WhisperKit"),
-            ("Grammar",  "Apple Intelligence",     None),
-            ("LLM",      "Ollama",                 "https://ollama.ai"),
-            ("Menu bar", "rumps",                  "https://github.com/jaredks/rumps"),
-            ("Local LLM","LM Studio",              "https://lmstudio.ai"),
+            ("Speech",    "WhisperKit by Argmax",         "https://github.com/argmaxinc/WhisperKit"),
+            ("Speech",    "Qwen3-ASR by Alibaba Qwen Team","https://github.com/QwenLM/Qwen3-ASR"),
+            ("Speech",    "mlx-audio by Prince Canuma",    "https://github.com/Blaizzy/mlx-audio"),
+            ("Grammar",   "Apple Intelligence",            None),
+            ("LLM",       "Ollama",                        "https://ollama.ai"),
+            ("Menu bar",  "rumps",                         "https://github.com/jaredks/rumps"),
+            ("Local LLM", "LM Studio",                     "https://lmstudio.ai"),
         ]
         for row_label, name, url in credits:
             _row_label(row_label, y)
@@ -1171,6 +1240,23 @@ class SettingsWindow:
         if self._restart_label:
             self._restart_label.setHidden_(False)
         self._restart_required_changed = True
+
+    def _on_engine_change(self, _sender):
+        """Called when the engine popup selection changes."""
+        if not self._engine_popup:
+            return
+        idx = self._engine_popup.indexOfSelectedItem()
+        if 0 <= idx < len(_ENGINE_OPTIONS):
+            engine_value = _ENGINE_OPTIONS[idx][1]
+            self._update_engine_sections(engine_value)
+
+    def _update_engine_sections(self, engine_value: str):
+        """Show the section matching engine_value, hide the other."""
+        is_qwen3 = (engine_value == "qwen3_asr")
+        if self._qwen3_section_view:
+            self._qwen3_section_view.setHidden_(not is_qwen3)
+        if self._whisperkit_section_view:
+            self._whisperkit_section_view.setHidden_(is_qwen3)
 
     def _on_prompt_preset_change(self, sender):
         """Update the vocabulary hint text view when the prompt preset changes."""
@@ -1278,6 +1364,9 @@ class SettingsWindow:
         self._snapshot = {
             ("hotkey", "key"): config.hotkey.key,
             ("hotkey", "double_tap_threshold"): config.hotkey.double_tap_threshold,
+            ("transcription", "engine"): config.transcription.engine,
+            ("qwen3_asr", "model"): config.qwen3_asr.model,
+            ("qwen3_asr", "language"): config.qwen3_asr.language,
             ("whisper", "model"): config.whisper.model,
             ("whisper", "language"): config.whisper.language,
             ("whisper", "prompt"): config.whisper.prompt,
@@ -1363,6 +1452,19 @@ class SettingsWindow:
             self._pre_buffer_field.setStringValue_(str(config.audio.pre_buffer))
 
         # Transcription tab
+        if self._engine_popup:
+            for i, (_, val) in enumerate(_ENGINE_OPTIONS):
+                if val == config.transcription.engine:
+                    self._engine_popup.selectItemAtIndex_(i)
+                    break
+            self._update_engine_sections(config.transcription.engine)
+        if self._qwen3_model_field:
+            self._qwen3_model_field.setStringValue_(config.qwen3_asr.model)
+        if self._qwen3_language_popup:
+            for i, (_, val) in enumerate(_LANGUAGE_OPTIONS):
+                if val == config.qwen3_asr.language:
+                    self._qwen3_language_popup.selectItemAtIndex_(i)
+                    break
         if self._whisper_model_field:
             self._whisper_model_field.setStringValue_(config.whisper.model)
         if self._whisper_language_popup:
@@ -1500,6 +1602,7 @@ class SettingsWindow:
         # Validate required string fields before writing anything
         validation_errors = []
         for label, field in [
+            ("Qwen3-ASR model", self._qwen3_model_field),
             ("Whisper model", self._whisper_model_field),
             ("Ollama model", self._ollama_model_field),
             ("LM Studio model", self._lm_model_field),
@@ -1544,6 +1647,12 @@ class SettingsWindow:
                 self._parse_float(self._pre_buffer_field.stringValue(), 0.2), 3)
 
         # Transcription
+        if self._engine_popup:
+            new_values[("transcription", "engine")] = self._popup_value(self._engine_popup, _ENGINE_OPTIONS)
+        if self._qwen3_model_field:
+            new_values[("qwen3_asr", "model")] = self._qwen3_model_field.stringValue().strip()
+        if self._qwen3_language_popup:
+            new_values[("qwen3_asr", "language")] = self._popup_value(self._qwen3_language_popup, _LANGUAGE_OPTIONS)
         if self._whisper_model_field:
             new_values[("whisper", "model")] = self._whisper_model_field.stringValue().strip()
         if self._whisper_language_popup:

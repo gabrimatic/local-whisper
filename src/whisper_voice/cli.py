@@ -5,12 +5,14 @@ CLI service controller for Local Whisper.
 
 Usage:
     wh                  Status + help (default)
-    wh status           Running? PID, backend, config path
+    wh status           Running? PID, backend, engine, config path
     wh start            Launch the service
     wh stop             Graceful kill (SIGTERM -> SIGKILL)
     wh restart          Stop + start
     wh backend          Show current + list available
     wh backend <name>   Switch backend in config, restart service
+    wh engine           Show current engine + list available
+    wh engine <name>    Switch transcription engine, restart service
     wh config           Print key config values
     wh config edit      Open config.toml in $EDITOR
     wh config path      Print path to config file
@@ -128,7 +130,7 @@ def _write_config_backend(new_backend: str) -> bool:
         return False
     try:
         content = config_file.read_text()
-        new_content = _replace_in_section(content, "grammar", "backend", new_backend)
+        new_content = _replace_in_section(content, "grammar", "backend", f'"{new_backend}"')
         if new_content == content:
             # Key not found - add it
             if "[grammar]" in new_content:
@@ -158,10 +160,59 @@ def _list_backends() -> dict:
         return {}
 
 
+def _read_config_engine() -> Optional[str]:
+    """Read the current transcription engine from config.toml."""
+    config_file = _get_config_path()
+    if not config_file.exists():
+        return None
+    try:
+        content = config_file.read_text()
+        return _find_in_section(content, "transcription", "engine")
+    except Exception:
+        pass
+    return None
+
+
+def _write_config_engine(engine_id: str) -> bool:
+    """Write a new engine value to config.toml. Returns True on success."""
+    config_file = _get_config_path()
+    if not config_file.exists():
+        print(f"{C_RED}Config file not found: {config_file}{C_RESET}", file=sys.stderr)
+        return False
+    try:
+        content = config_file.read_text()
+        new_content = _replace_in_section(content, "transcription", "engine", f'"{engine_id}"')
+        if new_content == content:
+            # Key not found - add it
+            if "[transcription]" in new_content:
+                new_content = new_content.replace(
+                    "[transcription]",
+                    f'[transcription]\nengine = "{engine_id}"',
+                    1
+                )
+            else:
+                new_content += f'\n[transcription]\nengine = "{engine_id}"\n'
+        config_file.write_text(new_content)
+        return True
+    except Exception as e:
+        print(f"{C_RED}Failed to write config: {e}{C_RESET}", file=sys.stderr)
+        return False
+
+
+def _list_engines() -> dict:
+    """Return ENGINE_REGISTRY without importing heavy modules."""
+    try:
+        from whisper_voice.engines import ENGINE_REGISTRY
+        return ENGINE_REGISTRY
+    except Exception:
+        return {}
+
+
 def cmd_status():
     """Show service status."""
     running, pid = _is_running()
     backend = _read_config_backend() or "unknown"
+    engine = _read_config_engine() or "unknown"
     config_path = _get_config_path()
 
     if running:
@@ -170,6 +221,7 @@ def cmd_status():
     else:
         print(f"  {C_DIM}Stopped{C_RESET}")
 
+    print(f"  {C_DIM}engine: {C_RESET} {engine}")
     print(f"  {C_DIM}backend:{C_RESET} {backend}")
     print(f"  {C_DIM}config: {C_RESET} {config_path}")
 
@@ -352,6 +404,45 @@ def cmd_backend(args: list):
         print(f"{C_DIM}Service not running - start with: wh start{C_RESET}")
 
 
+def cmd_engine(args: list):
+    """Show or switch transcription engine."""
+    engines = _list_engines()
+
+    if not args:
+        # Show current + list available
+        current = _read_config_engine() or "unknown"
+        print(f"  {C_DIM}current:{C_RESET} {C_CYAN}{current}{C_RESET}")
+        print()
+        if engines:
+            print(f"  {C_BOLD}Available:{C_RESET}")
+            for eid, info in engines.items():
+                marker = f" {C_GREEN}(active){C_RESET}" if eid == current else ""
+                print(f"    {C_CYAN}{eid}{C_RESET}  {C_DIM}{info.description}{C_RESET}{marker}")
+        else:
+            print(f"  {C_DIM}Could not load engine list{C_RESET}")
+        return
+
+    new_engine = args[0]
+    valid_ids = set(engines.keys())
+    if new_engine not in valid_ids:
+        available = ", ".join(sorted(valid_ids))
+        print(f"{C_RED}Unknown engine: {new_engine}{C_RESET}", file=sys.stderr)
+        print(f"{C_DIM}Available: {available}{C_RESET}", file=sys.stderr)
+        sys.exit(1)
+
+    if not _write_config_engine(new_engine):
+        sys.exit(1)
+
+    print(f"{C_GREEN}Engine set to:{C_RESET} {new_engine}")
+
+    running, _ = _is_running()
+    if running:
+        print(f"{C_DIM}Restarting service...{C_RESET}")
+        cmd_restart()
+    else:
+        print(f"{C_DIM}Service not running - start with: wh start{C_RESET}")
+
+
 def cmd_config(args: list):
     """Show, edit, or print path to config."""
     config_path = _get_config_path()
@@ -368,7 +459,7 @@ def cmd_config(args: list):
             print()
             # Show relevant lines
             in_section = None
-            show_sections = {"grammar", "whisper", "audio", "hotkey", "shortcuts"}
+            show_sections = {"grammar", "whisper", "audio", "hotkey", "shortcuts", "transcription", "qwen3_asr"}
             for line in content.splitlines():
                 stripped = line.strip()
                 if stripped.startswith("[") and stripped.endswith("]"):
@@ -573,6 +664,8 @@ def _print_help():
         ("wh build",         "Rebuild the Apple Intelligence Swift CLI"),
         ("wh backend",       "Show current backend + list available"),
         ("wh backend <name>","Switch grammar backend (restarts if running)"),
+        ("wh engine",        "Show current transcription engine + list available"),
+        ("wh engine <name>", "Switch transcription engine (restarts if running)"),
         ("wh config",        "Show key config values"),
         ("wh config edit",   "Open config in $EDITOR"),
         ("wh config path",   "Print path to config file"),
@@ -590,6 +683,7 @@ def cmd_default():
     """Default: status + help."""
     running, pid = _is_running()
     backend = _read_config_backend() or "unknown"
+    engine = _read_config_engine() or "unknown"
     config_path = _get_config_path()
 
     print()
@@ -604,6 +698,7 @@ def cmd_default():
     else:
         print(f"  Status:  {C_DIM}Stopped{C_RESET}")
 
+    print(f"  Engine:  {C_CYAN}{engine}{C_RESET}")
     print(f"  Backend: {C_CYAN}{backend}{C_RESET}")
     print(f"  Config:  {C_DIM}{config_path}{C_RESET}")
     print()
@@ -634,6 +729,8 @@ def cli_main():
         cmd_build()
     elif cmd == "backend":
         cmd_backend(rest)
+    elif cmd == "engine":
+        cmd_engine(rest)
     elif cmd == "config":
         cmd_config(rest)
     elif cmd == "uninstall":

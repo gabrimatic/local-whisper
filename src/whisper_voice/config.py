@@ -41,6 +41,20 @@ key = "alt_r"
 # Double-tap threshold in seconds (how fast you need to tap twice)
 double_tap_threshold = 0.4
 
+[transcription]
+# Transcription engine: "qwen3_asr" (default) or "whisperkit"
+engine = "qwen3_asr"
+
+[qwen3_asr]
+# Model identifier from Hugging Face
+model = "mlx-community/Qwen3-ASR-1.7B-8bit"
+
+# Language code (en, fa, es, fr, de, etc.) or "auto" for detection
+language = "auto"
+
+# Transcription timeout in seconds (0 = no limit)
+timeout = 0
+
 [whisper]
 # WhisperKit server URL
 url = "http://localhost:50060/v1/audio/transcriptions"
@@ -159,7 +173,9 @@ noise_reduction = true
 normalize_audio = true
 
 # Seconds of audio to buffer before the hotkey press (captures lead-in)
-pre_buffer = 0.2
+# Set to 0.0 to disable (default). Set to e.g. 0.2 to capture 200ms before the hotkey.
+# Note: enabling this keeps the microphone active between recordings.
+pre_buffer = 0.0
 
 [ui]
 # Show floating overlay window during recording
@@ -193,6 +209,18 @@ rewrite = "ctrl+shift+r"
 # Shortcut for prompt engineering (optimize text as LLM prompt)
 prompt_engineer = "ctrl+shift+p"
 """
+
+
+@dataclass
+class TranscriptionConfig:
+    engine: str = "qwen3_asr"
+
+
+@dataclass
+class Qwen3ASRConfig:
+    model: str = "mlx-community/Qwen3-ASR-1.7B-8bit"
+    language: str = "auto"
+    timeout: int = 0
 
 
 @dataclass
@@ -265,7 +293,7 @@ class AudioConfig:
     vad_enabled: bool = True
     noise_reduction: bool = True
     normalize_audio: bool = True
-    pre_buffer: float = 0.2
+    pre_buffer: float = 0.0
 
 
 @dataclass
@@ -297,6 +325,8 @@ class ShortcutsConfig:
 @dataclass
 class Config:
     hotkey: HotkeyConfig = field(default_factory=HotkeyConfig)
+    transcription: TranscriptionConfig = field(default_factory=TranscriptionConfig)
+    qwen3_asr: Qwen3ASRConfig = field(default_factory=Qwen3ASRConfig)
     whisper: WhisperConfig = field(default_factory=WhisperConfig)
     grammar: GrammarConfig = field(default_factory=GrammarConfig)
     ollama: OllamaConfig = field(default_factory=OllamaConfig)
@@ -336,6 +366,20 @@ def load_config() -> Config:
         config.hotkey = HotkeyConfig(
             key=data['hotkey'].get('key', config.hotkey.key),
             double_tap_threshold=data['hotkey'].get('double_tap_threshold', config.hotkey.double_tap_threshold),
+        )
+
+    # Transcription settings
+    if 'transcription' in data:
+        config.transcription = TranscriptionConfig(
+            engine=data['transcription'].get('engine', config.transcription.engine),
+        )
+
+    # Qwen3 ASR settings
+    if 'qwen3_asr' in data:
+        config.qwen3_asr = Qwen3ASRConfig(
+            model=data['qwen3_asr'].get('model', config.qwen3_asr.model),
+            language=data['qwen3_asr'].get('language', config.qwen3_asr.language),
+            timeout=data['qwen3_asr'].get('timeout', config.qwen3_asr.timeout),
         )
 
     # Whisper settings
@@ -474,6 +518,11 @@ def _validate_config(config: Config):
     if not _is_valid_url(config.lm_studio.check_url):
         print(f"Config warning: Invalid lm_studio check_url '{config.lm_studio.check_url}', using default", file=sys.stderr)
         config.lm_studio.check_url = "http://localhost:1234/"
+
+    # Transcription engine validation
+    if config.transcription.engine not in ("qwen3_asr", "whisperkit"):
+        print(f"Config warning: Invalid transcription engine '{config.transcription.engine}', using 'qwen3_asr'", file=sys.stderr)
+        config.transcription.engine = "qwen3_asr"
 
     # Grammar backend validation
     if config.grammar.backend == "none":

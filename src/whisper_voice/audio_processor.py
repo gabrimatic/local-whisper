@@ -14,12 +14,7 @@ import numpy as np
 from .utils import log
 
 
-# VAD parameters
-_SPEECH_THRESHOLD = 0.5        # probability above which a chunk is speech
-_PRE_SPEECH_THRESHOLD = 0.2    # lower threshold to detect the onset of speech before confirmation
-_MIN_SPEECH_CHUNKS = 8         # ~0.25s of consecutive speech to open a segment
-_MIN_SILENCE_CHUNKS = 10       # ~0.3s of consecutive silence to close a segment
-_SPEECH_PAD_SAMPLES = 4800     # 0.3s padding around speech segments at 16kHz (must be >= min_speech_duration)
+_SPEECH_PAD_SAMPLES = 4800     # 0.3s padding around speech segments at 16kHz
 
 # Noise reduction parameters
 _STFT_N_FFT = 1024
@@ -31,15 +26,13 @@ _NOISE_GATE_ATTENUATION = 0.3  # gain applied to gated bins (conservative: highe
 _NOISE_FLOOR_SAFETY_RATIO = 0.3
 
 # Normalization parameters
-_TARGET_RMS = 0.1              # -20 dBFS
-_MAX_GAIN = 10.0               # 20 dB boost cap
+_TARGET_RMS = 0.05             # -26 dBFS (conservative target to avoid over-amplifying)
+_MAX_GAIN = 3.0                # ~10 dB boost cap (prevents extreme amplification of quiet-but-clean audio)
 _CLIP_THRESHOLD = 0.99
 
 # Segmentation parameters
-_MAX_SEGMENT_SAMPLES_FACTOR = 28   # 28s worth of audio (2s headroom for Whisper's 30s window)
+_MAX_SEGMENT_SAMPLES_FACTOR = 300  # 300s (5 min) safety net - WhisperKit handles its own chunking
 _MIN_SEGMENT_SAMPLES_FACTOR = 3    # 3s minimum
-_MAX_INTER_SEGMENT_GAP_FACTOR = 0.3  # 0.3s max silence between kept segments
-
 
 @dataclass
 class ProcessedAudio:
@@ -60,8 +53,6 @@ class AudioProcessor:
 
     def __init__(self, config):
         self._config = config
-        self._vad = None
-        self._vad_initialized = False
 
     # ------------------------------------------------------------------
     # Public API
@@ -153,7 +144,7 @@ class AudioProcessor:
         )
 
     def segment_long_audio(self, audio: np.ndarray, sample_rate: int) -> list[np.ndarray]:
-        """Split audio longer than 28s into segments at speech gaps."""
+        """Split audio longer than 5 minutes into segments at speech gaps."""
         max_samples = _MAX_SEGMENT_SAMPLES_FACTOR * sample_rate
         min_samples = _MIN_SEGMENT_SAMPLES_FACTOR * sample_rate
 
@@ -168,167 +159,131 @@ class AudioProcessor:
         return self._split_at_gaps(audio, segments, max_samples, min_samples)
 
     # ------------------------------------------------------------------
-    # VAD
+    # VAD (energy-based)
     # ------------------------------------------------------------------
 
-    def _init_vad(self):
-        """Lazy-initialize Silero VAD on first use."""
-        if self._vad_initialized:
-            return
-        self._vad_initialized = True
-        try:
-            from silero_vad_lite import SileroVAD
-            sample_rate = self._config.audio.sample_rate
-            self._vad = SileroVAD(sample_rate)
-            log("VAD model loaded", "INFO")
-        except Exception as e:
-            log(f"VAD init failed: {e}", "WARN")
-            self._vad = None
-
     def _detect_speech(self, audio: np.ndarray, sample_rate: int) -> list[tuple[int, int]]:
-        """Run VAD and return list of (start_sample, end_sample) speech segments."""
-        self._init_vad()
-        if self._vad is None:
-            return [(0, len(audio))]
-
+        """Detect speech segments using RMS energy thresholding."""
         if len(audio) == 0:
             return []
 
-        total_samples = len(audio)
-        chunk_size = self._vad.window_size_samples
-        probs = []
-        for i in range(0, total_samples, chunk_size):
-            chunk = audio[i:i + chunk_size]
-            if len(chunk) < chunk_size:
-                # Pad short final chunk
-                chunk = np.concatenate([chunk, np.zeros(chunk_size - len(chunk), dtype=np.float32)])
-            else:
-                chunk = chunk.astype(np.float32)
-            try:
-                prob = self._vad.process(memoryview(chunk.data))
-                probs.append(float(prob))
-            except Exception:
-                probs.append(0.0)
+        # Calculate RMS energy in sliding windows (vectorized for long recordings)
+        window_size = int(0.03 * sample_rate)  # 30ms windows
+        hop_size = window_size  # non-overlapping
 
-        if not probs:
-            return []
+        n_windows = (len(audio) - window_size) // hop_size
+        if n_windows <= 0:
+            return [(0, len(audio))]
 
-        # State machine: accumulate speech/silence runs to form segments
+        # Reshape into windows for vectorized RMS computation
+        # Trim audio to exact multiple of window_size for reshape
+        trimmed_len = n_windows * hop_size + window_size
+        trimmed = audio[:min(trimmed_len, len(audio))]
+
+        # Use stride tricks for zero-copy windowed view
+        from numpy.lib.stride_tricks import as_strided
+        item_size = trimmed.strides[0]
+        windows = as_strided(
+            trimmed,
+            shape=(n_windows, window_size),
+            strides=(hop_size * item_size, item_size),
+        )
+        energies = np.sqrt(np.mean(windows ** 2, axis=1))
+
+        # Adaptive threshold: use the quietest 10% as noise floor
+        noise_floor = np.percentile(energies, 10)
+        median_energy = np.percentile(energies, 50)
+
+        # If the energy is fairly uniform (low dynamic range), the recording is
+        # likely all speech with no real silence. Treat the whole thing as speech
+        # if the median energy is well above the absolute silence floor.
+        if noise_floor > 0 and median_energy / noise_floor < 2.0 and median_energy > 0.01:
+            log(f"VAD: uniform energy detected (floor={noise_floor:.4f}, median={median_energy:.4f}), treating as all speech", "INFO")
+            return [(0, len(audio))]
+
+        speech_threshold = max(noise_floor * 3.0, 0.003)  # at least 0.003 RMS
+
+        # Find frames above threshold
+        is_speech = energies > speech_threshold
+
+        # Smooth: apply majority filter to remove brief spikes/dips
+        # Uses a sliding sum (vectorized) instead of per-element median for speed on long audio.
+        kernel_size = 5  # ~150ms at 30ms windows
+        half_k = kernel_size // 2
+        padded = np.pad(is_speech.astype(np.float32), half_k, mode='edge')
+        cumsum = np.cumsum(padded)
+        # sliding sum of kernel_size elements
+        sliding_sum = cumsum[kernel_size:] - cumsum[:-kernel_size]
+        is_speech = sliding_sum > (kernel_size / 2.0)
+
+        # Find contiguous speech regions
         segments = []
         in_speech = False
-        segment_start = 0
-        speech_run = 0
-        silence_run = 0
-        # Track the first chunk where probability crossed the lower pre-speech threshold.
-        # This captures the true onset of an utterance before the confirmation window.
-        first_above_low_threshold = None
+        seg_start = 0
 
-        for idx, prob in enumerate(probs):
-            is_speech_chunk = prob >= _SPEECH_THRESHOLD
-            sample_pos = idx * chunk_size
+        for i, speech in enumerate(is_speech):
+            if speech and not in_speech:
+                seg_start = i
+                in_speech = True
+            elif not speech and in_speech:
+                segments.append((seg_start * hop_size, i * hop_size))
+                in_speech = False
 
-            if not in_speech:
-                if prob >= _PRE_SPEECH_THRESHOLD:
-                    if first_above_low_threshold is None:
-                        first_above_low_threshold = idx
-                else:
-                    # Probability dropped below even the low threshold: reset onset tracking
-                    if not is_speech_chunk:
-                        first_above_low_threshold = None
-
-                if is_speech_chunk:
-                    speech_run += 1
-                    silence_run = 0
-                    if speech_run >= _MIN_SPEECH_CHUNKS:
-                        # Open segment: use the earliest chunk that crossed the pre-speech
-                        # threshold as the true speech onset, then subtract padding.
-                        in_speech = True
-                        onset_idx = first_above_low_threshold if first_above_low_threshold is not None else (idx - speech_run + 1)
-                        onset_sample = onset_idx * chunk_size
-                        segment_start = max(0, onset_sample - _SPEECH_PAD_SAMPLES)
-                        speech_run = 0
-                        first_above_low_threshold = None
-                else:
-                    speech_run = 0
-            else:
-                if not is_speech_chunk:
-                    silence_run += 1
-                    speech_run = 0
-                    if silence_run >= _MIN_SILENCE_CHUNKS:
-                        # Close segment
-                        in_speech = False
-                        segment_end = min(total_samples, sample_pos + _SPEECH_PAD_SAMPLES)
-                        segments.append((segment_start, segment_end))
-                        silence_run = 0
-                        first_above_low_threshold = None
-                else:
-                    silence_run = 0
-                    speech_run += 1
-
-        # Close any open segment at end of audio
         if in_speech:
-            segments.append((segment_start, total_samples))
+            segments.append((seg_start * hop_size, len(audio)))
 
-        log(f"VAD: {len(segments)} speech segment(s) detected", "INFO")
+        log(f"VAD: {len(segments)} speech segment(s) detected (energy-based, threshold={speech_threshold:.4f})", "INFO")
         return segments
 
     def _trim_silence(self, audio: np.ndarray, segments: list, sample_rate: int) -> tuple[np.ndarray, list]:
-        """Trim non-speech from beginning and end; compress inter-segment gaps.
+        """Trim silence from the beginning and end of audio only.
 
-        Returns the trimmed audio and the segment positions adjusted to be
-        relative to the trimmed audio (so downstream steps use correct positions).
+        Natural pauses between sentences are preserved intact so Whisper
+        has full prosodic context for accurate transcription.
         """
         if not segments:
             return audio, segments
 
-        max_gap = int(_MAX_INTER_SEGMENT_GAP_FACTOR * sample_rate)
+        # Find the earliest speech start and latest speech end across all segments
+        first_speech_start = segments[0][0]
+        last_speech_end = segments[-1][1]
 
-        # Build output by concatenating segments with capped gaps between them.
-        # Track where each piece of source audio maps to in the output so we can
-        # remap segment positions accurately.
-        parts = []
-        write_pos = 0           # current write position in the output array
-        adjusted_segments = []
+        trim_start = max(0, first_speech_start - _SPEECH_PAD_SAMPLES)
+        trim_end = min(len(audio), last_speech_end + _SPEECH_PAD_SAMPLES)
 
-        for i, (start, end) in enumerate(segments):
-            if i > 0:
-                prev_end = segments[i - 1][1]
-                gap = start - prev_end
-                if gap > max_gap:
-                    # Insert a compressed gap
-                    gap_audio = audio[prev_end:prev_end + max_gap]
-                    parts.append(gap_audio)
-                    write_pos += len(gap_audio)
-                else:
-                    # Keep the gap as-is
-                    gap_audio = audio[prev_end:start]
-                    parts.append(gap_audio)
-                    write_pos += len(gap_audio)
+        trimmed = audio[trim_start:trim_end]
 
-            seg_len = end - start
-            seg_start_out = write_pos
-            seg_end_out = write_pos + seg_len
-            adjusted_segments.append((seg_start_out, seg_end_out))
-            parts.append(audio[start:end])
-            write_pos += seg_len
+        # Adjust segment positions relative to the trimmed audio
+        adjusted = [(s - trim_start, e - trim_start) for s, e in segments]
+        adjusted = [(max(0, s), min(len(trimmed), e)) for s, e in adjusted]
 
-        if not parts:
-            return audio, segments
-
-        trimmed = np.concatenate(parts).astype(np.float32)
-        return trimmed, adjusted_segments
+        return trimmed, adjusted
 
     # ------------------------------------------------------------------
     # Noise reduction
     # ------------------------------------------------------------------
 
     def _reduce_noise(self, audio: np.ndarray, segments: list, sample_rate: int) -> np.ndarray:
-        """Spectral gating noise reduction using pure numpy STFT."""
+        """Spectral gating noise reduction using pure numpy STFT.
+
+        For recordings longer than 3 minutes, processes in overlapping chunks to
+        keep memory usage bounded and avoid slow Python-loop STFT on huge arrays.
+        """
         min_frame_samples = _STFT_N_FFT
         if len(audio) < min_frame_samples:
             log("Audio pipeline: noise reduction skipped (audio too short)", "INFO")
             return audio
 
+        # For long recordings (>3 min), process in chunks to cap memory and CPU time.
+        # Each chunk is processed independently with a crossfade at boundaries.
+        _CHUNK_THRESHOLD = 3 * 60 * sample_rate  # 3 minutes in samples
+        if len(audio) > _CHUNK_THRESHOLD:
+            return self._reduce_noise_chunked(audio, segments, sample_rate)
+
+        return self._reduce_noise_single(audio, segments, sample_rate)
+
+    def _reduce_noise_single(self, audio: np.ndarray, segments: list, sample_rate: int) -> np.ndarray:
+        """Noise reduction on a single contiguous audio buffer."""
         # Build a Hann window
         window = np.hanning(_STFT_N_FFT).astype(np.float32)
 
@@ -361,8 +316,73 @@ class AudioProcessor:
         log(f"Audio pipeline: noise reduction applied (floor ratio: {noise_floor_rms / signal_rms:.3f})", "INFO")
         return audio_out.astype(np.float32)
 
+    def _reduce_noise_chunked(self, audio: np.ndarray, segments: list, sample_rate: int) -> np.ndarray:
+        """Chunked noise reduction for long recordings (>3 min).
+
+        Splits audio into ~60s chunks with 0.5s overlap, processes each independently,
+        and crossfades at boundaries for seamless output.
+        """
+        chunk_duration = 60  # seconds per chunk
+        overlap_duration = 0.5  # seconds of overlap for crossfade
+        chunk_samples = chunk_duration * sample_rate
+        overlap_samples = int(overlap_duration * sample_rate)
+
+        total_duration = len(audio) / sample_rate
+        log(f"Audio pipeline: chunked noise reduction ({total_duration:.1f}s, ~{int(total_duration / chunk_duration) + 1} chunks)", "INFO")
+
+        output = np.zeros_like(audio)
+        pos = 0
+        chunk_idx = 0
+
+        while pos < len(audio):
+            # Define chunk boundaries with overlap
+            chunk_end = min(pos + chunk_samples + overlap_samples, len(audio))
+            chunk = audio[pos:chunk_end]
+
+            # Find segments that overlap with this chunk
+            chunk_segments = []
+            for seg_start, seg_end in segments:
+                # Translate to chunk-local coordinates
+                local_start = max(0, seg_start - pos)
+                local_end = min(len(chunk), seg_end - pos)
+                if local_start < local_end:
+                    chunk_segments.append((local_start, local_end))
+
+            if not chunk_segments:
+                chunk_segments = [(0, len(chunk))]
+
+            # Process this chunk
+            processed_chunk = self._reduce_noise_single(chunk, chunk_segments, sample_rate)
+
+            # Apply crossfade at the boundary with previous chunk
+            if pos > 0 and overlap_samples > 0:
+                fade_len = min(overlap_samples, len(processed_chunk), len(audio) - pos)
+                if fade_len > 0:
+                    fade_in = np.linspace(0.0, 1.0, fade_len, dtype=np.float32)
+                    fade_out = 1.0 - fade_in
+                    output[pos:pos + fade_len] = (
+                        output[pos:pos + fade_len] * fade_out
+                        + processed_chunk[:fade_len] * fade_in
+                    )
+                    # Copy the rest of the chunk after the crossfade region
+                    if fade_len < len(processed_chunk):
+                        write_end = min(pos + len(processed_chunk), len(audio))
+                        output[pos + fade_len:write_end] = processed_chunk[fade_len:write_end - pos]
+                else:
+                    write_end = min(pos + len(processed_chunk), len(audio))
+                    output[pos:write_end] = processed_chunk[:write_end - pos]
+            else:
+                write_end = min(pos + len(processed_chunk), len(audio))
+                output[pos:write_end] = processed_chunk[:write_end - pos]
+
+            chunk_idx += 1
+            pos += chunk_samples  # advance by chunk_samples (not including overlap)
+
+        log(f"Audio pipeline: chunked noise reduction complete ({chunk_idx} chunks)", "INFO")
+        return output.astype(np.float32)
+
     def _stft(self, audio: np.ndarray, window: np.ndarray) -> np.ndarray:
-        """Compute Short-Time Fourier Transform."""
+        """Compute Short-Time Fourier Transform (vectorized)."""
         n_fft = _STFT_N_FFT
         hop = _STFT_HOP
         n_frames = 1 + (len(audio) - n_fft) // hop
@@ -370,12 +390,17 @@ class AudioProcessor:
         if n_frames <= 0:
             return np.zeros((n_fft // 2 + 1, 1), dtype=complex)
 
-        stft = np.zeros((n_fft // 2 + 1, n_frames), dtype=complex)
-        for t in range(n_frames):
-            start = t * hop
-            frame = audio[start:start + n_fft] * window
-            spectrum = np.fft.rfft(frame, n=n_fft)
-            stft[:, t] = spectrum
+        # Build windowed frames using stride tricks (zero-copy view)
+        from numpy.lib.stride_tricks import as_strided
+        item_size = audio.strides[0]
+        frames = as_strided(
+            audio,
+            shape=(n_frames, n_fft),
+            strides=(hop * item_size, item_size),
+        )
+        # Apply window and compute FFT in one vectorized call
+        windowed = frames * window[np.newaxis, :]
+        stft = np.fft.rfft(windowed, n=n_fft, axis=1).T  # shape: (n_fft//2+1, n_frames)
 
         return stft
 
@@ -389,11 +414,15 @@ class AudioProcessor:
         audio_out = np.zeros(output_length, dtype=np.float32)
         window_sum = np.zeros(output_length, dtype=np.float32)
 
+        # Batch IRFFT (vectorized)
+        frames = np.fft.irfft(stft.T, n=n_fft, axis=1).real.astype(np.float32)  # (n_frames, n_fft)
+        window_sq = window ** 2
+
+        # Overlap-add (must be sequential due to overlapping writes)
         for t in range(n_frames):
             start = t * hop
-            frame = np.fft.irfft(stft[:, t], n=n_fft).real.astype(np.float32)
-            audio_out[start:start + n_fft] += frame * window
-            window_sum[start:start + n_fft] += window ** 2
+            audio_out[start:start + n_fft] += frames[t] * window
+            window_sum[start:start + n_fft] += window_sq
 
         # Normalize by window overlap
         nonzero = window_sum > 1e-8
@@ -404,6 +433,9 @@ class AudioProcessor:
             audio_out = audio_out[:original_length]
         elif len(audio_out) < original_length:
             audio_out = np.concatenate([audio_out, np.zeros(original_length - len(audio_out), dtype=np.float32)])
+
+        # Clip to prevent edge amplification from Hann window zero endpoints
+        audio_out = np.clip(audio_out, -1.0, 1.0)
 
         return audio_out
 
@@ -432,10 +464,16 @@ class AudioProcessor:
             noise_mag = magnitude[:, non_speech_frames]
             return np.median(noise_mag, axis=1, keepdims=True)
 
-        # All audio is speech: use conservative default from first 0.1s
-        first_frames = max(1, int(0.1 * sample_rate / hop))
-        first_frames = min(first_frames, n_frames)
-        noise_mag = magnitude[:, :first_frames]
+        # All audio is speech: use the quietest 5% of frames as noise estimate
+        # (more robust than first 0.1s which may contain speech, especially with pre-buffer)
+        frame_energies = np.mean(np.abs(magnitude), axis=0)  # vectorized
+        quiet_threshold = np.percentile(frame_energies, 5)
+        quiet_mask = frame_energies <= quiet_threshold
+        if np.any(quiet_mask):
+            noise_mag = magnitude[:, quiet_mask]
+        else:
+            # Absolute fallback: use the single quietest frame
+            noise_mag = magnitude[:, [np.argmin(frame_energies)]]
         return np.median(noise_mag, axis=1, keepdims=True) * 0.5  # conservative
 
     # ------------------------------------------------------------------
