@@ -536,28 +536,36 @@ class App:
             if not self._grammar_ready:
                 log(f"{self.grammar.name} not available. Continuing with grammar disabled.", "WARN")
                 self.grammar = None
-
-            # Start shortcuts if enabled (only if grammar is working)
-            if self._grammar_ready and self.grammar is not None and self.config.shortcuts.enabled:
-                self._shortcut_processor = ShortcutProcessor(self.grammar, status_callback=self._shortcut_status_callback)
-                self._shortcut_map = build_shortcut_map(self.config)
-                self._key_interceptor = KeyInterceptor()
-                for key, (modifiers, mode_id) in self._shortcut_map.items():
-                    self._key_interceptor.register_shortcut(
-                        modifiers, key,
-                        lambda mid=mode_id: self._shortcut_processor.trigger(mid)
-                    )
-                self._key_interceptor.set_enabled_guard(
-                    lambda: (not self.recorder.recording
-                             and not self._busy
-                             and not self._shortcut_processor.is_busy())
-                )
-                if self._key_interceptor.start():
-                    log("Shortcuts: Ctrl+Shift+G (proofread) Ctrl+Shift+R (rewrite) Ctrl+Shift+P (prompt)", "OK")
-                else:
-                    log("Shortcut interception failed (shortcuts will still work but won't suppress keys)", "WARN")
         else:
             log("Grammar correction disabled", "INFO")
+
+        # Always start KeyInterceptor for recording-mode key suppression
+        self._key_interceptor = KeyInterceptor()
+        self._key_interceptor.set_recording_handler(self._on_recording_key)
+
+        # Register text transformation shortcuts if enabled (only when grammar is working)
+        if self._grammar_ready and self.grammar is not None and self.config.shortcuts.enabled:
+            self._shortcut_processor = ShortcutProcessor(self.grammar, status_callback=self._shortcut_status_callback)
+            self._shortcut_map = build_shortcut_map(self.config)
+            for key, (modifiers, mode_id) in self._shortcut_map.items():
+                self._key_interceptor.register_shortcut(
+                    modifiers, key,
+                    lambda mid=mode_id: self._shortcut_processor.trigger(mid)
+                )
+            self._key_interceptor.set_enabled_guard(
+                lambda: (not self.recorder.recording
+                         and not self._busy
+                         and not self._shortcut_processor.is_busy())
+            )
+            if self._key_interceptor.start():
+                log("Shortcuts: Ctrl+Shift+G (proofread) Ctrl+Shift+R (rewrite) Ctrl+Shift+P (prompt)", "OK")
+            else:
+                log("Shortcut interception failed (shortcuts will still work but won't suppress keys)", "WARN")
+        else:
+            if self._key_interceptor.start():
+                log("Key interceptor started (recording-mode suppression active)", "OK")
+            else:
+                log("Key interceptor failed to start", "WARN")
 
         self._current_status = "Ready"
         self._send_state_update()
@@ -671,8 +679,19 @@ class App:
     # Recording lifecycle
     # ------------------------------------------------------------------
 
+    def _on_recording_key(self, keycode: int, flags: int):
+        """Called by CGEventTap during recording. All keys are already suppressed.
+        Only the three defined keys act; everything else is swallowed silently."""
+        if keycode == 53:  # Esc → cancel without transcribing
+            self._cancel_recording()
+        elif keycode == 49 or keycode == 61:  # Space or Right Option → stop + transcribe
+            self._stop_recording()
+        # Any other key: event suppressed, recording continues undisturbed
+
     def _cancel_recording(self):
         """Cancel recording without processing or saving."""
+        if self._key_interceptor:
+            self._key_interceptor.set_recording_active(False)
         if self._max_timer:
             self._max_timer.cancel()
             self._max_timer = None
@@ -701,6 +720,9 @@ class App:
                 ).start()
                 return
 
+        if self._key_interceptor:
+            self._key_interceptor.set_recording_active(True)
+
         play_sound("Pop")
         log("Recording...", "REC")
         self._current_status = "Recording..."
@@ -720,6 +742,8 @@ class App:
 
     def _stop_recording(self):
         """Stop recording and process audio."""
+        if self._key_interceptor:
+            self._key_interceptor.set_recording_active(False)
         if self._max_timer:
             self._max_timer.cancel()
             self._max_timer = None

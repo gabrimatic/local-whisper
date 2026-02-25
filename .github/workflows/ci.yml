@@ -49,8 +49,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Select Xcode 26
+        run: |
+          XCODE_26=$(ls -d /Applications/Xcode_26* 2>/dev/null | sort -V | tail -1)
+          if [ -n "$XCODE_26" ]; then
+            sudo xcode-select -s "$XCODE_26"
+            echo "Using $XCODE_26"
+          else
+            echo "::warning::Xcode 26 not available on this runner, Swift build will be skipped"
+            echo "SKIP_SWIFT=true" >> "$GITHUB_ENV"
+          fi
+
       - name: Build Swift package
+        if: env.SKIP_SWIFT != 'true'
         run: cd LocalWhisperUI && swift build
+
+      - name: Swift build skipped
+        if: env.SKIP_SWIFT == 'true'
+        run: echo "Skipped — Xcode 26 (Swift 6.2) not yet available on GitHub Actions runners"
 
   setup-check:
     name: setup.sh syntax check

@@ -69,6 +69,8 @@ class KeyInterceptor:
         self._thread: Optional[threading.Thread] = None
         self._running = False
         self._lock = threading.Lock()
+        self._recording_active = False
+        self._recording_handler: Optional[Callable] = None
 
     def register_shortcut(self, modifiers: Set[str], key: str, callback: Callable):
         """
@@ -81,6 +83,16 @@ class KeyInterceptor:
         """
         with self._lock:
             self._shortcuts[key.lower()] = (modifiers, callback)
+
+    def set_recording_active(self, active: bool):
+        """Enable or disable recording-mode suppression (thread-safe)."""
+        with self._lock:
+            self._recording_active = active
+
+    def set_recording_handler(self, callback: Callable):
+        """Set the callback invoked for every key during recording mode."""
+        with self._lock:
+            self._recording_handler = callback
 
     def set_enabled_guard(self, guard: Callable[[], bool]):
         """
@@ -190,8 +202,20 @@ class KeyInterceptor:
             None to suppress the event, or event to pass through.
         """
         try:
-            # Get the key code
             keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+            flags = CGEventGetFlags(event)
+
+            # Recording mode: only intercept the three stop/cancel keys
+            _RECORDING_KEYS = {49, 53, 61}  # Space, Esc, Right Option
+            with self._lock:
+                recording_active = self._recording_active
+                recording_handler = self._recording_handler
+
+            if recording_active and keycode in _RECORDING_KEYS:
+                if recording_handler:
+                    threading.Thread(target=recording_handler, args=(keycode, flags), daemon=True).start()
+                return None  # suppress only these keys
+
             char = VK_TO_CHAR.get(keycode)
 
             if char is None:
@@ -205,7 +229,6 @@ class KeyInterceptor:
                 required_modifiers, callback = self._shortcuts[char]
 
             # Check modifier flags
-            flags = CGEventGetFlags(event)
             active_modifiers = set()
 
             if flags & kCGEventFlagMaskControl:

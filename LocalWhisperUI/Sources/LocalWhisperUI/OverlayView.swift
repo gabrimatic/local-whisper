@@ -26,6 +26,7 @@ struct OverlayView: View {
         .padding(.vertical, 14)
         .frame(minWidth: 200)
         .glassEffect(.regular.interactive(false), in: .capsule)
+        .overlay(Capsule().strokeBorder(.white.opacity(0.18), lineWidth: 1))
         .accessibilityLabel(pillAccessibilityLabel)
     }
 
@@ -35,12 +36,12 @@ struct OverlayView: View {
         VStack(spacing: 10) {
             HStack(spacing: 10) {
                 Image(systemName: "waveform")
-                    .font(.system(size: 18))
+                    .font(.system(size: 15))
                     .foregroundStyle(.primary)
                     .symbolEffect(.variableColor.iterative.reversing)
 
                 Text(formattedDuration)
-                    .font(.system(size: 20, weight: .bold, design: .monospaced))
+                    .font(.system(size: 17, weight: .bold, design: .monospaced))
                     .foregroundStyle(.primary)
                     .contentTransition(.numericText())
             }
