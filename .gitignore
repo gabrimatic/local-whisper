@@ -46,5 +46,11 @@ htmlcov/
 # Logs
 *.log
 
-# Swift build artifacts
+# Swift
 .build/
+.swiftpm/
+*.xcuserstate
+xcuserdata/
+
+# Reviews
+.reviews/

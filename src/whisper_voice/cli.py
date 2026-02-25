@@ -648,6 +648,10 @@ def cmd_install():
     <dict>
         <key>PATH</key>
         <string>{path_value}</string>
+        <key>HF_HUB_OFFLINE</key>
+        <string>1</string>
+        <key>HF_HUB_DISABLE_TELEMETRY</key>
+        <string>1</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>
@@ -801,6 +805,7 @@ def _print_help():
         ("wh config",        "Show key config values"),
         ("wh config edit",   "Open config in $EDITOR"),
         ("wh config path",   "Print path to config file"),
+        ("wh update",        "Pull latest code, update deps, check model, rebuild, restart"),
         ("wh uninstall",     "Completely remove Local Whisper (service, config, alias)"),
         ("wh log",           "Tail service log"),
         ("wh version",       "Show version"),
@@ -809,6 +814,99 @@ def _print_help():
     for cmd, desc in cmds:
         print(f"    {C_CYAN}{cmd:<{width}}{C_RESET}  {C_DIM}{desc}{C_RESET}")
     print()
+
+
+def _get_venv_python() -> Optional[str]:
+    """Return the venv python path, same approach used across cli.py."""
+    project_root = Path(__file__).resolve().parents[2]
+    for candidate in [
+        project_root / ".venv" / "bin" / "python",
+        project_root / "venv" / "bin" / "python",
+    ]:
+        if candidate.exists():
+            return str(candidate)
+    return sys.executable
+
+
+def cmd_update():
+    """Pull latest code, update dependencies, check model, rebuild Swift, and restart."""
+    project_root = Path(__file__).resolve().parents[2]
+    python = _get_venv_python()
+
+    # Step 1: git pull
+    print(f"\n  {C_BOLD}1/5  Pulling latest code...{C_RESET}")
+    git = shutil.which("git")
+    if git:
+        result = subprocess.run(
+            [git, "-C", str(project_root), "pull"],
+        )
+        if result.returncode != 0:
+            print(f"{C_YELLOW}  git pull failed or not a git repo - continuing{C_RESET}")
+        else:
+            print(f"  {C_GREEN}Done{C_RESET}")
+    else:
+        print(f"  {C_YELLOW}git not found - skipping{C_RESET}")
+
+    # Step 2: pip install -e . --upgrade
+    print(f"\n  {C_BOLD}2/5  Updating Python dependencies...{C_RESET}")
+    result = subprocess.run(
+        [python, "-m", "pip", "install", "-e", str(project_root), "--upgrade", "--upgrade-strategy", "eager"],
+    )
+    if result.returncode != 0:
+        print(f"{C_RED}  pip install failed{C_RESET}", file=sys.stderr)
+    else:
+        print(f"  {C_GREEN}Done{C_RESET}")
+
+    # Step 3: check for Qwen3-ASR model updates (HF_HUB_OFFLINE=0 so HF can be reached)
+    print(f"\n  {C_BOLD}3/5  Checking Qwen3-ASR model...{C_RESET}")
+    model_env = os.environ.copy()
+    model_env["HF_HUB_OFFLINE"] = "0"
+    model_env["HF_HUB_DISABLE_TELEMETRY"] = "1"
+    result = subprocess.run(
+        [
+            python, "-c",
+            "from mlx_audio.stt.utils import load_model; "
+            "load_model('mlx-community/Qwen3-ASR-1.7B-bf16'); "
+            "print('Model up to date.')",
+        ],
+        env=model_env,
+    )
+    if result.returncode != 0:
+        print(f"{C_YELLOW}  Model check failed - skipping{C_RESET}")
+
+    # Step 4: rebuild Swift binaries if sources newer than binary
+    print(f"\n  {C_BOLD}4/5  Rebuilding Swift targets if needed...{C_RESET}")
+    swift = shutil.which("swift")
+    needs_ai_rebuild = _swift_sources_newer_than_binary()
+    needs_ui_rebuild = _local_whisper_ui_sources_newer_than_binary()
+
+    if not swift and (needs_ai_rebuild or needs_ui_rebuild):
+        print(f"  {C_YELLOW}swift not found - skipping Swift rebuild{C_RESET}")
+    else:
+        if needs_ai_rebuild and swift:
+            print(f"  {C_DIM}Rebuilding Apple Intelligence CLI...{C_RESET}")
+            cli_dir = _swift_cli_dir()
+            result = subprocess.run(
+                [swift, "build", "-c", "release"],
+                cwd=str(cli_dir),
+            )
+            if result.returncode != 0:
+                print(f"  {C_RED}Apple Intelligence CLI build failed{C_RESET}", file=sys.stderr)
+            else:
+                print(f"  {C_GREEN}Apple Intelligence CLI built{C_RESET}")
+        elif not needs_ai_rebuild:
+            print(f"  {C_DIM}Apple Intelligence CLI up to date{C_RESET}")
+
+        if needs_ui_rebuild and swift:
+            if not _build_local_whisper_ui(swift):
+                print(f"  {C_RED}LocalWhisperUI build failed{C_RESET}", file=sys.stderr)
+        elif not needs_ui_rebuild:
+            print(f"  {C_DIM}LocalWhisperUI up to date{C_RESET}")
+
+    # Step 5: restart the service
+    print(f"\n  {C_BOLD}5/5  Restarting service...{C_RESET}")
+    cmd_restart()
+    print(f"\n  {C_GREEN}{C_BOLD}Update complete.{C_RESET}")
 
 
 def cmd_default():
@@ -865,6 +963,8 @@ def cli_main():
         cmd_engine(rest)
     elif cmd == "config":
         cmd_config(rest)
+    elif cmd == "update":
+        cmd_update()
     elif cmd == "uninstall":
         cmd_uninstall()
     elif cmd == "log":

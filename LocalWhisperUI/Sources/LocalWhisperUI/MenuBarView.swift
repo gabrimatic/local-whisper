@@ -94,6 +94,18 @@ struct MenuBarView: View {
         })
         .keyboardShortcut(",", modifiers: .command)
 
+        Button("Restart Service") {
+            appState.ipcClient?.sendAction("restart")
+        }
+        .keyboardShortcut("r", modifiers: [.command, .shift])
+
+        Button("Check for Updates") {
+            appState.ipcClient?.sendAction("update")
+        }
+        .keyboardShortcut("u", modifiers: [.command, .shift])
+
+        Divider()
+
         Button("Quit") {
             appState.ipcClient?.sendAction("quit")
             NSApplication.shared.terminate(nil)
@@ -111,8 +123,11 @@ struct MenuBarView: View {
             },
             set: { newValue in
                 if newValue.isEmpty {
+                    appState.config.grammar.enabled = false
                     appState.ipcClient?.sendBackendSwitch("none")
                 } else {
+                    appState.config.grammar.backend = newValue
+                    appState.config.grammar.enabled = true
                     appState.ipcClient?.sendBackendSwitch(newValue)
                 }
             }

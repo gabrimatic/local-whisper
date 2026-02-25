@@ -67,8 +67,8 @@ class LMStudioBackend(GrammarBackend):
             return False
 
     def fix(self, text: str) -> Tuple[str, Optional[str]]:
-        """Fix grammar using LM Studio. Delegates to proofread mode."""
-        return self.fix_with_mode(text, "proofread")
+        """Fix grammar using LM Studio. Delegates to transcription mode."""
+        return self.fix_with_mode(text, "transcription")
 
     def fix_with_mode(self, text: str, mode_id: str) -> Tuple[str, Optional[str]]:
         """Fix text using a specific transformation mode."""

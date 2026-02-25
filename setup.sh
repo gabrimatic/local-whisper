@@ -366,9 +366,14 @@ if [[ -d "$SWIFT_UI_DIR" ]]; then
     <true/>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
 </dict>
 </plist>
 PLIST
+
+            # Copy app icon into bundle resources
+            cp "$SCRIPT_DIR/src/whisper_voice/assets/LocalWhisper.icns" "$SWIFT_UI_DEST/Contents/Resources/AppIcon.icns"
 
             log_ok "LocalWhisperUI built and installed at $SWIFT_UI_DEST"
         else
@@ -433,6 +438,10 @@ cat > "$PLIST_PATH" <<PLIST_EOF
     <dict>
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HF_HUB_OFFLINE</key>
+        <string>1</string>
+        <key>HF_HUB_DISABLE_TELEMETRY</key>
+        <string>1</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

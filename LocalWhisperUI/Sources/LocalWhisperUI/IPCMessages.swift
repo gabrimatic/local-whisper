@@ -31,10 +31,21 @@ struct Qwen3ASRConfig: Codable, Sendable {
     var language: String
     var timeout: Double
     var prefillStepSize: Int
+    var temperature: Double
+    var topP: Double
+    var topK: Int
+    var repetitionContextSize: Int
+    var repetitionPenalty: Double
+    var chunkDuration: Double
 
     enum CodingKeys: String, CodingKey {
-        case model, language, timeout
+        case model, language, timeout, temperature
         case prefillStepSize = "prefill_step_size"
+        case topP = "top_p"
+        case topK = "top_k"
+        case repetitionContextSize = "repetition_context_size"
+        case repetitionPenalty = "repetition_penalty"
+        case chunkDuration = "chunk_duration"
     }
 }
 
@@ -199,7 +210,7 @@ struct AppConfig: Codable, Sendable {
         AppConfig(
             hotkey: HotkeyConfig(key: "alt_r", doubleTapThreshold: 0.4),
             transcription: TranscriptionConfig(engine: "qwen3_asr"),
-            qwen3Asr: Qwen3ASRConfig(model: "mlx-community/Qwen3-ASR-1.7B-bf16", language: "auto", timeout: 0, prefillStepSize: 4096),
+            qwen3Asr: Qwen3ASRConfig(model: "mlx-community/Qwen3-ASR-1.7B-bf16", language: "auto", timeout: 0, prefillStepSize: 4096, temperature: 0.0, topP: 1.0, topK: 0, repetitionContextSize: 100, repetitionPenalty: 1.2, chunkDuration: 1200.0),
             whisper: WhisperConfig(
                 url: "http://localhost:50060/v1/audio/transcriptions",
                 checkUrl: "http://localhost:50060/",
@@ -274,6 +285,7 @@ enum IncomingMessage: Sendable {
     case configSnapshot(AppConfig)
     case stateUpdate(phase: AppPhase, durationSeconds: Double, rmsLevel: Double, text: String?, statusText: String?)
     case historyUpdate([HistoryEntry])
+    case notification(title: String, body: String)
 }
 
 private struct RawIncoming: Decodable {
@@ -305,9 +317,22 @@ func decodeIncomingMessage(_ data: Data) throws -> IncomingMessage {
         )
     case "history_update":
         return .historyUpdate(raw.entries ?? [])
+    case "notification":
+        if let msg = try? JSONDecoder().decode(NotificationMessage.self, from: data) {
+            return .notification(title: msg.title, body: msg.body)
+        }
+        throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Malformed notification message"))
     default:
         throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Unknown message type: \(raw.type)"))
     }
+}
+
+// MARK: - Notification message (Python → Swift)
+
+struct NotificationMessage: Codable {
+    let type: String
+    let title: String
+    let body: String
 }
 
 // MARK: - Outgoing messages

@@ -62,6 +62,7 @@ from .utils import (
     is_hallucination,
     log,
     play_sound,
+    register_notification_sender,
     request_accessibility_permission,
     send_notification,
     strip_hallucination_lines,
@@ -113,11 +114,14 @@ class App:
         self._busy = False
         self._ready = False
         self._grammar_ready = False
+        self._grammar_last_check: float = 0.0
         self._grammar_lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._max_timer = None
         self._last_tap_time = 0.0
         self._key_pressed = False
+        self._hold_timer: Optional[threading.Timer] = None
+        self._hold_recording: bool = False
         self._current_status = "Starting..."
         self._keyboard_listener = None
         self._record_key = KEY_MAP.get(self.config.hotkey.key, keyboard.Key.alt_r)
@@ -139,6 +143,10 @@ class App:
         self.ipc.set_on_connect(self._on_swift_connect)
         self.ipc.set_message_handler(self._handle_ipc_message)
         self.ipc.start()
+
+        register_notification_sender(
+            lambda title, body: self.ipc.send({"type": "notification", "title": title, "body": body})
+        )
 
         # Start initialization in background
         threading.Thread(target=self._init, daemon=True).start()
@@ -316,6 +324,8 @@ class App:
                     subprocess.Popen(["open", "-R", str(audio_path)])
             elif action == "restart":
                 threading.Thread(target=self._restart_service, daemon=True).start()
+            elif action == "update":
+                threading.Thread(target=self._update_service, daemon=True).start()
         elif msg_type == "engine_switch":
             engine = msg.get("engine", "")
             threading.Thread(target=self._switch_engine, args=(engine,), daemon=True).start()
@@ -461,6 +471,7 @@ class App:
                 update_config_backend(backend_id)
                 self.grammar = new_grammar
                 self._grammar_ready = True
+                self._grammar_last_check = time.monotonic()
                 if self._shortcut_processor is not None:
                     self._shortcut_processor = ShortcutProcessor(self.grammar, status_callback=self._shortcut_status_callback)
             else:
@@ -668,12 +679,47 @@ class App:
         self._last_tap_time = current_time
 
         if time_since_last <= self.config.hotkey.double_tap_threshold:
+            if self._hold_timer is not None:
+                self._hold_timer.cancel()
+                self._hold_timer = None
+            self._start_recording()
+        else:
+            if self._hold_timer is not None:
+                self._hold_timer.cancel()
+                self._hold_timer = None
+            timer = threading.Timer(
+                self.config.hotkey.double_tap_threshold,
+                self._on_hold_threshold_reached,
+            )
+            timer.daemon = True
+            timer.start()
+            self._hold_timer = timer
+
+    def _on_hold_threshold_reached(self):
+        """Fired when the record key is held for the hold threshold. Starts hold-to-record."""
+        self._hold_timer = None
+        with self._state_lock:
+            if self._key_pressed and not self.recorder.recording and not self._busy:
+                self._hold_recording = True
+        if self._hold_recording:
             self._start_recording()
 
     def _on_key_release(self, key):
         """Handle key release events to reset key pressed state."""
         if key == self._record_key:
-            self._key_pressed = False
+            if self._hold_timer is not None:
+                self._hold_timer.cancel()
+                self._hold_timer = None
+
+            should_stop = False
+            with self._state_lock:
+                self._key_pressed = False
+                if self._hold_recording:
+                    self._hold_recording = False
+                    should_stop = True
+
+            if should_stop and self.recorder.recording:
+                self._stop_recording()
 
     # ------------------------------------------------------------------
     # Recording lifecycle
@@ -690,6 +736,7 @@ class App:
 
     def _cancel_recording(self):
         """Cancel recording without processing or saving."""
+        self._hold_recording = False
         if self._key_interceptor:
             self._key_interceptor.set_recording_active(False)
         if self._max_timer:
@@ -742,6 +789,7 @@ class App:
 
     def _stop_recording(self):
         """Stop recording and process audio."""
+        self._hold_recording = False
         if self._key_interceptor:
             self._key_interceptor.set_recording_active(False)
         if self._max_timer:
@@ -848,12 +896,14 @@ class App:
         try:
             config = self.config
 
-            # 0. Save raw audio immediately
-            raw_backup_path = self.backup.save_audio(audio)
-            if raw_backup_path:
-                log(f"Raw audio saved ({len(audio) / config.audio.sample_rate:.1f}s)", "OK")
-            else:
-                log("CRITICAL: Raw audio save failed! Recording exists only in memory.", "ERR")
+            # 0. Save raw audio in background (independent of processing)
+            _raw_save_result: list[Path | None] = [None]
+
+            def _save_raw():
+                _raw_save_result[0] = self.backup.save_audio(audio)
+
+            _raw_save_thread = threading.Thread(target=_save_raw, daemon=True)
+            _raw_save_thread.start()
 
             # 1. Audio pre-processing (VAD, noise reduction, normalization)
             self._current_status = "Processing..."
@@ -874,6 +924,14 @@ class App:
                     segments=[(0, len(audio))],
                 )
 
+            _raw_save_thread.join(timeout=5.0)
+            if _raw_save_thread.is_alive():
+                log("Raw audio save is taking unusually long (I/O slow?)", "WARN")
+            elif _raw_save_result[0]:
+                log(f"Raw audio saved ({len(audio) / config.audio.sample_rate:.1f}s)", "OK")
+            else:
+                log("CRITICAL: Raw audio save failed! Recording exists only in memory.", "ERR")
+
             if not processed.has_speech:
                 log("No speech detected (VAD)", "WARN")
                 self._show_error("No speech", "No speech detected in recording")
@@ -885,7 +943,9 @@ class App:
             if self.transcriber.supports_long_audio:
                 segments = [audio]
             else:
-                segments = self.audio_processor.segment_long_audio(audio, config.audio.sample_rate)
+                segments = self.audio_processor.segment_long_audio(
+                    audio, config.audio.sample_rate, segments=processed.segments
+                )
 
             if len(segments) == 1:
                 path = self.backup.save_processed_audio(segments[0])
@@ -1009,7 +1069,14 @@ class App:
             grammar = self.grammar
         if not self.config.grammar.enabled or grammar is None:
             return
+
+        # TTL cache: skip the expensive running() call if backend was healthy recently
+        if self._grammar_ready and (time.monotonic() - self._grammar_last_check) < 30.0:
+            return
+
         backend_now = grammar.running()
+        self._grammar_last_check = time.monotonic()
+
         if backend_now and not self._grammar_ready:
             log(f"{grammar.name} connected! Grammar correction enabled", "OK")
             self._grammar_ready = True
@@ -1139,6 +1206,103 @@ class App:
             "text": None,
             "status_text": status_text,
         })
+
+    # ------------------------------------------------------------------
+    # Update
+    # ------------------------------------------------------------------
+
+    def _update_service(self):
+        """Pull latest changes, update dependencies, rebuild Swift targets, and restart."""
+        import shutil
+
+        repo_root = Path(__file__).resolve().parents[2]
+        log("Update requested from Swift UI.")
+
+        try:
+            # Step 1: git pull
+            self._send_state_update("processing", status_text="Updating: pulling latest code...")
+            git = shutil.which("git")
+            if git:
+                result = subprocess.run(
+                    [git, "pull"],
+                    cwd=str(repo_root),
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                if result.returncode != 0:
+                    log(f"git pull failed: {result.stderr.strip()}", "ERR")
+                    self._send_state_update("error", status_text="Update failed: git pull error")
+                    return
+            else:
+                log("git not found - skipping pull")
+
+            # Step 2: update Python dependencies
+            self._send_state_update("processing", status_text="Updating: installing dependencies...")
+            for candidate in [
+                repo_root / ".venv" / "bin" / "python",
+                repo_root / "venv" / "bin" / "python",
+            ]:
+                if candidate.exists():
+                    python = str(candidate)
+                    break
+            else:
+                python = sys.executable
+
+            subprocess.run(
+                [python, "-m", "pip", "install", "-e", str(repo_root),
+                 "--upgrade", "--upgrade-strategy", "eager",
+                 "--quiet"],
+                timeout=120,
+            )
+
+            # Step 3: rebuild Swift targets
+            swift = shutil.which("swift")
+            if swift:
+                # Apple Intelligence CLI
+                self._send_state_update("processing", status_text="Updating: rebuilding...")
+                cli_dir = repo_root / "src" / "whisper_voice" / "backends" / "apple_intelligence" / "cli"
+                if cli_dir.exists():
+                    result = subprocess.run(
+                        [swift, "build", "-c", "release"],
+                        cwd=str(cli_dir),
+                        capture_output=True,
+                        timeout=300,
+                    )
+                    if result.returncode != 0:
+                        log("Apple Intelligence CLI build failed - continuing", "ERR")
+
+                # LocalWhisperUI
+                ui_dir = repo_root / "LocalWhisperUI"
+                if ui_dir.exists():
+                    result = subprocess.run(
+                        [swift, "build", "-c", "release"],
+                        cwd=str(ui_dir),
+                        capture_output=True,
+                        timeout=300,
+                    )
+                    if result.returncode == 0:
+                        # Assemble .app bundle
+                        built_binary = ui_dir / ".build" / "release" / "LocalWhisperUI"
+                        if built_binary.exists():
+                            import stat
+                            macos_dir = Path.home() / ".whisper" / "LocalWhisperUI.app" / "Contents" / "MacOS"
+                            macos_dir.mkdir(parents=True, exist_ok=True)
+                            dest = macos_dir / "LocalWhisperUI"
+                            shutil.copy2(str(built_binary), str(dest))
+                            dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                    else:
+                        log("LocalWhisperUI build failed - continuing", "ERR")
+            else:
+                log("swift not found - skipping Swift rebuild")
+
+            # Step 4: restart via exec
+            self._send_state_update("processing", status_text="Restarting...")
+            self._restart_service()
+
+        except Exception as e:
+            log(f"Update failed: {e}", "ERR")
+            self._send_state_update("error", status_text="Update failed")
 
     # ------------------------------------------------------------------
     # Restart

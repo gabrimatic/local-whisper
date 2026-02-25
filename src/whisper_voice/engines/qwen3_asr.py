@@ -106,10 +106,21 @@ class Qwen3ASREngine(TranscriptionEngine):
             except Exception:
                 pass  # Fall back to the safe default
 
+            temperature = getattr(qwen3_cfg, "temperature", 0.0) if qwen3_cfg else 0.0
+            top_p = getattr(qwen3_cfg, "top_p", 1.0) if qwen3_cfg else 1.0
+            top_k = getattr(qwen3_cfg, "top_k", 0) if qwen3_cfg else 0
+            repetition_context_size = getattr(qwen3_cfg, "repetition_context_size", 100) if qwen3_cfg else 100
+            chunk_duration = getattr(qwen3_cfg, "chunk_duration", 1200.0) if qwen3_cfg else 1200.0
+
             kwargs: dict = {
                 "max_tokens": max_tokens,
-                "repetition_penalty": 1.2,
+                "repetition_penalty": getattr(qwen3_cfg, "repetition_penalty", 1.2) if qwen3_cfg else 1.2,
                 "prefill_step_size": prefill_step_size,
+                "temperature": temperature,
+                "top_p": top_p,
+                "top_k": top_k,
+                "repetition_context_size": repetition_context_size,
+                "chunk_duration": chunk_duration,
             }
 
             # Only pass language when explicitly set; let the model auto-detect otherwise.
@@ -118,12 +129,15 @@ class Qwen3ASREngine(TranscriptionEngine):
                 kwargs["language"] = full_name
 
             timeout_val = timeout if timeout and timeout > 0 else None
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(self._model.generate, str(path), **kwargs)
-                try:
-                    result = future.result(timeout=timeout_val)
-                except concurrent.futures.TimeoutError:
-                    return None, f"Transcription timed out after {timeout_val}s"
+            if timeout_val is None:
+                result = self._model.generate(str(path), **kwargs)
+            else:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(self._model.generate, str(path), **kwargs)
+                    try:
+                        result = future.result(timeout=timeout_val)
+                    except concurrent.futures.TimeoutError:
+                        return None, f"Transcription timed out after {timeout_val}s"
 
             text = result.text.strip() if result and hasattr(result, "text") and result.text else ""
             if text:

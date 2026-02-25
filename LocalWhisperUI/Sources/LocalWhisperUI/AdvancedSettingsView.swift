@@ -486,6 +486,114 @@ struct AdvancedSettingsView: View {
                 }
             }
             .help("Controls audio encoding batch size for MLX on Apple Silicon. Higher values process audio faster but use more memory. Default 4096.")
+
+            LabeledContent("Temperature") {
+                HStack {
+                    Slider(
+                        value: Binding(
+                            get: { appState.config.qwen3Asr.temperature },
+                            set: { newValue in
+                                appState.config.qwen3Asr.temperature = newValue
+                                appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "temperature", value: newValue)
+                            }
+                        ),
+                        in: 0...1,
+                        step: 0.05
+                    )
+                    Text(String(format: "%.2f", appState.config.qwen3Asr.temperature))
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, alignment: .trailing)
+                }
+            }
+            .help("Sampling temperature. 0.0 is greedy/deterministic. Higher values increase randomness. Default 0.0.")
+
+            LabeledContent("Top P") {
+                HStack {
+                    Slider(
+                        value: Binding(
+                            get: { appState.config.qwen3Asr.topP },
+                            set: { newValue in
+                                appState.config.qwen3Asr.topP = newValue
+                                appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "top_p", value: newValue)
+                            }
+                        ),
+                        in: 0...1,
+                        step: 0.05
+                    )
+                    Text(String(format: "%.2f", appState.config.qwen3Asr.topP))
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, alignment: .trailing)
+                }
+            }
+            .help("Nucleus sampling threshold. Only active when temperature > 0. Default 1.0 (disabled).")
+
+            LabeledContent("Top K") {
+                HStack {
+                    Stepper("", value: Binding(
+                        get: { appState.config.qwen3Asr.topK },
+                        set: { v in
+                            appState.config.qwen3Asr.topK = v
+                            appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "top_k", value: v)
+                        }
+                    ), in: 0...200, step: 1)
+                    Text(appState.config.qwen3Asr.topK == 0 ? "Off" : "\(appState.config.qwen3Asr.topK)")
+                        .font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary).frame(width: 44, alignment: .trailing)
+                }
+            }
+            .help("Top-K sampling. Only active when temperature > 0. 0 disables. Default 0.")
+
+            LabeledContent("Repetition context") {
+                HStack {
+                    Stepper("", value: Binding(
+                        get: { appState.config.qwen3Asr.repetitionContextSize },
+                        set: { v in
+                            appState.config.qwen3Asr.repetitionContextSize = v
+                            appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "repetition_context_size", value: v)
+                        }
+                    ), in: 1...500, step: 10)
+                    Text("\(appState.config.qwen3Asr.repetitionContextSize)")
+                        .font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary).frame(width: 44, alignment: .trailing)
+                }
+            }
+            .help("Number of recent tokens considered when applying the repetition penalty. Default 100.")
+
+            LabeledContent("Repetition penalty") {
+                HStack {
+                    Slider(
+                        value: Binding(
+                            get: { appState.config.qwen3Asr.repetitionPenalty },
+                            set: { newValue in
+                                appState.config.qwen3Asr.repetitionPenalty = newValue
+                                appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "repetition_penalty", value: newValue)
+                            }
+                        ),
+                        in: 1.0...2.0,
+                        step: 0.05
+                    )
+                    Text(String(format: "%.2f", appState.config.qwen3Asr.repetitionPenalty))
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, alignment: .trailing)
+                }
+            }
+            .help("Penalty applied to repeated tokens to reduce looping. 1.0 disables the penalty. Default 1.2.")
+
+            LabeledContent("Chunk duration") {
+                HStack {
+                    Stepper("", value: Binding(
+                        get: { appState.config.qwen3Asr.chunkDuration },
+                        set: { v in
+                            appState.config.qwen3Asr.chunkDuration = v
+                            appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "chunk_duration", value: v)
+                        }
+                    ), in: 60...3600, step: 60)
+                    Text("\(Int(appState.config.qwen3Asr.chunkDuration))s")
+                        .font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary).frame(width: 60, alignment: .trailing)
+                }
+            }
+            .help("Maximum chunk size in seconds for very long audio. Default 1200s (20 minutes).")
         }
     }
 

@@ -227,6 +227,12 @@ class Qwen3ASRConfig:
     language: str = "auto"
     timeout: int = 0
     prefill_step_size: int = 4096
+    temperature: float = 0.0
+    top_p: float = 1.0
+    top_k: int = 0
+    repetition_context_size: int = 100
+    repetition_penalty: float = 1.2
+    chunk_duration: float = 1200.0
 
 
 @dataclass
@@ -388,6 +394,12 @@ def load_config() -> Config:
             language=data['qwen3_asr'].get('language', config.qwen3_asr.language),
             timeout=data['qwen3_asr'].get('timeout', config.qwen3_asr.timeout),
             prefill_step_size=data['qwen3_asr'].get('prefill_step_size', config.qwen3_asr.prefill_step_size),
+            temperature=data['qwen3_asr'].get('temperature', config.qwen3_asr.temperature),
+            top_p=data['qwen3_asr'].get('top_p', config.qwen3_asr.top_p),
+            top_k=data['qwen3_asr'].get('top_k', config.qwen3_asr.top_k),
+            repetition_context_size=data['qwen3_asr'].get('repetition_context_size', config.qwen3_asr.repetition_context_size),
+            repetition_penalty=data['qwen3_asr'].get('repetition_penalty', config.qwen3_asr.repetition_penalty),
+            chunk_duration=data['qwen3_asr'].get('chunk_duration', config.qwen3_asr.chunk_duration),
         )
 
     # Whisper settings

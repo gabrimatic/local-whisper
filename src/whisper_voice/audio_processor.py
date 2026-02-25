@@ -121,12 +121,8 @@ class AudioProcessor:
 
         # Step 4: Normalization
         if self._config.audio.normalize_audio:
-            pre_rms = float(np.sqrt(np.mean(audio ** 2))) if len(audio) > 0 else 0.0
-            audio = self._normalize(audio)
-            post_rms = float(np.sqrt(np.mean(audio ** 2))) if len(audio) > 0 else 0.0
-            if pre_rms > 1e-6:
-                gain_db = 20 * np.log10(post_rms / pre_rms)
-                log(f"Audio pipeline: normalization applied {gain_db:+.1f} dB", "INFO")
+            audio, gain_db = self._normalize(audio)
+            log(f"Audio pipeline: normalization applied {gain_db:+.1f} dB", "INFO")
         else:
             log("Audio pipeline: normalization skipped (disabled)", "INFO")
 
@@ -143,7 +139,12 @@ class AudioProcessor:
             segments=segments,
         )
 
-    def segment_long_audio(self, audio: np.ndarray, sample_rate: int) -> list[np.ndarray]:
+    def segment_long_audio(
+        self,
+        audio: np.ndarray,
+        sample_rate: int,
+        segments: list | None = None,
+    ) -> list[np.ndarray]:
         """Split audio longer than 5 minutes into segments at speech gaps."""
         max_samples = _MAX_SEGMENT_SAMPLES_FACTOR * sample_rate
         min_samples = _MIN_SEGMENT_SAMPLES_FACTOR * sample_rate
@@ -151,9 +152,9 @@ class AudioProcessor:
         if len(audio) <= max_samples:
             return [audio]
 
-        segments = self._detect_speech(audio, sample_rate)
+        if segments is None:
+            segments = self._detect_speech(audio, sample_rate)
         if not segments:
-            # No speech: chunk blindly
             return self._chunk_blindly(audio, max_samples, min_samples)
 
         return self._split_at_gaps(audio, segments, max_samples, min_samples)
@@ -403,7 +404,8 @@ class AudioProcessor:
         return stft
 
     def _istft(self, stft: np.ndarray, window: np.ndarray, original_length: int) -> np.ndarray:
-        """Compute Inverse Short-Time Fourier Transform with overlap-add."""
+        # hop must equal n_fft // 2 for this vectorized OLA to be correct
+        assert _STFT_HOP == _STFT_N_FFT // 2, "vectorized _istft requires 50% overlap"
         n_fft = _STFT_N_FFT
         hop = _STFT_HOP
         n_frames = stft.shape[1]
@@ -412,30 +414,34 @@ class AudioProcessor:
         audio_out = np.zeros(output_length, dtype=np.float32)
         window_sum = np.zeros(output_length, dtype=np.float32)
 
-        # Batch IRFFT (vectorized)
         frames = np.fft.irfft(stft.T, n=n_fft, axis=1).real.astype(np.float32)  # (n_frames, n_fft)
-        window_sq = window ** 2
+        windowed = frames * window[np.newaxis, :]                                  # (n_frames, n_fft)
+        window_sq = (window ** 2).astype(np.float32)
 
-        # Overlap-add (must be sequential due to overlapping writes)
-        for t in range(n_frames):
-            start = t * hop
-            audio_out[start:start + n_fft] += frames[t] * window
-            window_sum[start:start + n_fft] += window_sq
+        # Even frames (0, 2, 4...) start at 0, n_fft, 2*n_fft — non-overlapping with each other
+        # Odd frames  (1, 3, 5...) start at hop, hop+n_fft, ... — non-overlapping with each other
+        even = windowed[0::2]   # (ceil(n_frames/2), n_fft)
+        odd  = windowed[1::2]   # (floor(n_frames/2), n_fft)
+        n_even, n_odd = len(even), len(odd)
 
-        # Normalize by window overlap
+        even_winsq = np.tile(window_sq, n_even)
+        audio_out[:even.size] += even.ravel()
+        window_sum[:even_winsq.size] += even_winsq
+
+        if n_odd > 0:
+            odd_winsq = np.tile(window_sq, n_odd)
+            audio_out[hop:hop + odd.size] += odd.ravel()
+            window_sum[hop:hop + odd_winsq.size] += odd_winsq
+
         nonzero = window_sum > 1e-8
         audio_out[nonzero] /= window_sum[nonzero]
 
-        # Trim or pad to original length
         if len(audio_out) > original_length:
             audio_out = audio_out[:original_length]
         elif len(audio_out) < original_length:
             audio_out = np.concatenate([audio_out, np.zeros(original_length - len(audio_out), dtype=np.float32)])
 
-        # Clip to prevent edge amplification from Hann window zero endpoints
-        audio_out = np.clip(audio_out, -1.0, 1.0)
-
-        return audio_out
+        return np.clip(audio_out, -1.0, 1.0)
 
     def _estimate_noise_floor(
         self,
@@ -478,25 +484,20 @@ class AudioProcessor:
     # Normalization
     # ------------------------------------------------------------------
 
-    def _normalize(self, audio: np.ndarray) -> np.ndarray:
+    def _normalize(self, audio: np.ndarray) -> tuple[np.ndarray, float]:
         """Scale audio to target RMS with gain cap and clip prevention."""
         if len(audio) == 0:
-            return audio
-
+            return audio, 0.0
         rms = float(np.sqrt(np.mean(audio ** 2)))
         if rms < 1e-6:
-            return audio  # essentially silent
-
-        gain = _TARGET_RMS / rms
-        gain = min(gain, _MAX_GAIN)
-        audio = audio * gain
-
-        # Prevent clipping
+            return audio, 0.0
+        gain = min(_TARGET_RMS / rms, _MAX_GAIN)
+        audio = audio * np.float32(gain)
         peak = float(np.max(np.abs(audio)))
         if peak > _CLIP_THRESHOLD:
-            audio = audio * (_CLIP_THRESHOLD / peak)
-
-        return audio.astype(np.float32)
+            audio = audio * np.float32(_CLIP_THRESHOLD / peak)
+        gain_db = 20.0 * np.log10(gain)
+        return audio.astype(np.float32), gain_db
 
     # ------------------------------------------------------------------
     # Long audio segmentation helpers

@@ -87,6 +87,13 @@ OUTPUT FORMAT (CRITICAL):
 - No preamble, no explanation
 - Start directly with the improved prompt"""
 
+TRANSCRIPTION_SYSTEM_PROMPT = """Voice transcription correction. Mechanical fixes only:
+- Add sentence-ending punctuation (. ? !)
+- Capitalize sentence starts and proper nouns
+- Fix obvious repeated words (e.g. "the the")
+
+Return the text with only these fixes. Change no words, add nothing, remove nothing."""
+
 
 # ============================================================================
 # MODE REGISTRY
@@ -116,6 +123,14 @@ MODE_REGISTRY: Dict[str, Mode] = {
         shortcut="ctrl+shift+p",
         system_prompt=PROMPT_ENGINEER_SYSTEM_PROMPT,
         user_prompt_template="Polish this prompt (stay concise):\n\n{text}",
+    ),
+    "transcription": Mode(
+        id="transcription",
+        name="Transcription",
+        description="Minimal punctuation and capitalization fixes for voice transcription",
+        shortcut="",
+        system_prompt=TRANSCRIPTION_SYSTEM_PROMPT,
+        user_prompt_template="{text}",
     ),
 }
 
