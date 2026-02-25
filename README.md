@@ -44,7 +44,7 @@ Pick a grammar correction engine (or skip grammar entirely):
 | Backend | Requirements | Notes |
 |---------|-------------|-------|
 | **Apple Intelligence** | macOS 26+, Apple Silicon, Apple Intelligence enabled | Fastest, best quality |
-| **Ollama** | [Ollama](https://ollama.ai) installed and running | Works on any Mac |
+| **Ollama** | [Ollama](https://ollama.com) installed and running | Works on any Mac |
 | **LM Studio** | [LM Studio](https://lmstudio.ai) with model loaded + local server started | Works on any Mac |
 | **Disabled** | (none) | Transcription only |
 
@@ -53,7 +53,7 @@ Switch backends from the **Grammar** submenu in the menu bar (instant, no restar
 <details>
 <summary><strong>Ollama setup</strong> (optional)</summary>
 
-1. Download from [ollama.ai](https://ollama.ai)
+1. Download from [ollama.com](https://ollama.com)
 2. Pull a model and start the server:
 
 ```bash
@@ -415,7 +415,7 @@ Verify:
 <summary><strong>Ollama not working</strong></summary>
 
 Verify:
-1. Ollama is installed ([ollama.ai](https://ollama.ai))
+1. Ollama is installed ([ollama.com](https://ollama.com))
 2. A model is pulled: `ollama pull gemma3:4b-it-qat`
 3. Server is running: `ollama serve`
 
@@ -573,7 +573,7 @@ Data stored in `~/.whisper/`:
 
 ## Credits
 
-[Qwen3-ASR](https://github.com/QwenLM/Qwen3) by [Qwen Team](https://qwenlm.github.io) · [mlx-audio](https://github.com/Blaizzy/mlx-audio) · [WhisperKit](https://github.com/argmaxinc/WhisperKit) by [Argmax](https://www.argmaxinc.com) · [Apple Intelligence](https://www.apple.com/apple-intelligence/) · [Ollama](https://ollama.ai) · [LM Studio](https://lmstudio.ai) · [SwiftUI](https://developer.apple.com/xcode/swiftui/)
+[Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR) by [Qwen Team](https://qwen.ai) · [mlx-audio](https://github.com/Blaizzy/mlx-audio) · [WhisperKit](https://github.com/argmaxinc/WhisperKit) by [Argmax](https://www.argmaxinc.com) · [Apple Intelligence](https://www.apple.com/apple-intelligence/) · [Ollama](https://ollama.com) · [LM Studio](https://lmstudio.ai) · [SwiftUI](https://developer.apple.com/swiftui/)
 
 <details>
 <summary><strong>Legal notices</strong></summary>

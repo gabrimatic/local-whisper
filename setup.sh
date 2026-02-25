@@ -247,7 +247,7 @@ if command -v ollama &> /dev/null; then
         fi
     fi
 else
-    log_info "Ollama not installed (optional - download from https://ollama.ai)"
+    log_info "Ollama not installed (optional - download from https://ollama.com)"
 fi
 
 # ============================================================================
@@ -556,7 +556,7 @@ echo -e "     - Apple Silicon (M1/M2/M3/M4)"
 echo -e "     - Enable in System Settings → Apple Intelligence & Siri"
 echo ""
 echo -e "  ${CYAN}Ollama${NC} (alternative):"
-echo -e "     - Download from ${DIM}https://ollama.ai${NC}"
+echo -e "     - Download from ${DIM}https://ollama.com${NC}"
 echo -e "     - Model auto-downloaded if Ollama was installed"
 echo -e "     - Run: ${DIM}ollama serve${NC}"
 echo ""
