@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.0] - 2026-02-25
+
+### Added
+
+- Native SwiftUI interface targeting macOS 26 with Liquid Glass design throughout.
+- Menu bar app with a full dropdown menu for grammar and engine selection, transcription history, and recordings.
+- Floating overlay pill with glass effect showing recording duration, live audio levels, and processing status.
+- Settings window with native macOS grouped forms across three tabs (General, Advanced, About).
+- Real-time status updates in the menu bar and overlay during recording, processing, and transcription.
+- Keyboard shortcuts in the menu bar: Cmd+R to retry, Cmd+Shift+C to copy last result, Cmd+, for settings, Cmd+Q to quit.
+- Qwen3-ASR bf16 model (full precision) as the default for maximum transcription quality.
+- Language auto-detection for Qwen3-ASR.
+- Model warm-up during setup so the first transcription starts without delay.
+- Ollama model list fetched live in settings (pulls installed models automatically).
+- Engine switching with automatic rollback: if the new engine fails to start, the previous engine stays active.
+- Clear error message when WhisperKit CLI is not installed.
+
+### Changed
+
+- Default Qwen3-ASR model upgraded from 1.7B-8bit to 1.7B-bf16 for higher quality output.
+- Setup no longer installs WhisperKit by default; install it manually if needed.
+- Text fields in settings save on Enter or focus loss instead of on every keystroke.
+- Repetition penalty (1.2) added to Qwen3-ASR to reduce hallucination on short or silent recordings.
+
+### Removed
+
+- Python GUI layer (the previous rumps menu bar, AppKit recording overlay, and NSPanel settings window).
+- rumps dependency.
+
+---
+
 ## [1.0.1] - 2026-02-24
 
 ### Added

@@ -22,8 +22,7 @@ from ApplicationServices import (
 
 from .backends.modes import MODE_REGISTRY, get_mode
 from .config import get_config
-from .overlay import get_overlay
-from .utils import log, play_sound, OVERLAY_WAVE_FRAMES
+from .utils import log, play_sound
 
 if TYPE_CHECKING:
     from .grammar import Grammar
@@ -33,7 +32,6 @@ CLIPBOARD_TIMEOUT = 5
 CLIPBOARD_DELAY = 0.15
 MODIFIER_RELEASE_DELAY = 0.3  # Delay before Cmd+C to let user release modifier keys
 STATUS_DISPLAY_DURATION = 1.5
-ANIMATION_INTERVAL = 0.2  # Match voice processing animation interval
 
 # Error messages for user display (keep short for overlay)
 ERR_NO_TEXT = "No text selected"
@@ -52,9 +50,9 @@ class ShortcutProcessor:
     Key detection is handled externally by the main keyboard listener.
     """
 
-    def __init__(self, grammar: "Grammar"):
+    def __init__(self, grammar: "Grammar", status_callback=None):
         self._grammar = grammar
-        self._overlay = get_overlay()
+        self._status_callback = status_callback
         self._busy = False
         self._lock = threading.Lock()
         self._animating = False
@@ -68,19 +66,8 @@ class ShortcutProcessor:
     def _start_animation(self, mode_name: str):
         """Start processing animation in background thread."""
         self._animating = True
-        # Set static status text once (no cycling dots)
-        self._overlay.set_status_text(mode_name)
-
-        def animate():
-            frame_index = 0
-            while self._animating:
-                # Cycle through wave frames only (same as voice processing)
-                frame = OVERLAY_WAVE_FRAMES[frame_index % len(OVERLAY_WAVE_FRAMES)]
-                self._overlay.set_processing_frame(frame)
-                frame_index += 1
-                time.sleep(ANIMATION_INTERVAL)
-
-        threading.Thread(target=animate, daemon=True).start()
+        if self._status_callback:
+            self._status_callback("processing", mode_name)
 
     def _stop_animation(self):
         """Stop the processing animation."""
@@ -119,8 +106,8 @@ class ShortcutProcessor:
                 self._show_status(ERR_BACKEND_UNAVAILABLE, is_error=True)
                 return
 
-            self._overlay.show()
-            self._overlay.set_status_text("Copying...")
+            if self._status_callback:
+                self._status_callback("processing", "Copying...")
 
             # Read current clipboard (for restoration on error)
             old_clipboard = self._read_clipboard()
@@ -168,13 +155,14 @@ class ShortcutProcessor:
             # Success
             char_diff = len(result) - len(text)
             diff_str = f"+{char_diff}" if char_diff >= 0 else str(char_diff)
-            self._overlay.set_status_text(f"Done! ({diff_str} chars)")
-            self._overlay.set_status("done")
+            if self._status_callback:
+                self._status_callback("done", f"Done! ({diff_str} chars)")
             play_sound("Glass")
             log(f"{mode.name}: {len(text)} -> {len(result)} chars ({diff_str})", "OK")
 
             time.sleep(STATUS_DISPLAY_DURATION)
-            self._overlay.hide()
+            if self._status_callback:
+                self._status_callback("idle", "")
 
         except subprocess.TimeoutExpired as e:
             log(f"Timeout during shortcut processing: {e}", "ERR")
@@ -378,16 +366,18 @@ class ShortcutProcessor:
                 log("Failed to restore original clipboard content", "WARN")
 
     def _show_status(self, message: str, is_error: bool = False):
-        """Show status message in overlay."""
+        """Show status message via callback."""
         try:
-            self._overlay.set_status_text(message)
+            phase = "error" if is_error else "done"
+            if self._status_callback:
+                self._status_callback(phase, message)
             if is_error:
-                self._overlay.set_status("error")
                 play_sound("Basso")
             time.sleep(STATUS_DISPLAY_DURATION)
-            self._overlay.hide()
+            if self._status_callback:
+                self._status_callback("idle", "")
         except Exception as e:
-            log(f"Error showing status overlay: {e}", "WARN")
+            log(f"Error showing status: {e}", "WARN")
 
 
 def parse_shortcut(shortcut: str) -> tuple[Set[str], str]:

@@ -25,7 +25,7 @@ cd local-whisper
 ./setup.sh
 ```
 
-`setup.sh` handles everything: Python venv, Homebrew, dependencies, model download, Swift CLI build, LaunchAgent for auto-start, Accessibility permission, and the `wh` shell alias. Qwen3-ASR (`mlx-community/Qwen3-ASR-1.7B-8bit`) is downloaded on first use. WhisperKit CLI and its model are also installed during setup alongside Qwen3-ASR.
+`setup.sh` handles everything: Python venv, dependencies, Qwen3-ASR model download and warm-up, Swift CLI builds (Apple Intelligence helper and the menu bar UI), LaunchAgent for auto-start, Accessibility permission, and the `wh` shell alias.
 
 | Action | Key |
 |--------|-----|
@@ -86,7 +86,7 @@ ollama serve
 - **Engine selection**: switch transcription engines via Settings, `wh engine`, or config
 - **Real-time audio level indicator** in the overlay while recording (color-coded by level)
 - **Real-time duration** display while recording
-- **Floating overlay** showing status (recording, processing, copied) with modern macOS 26 Liquid Glass design
+- **Floating overlay** showing status (recording, processing, copied) with macOS 26 Liquid Glass design
 - **Automatic grammar correction** that removes filler words and fixes punctuation
 - **Clipboard integration** for immediate paste
 - **Settings window** with full GUI for all config options
@@ -130,8 +130,8 @@ wh                  # Status + help
 wh status           # Service status, PID, backend
 wh start            # Launch the service
 wh stop             # Stop the service
-wh restart          # Restart (auto-rebuilds Swift CLI if sources changed)
-wh build            # Rebuild the Apple Intelligence Swift CLI
+wh restart          # Restart (auto-rebuilds Swift binaries if sources changed)
+wh build            # Rebuild Apple Intelligence CLI and Swift UI app
 wh engine           # Show current transcription engine + list available
 wh engine whisperkit  # Switch transcription engine
 wh backend          # Show current grammar backend + list available
@@ -161,7 +161,7 @@ wh uninstall        # Completely remove Local Whisper
 | Settings... | Full settings GUI |
 | Quit | Exit |
 
-**Transcriptions** and **Recordings** are separate submenus directly in the main menu. Both rebuild lazily on hover via NSMenu delegates, so they always reflect the latest data without any mode switching.
+**Transcriptions** and **Recordings** are separate submenus directly in the main menu, always reflecting the latest data.
 
 ### Settings Window
 
@@ -200,9 +200,10 @@ double_tap_threshold = 0.4  # seconds
 engine = "qwen3_asr"
 
 [qwen3_asr]
-model = "mlx-community/Qwen3-ASR-1.7B-8bit"
-language = "auto"  # e.g. "en", or "auto" for detection
-timeout = 0        # no limit
+model = "mlx-community/Qwen3-ASR-1.7B-bf16"
+language = "auto"          # e.g. "en", or "auto" for detection
+timeout = 0                # no limit
+prefill_step_size = 4096   # MLX prefill step size (higher = faster on Apple Silicon)
 
 [whisper]
 model = "whisper-large-v3-v20240930"
@@ -297,6 +298,19 @@ Everything runs on your Mac. Zero data leaves your machine.
 
 ## Architecture
 
+Python runs as a headless background service. Swift owns all UI.
+
+```
+Python (LaunchAgent, headless)
+  ├── Recording, transcription, grammar, clipboard, hotkeys
+  └── IPC server at ~/.whisper/ipc.sock
+
+Swift (subprocess, all UI)
+  ├── Menu bar with engine/grammar submenus and transcription history
+  ├── Floating overlay pill (recording, processing, copied states)
+  └── Settings window (General, Advanced, About tabs)
+```
+
 ```
 ┌───────────────────────────────────────────────────────────┐
 │  Microphone → pre-buffer (200ms ring) + live capture      │
@@ -321,7 +335,7 @@ Everything runs on your Mac. Zero data leaves your machine.
 │  Apple Intelligence  │  Ollama        │  LM Studio        │
 │  On-device Swift     │  localhost LLM │  OpenAI-compatible │
 │                                                           │
-│  Removes filler words · Fixes grammar and punctuation     │
+│  Removes filler words, fixes grammar and punctuation      │
 └──────────────────────────┬────────────────────────────────┘
                            ▼
 ┌───────────────────────────────────────────────────────────┐
@@ -339,9 +353,10 @@ Runs in-process via MLX. No server. Handles long audio (up to 20 minutes) native
 
 | Setting | Default | Notes |
 |---------|---------|-------|
-| `model` | `mlx-community/Qwen3-ASR-1.7B-8bit` | Downloaded on first use |
+| `model` | `mlx-community/Qwen3-ASR-1.7B-bf16` | Downloaded on first use |
 | `language` | `auto` | Set to `en`, `fa`, etc. to force a language |
 | `timeout` | `0` | 0 = no limit |
+| `prefill_step_size` | `4096` | Higher = faster on Apple Silicon |
 
 ### WhisperKit (alternative)
 
@@ -423,7 +438,7 @@ Verify:
 <details>
 <summary><strong>"CLI not built" error</strong></summary>
 
-Build the Swift CLI: `wh build`. `setup.sh` does this automatically.
+Build both Swift binaries: `wh build`. `setup.sh` does this automatically.
 
 </details>
 
@@ -432,8 +447,9 @@ Build the Swift CLI: `wh build`. `setup.sh` does this automatically.
 
 First run downloads the transcription model. Subsequent runs load from disk.
 
-- **Qwen3-ASR** (default): downloads `mlx-community/Qwen3-ASR-1.7B-8bit` from Hugging Face on first use.
-- **WhisperKit**: downloads the Whisper model and starts a local server on first use.
+**Qwen3-ASR** (default): downloads `mlx-community/Qwen3-ASR-1.7B-bf16` from Hugging Face on first use. `setup.sh` pre-downloads and warms up the model so the first real transcription is fast.
+
+**WhisperKit**: downloads the Whisper model and starts a local server on first use. Install with `brew install whisperkit-cli`, then switch with `wh engine whisperkit`.
 
 </details>
 
@@ -461,14 +477,14 @@ Check `show_overlay = true` in `~/.whisper/config.toml`.
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 
-# Build Swift CLI (one-time, for Apple Intelligence)
+# Build Swift binaries (one-time, for Apple Intelligence and the UI app)
 wh build
 
 # Run
 wh
 # or: python -m whisper_voice
 
-# Test (requires WhisperKit + grammar backend)
+# Test (requires a grammar backend)
 python tests/test_flow.py
 ```
 
@@ -495,17 +511,31 @@ local-whisper/
 ├── tests/
 │   ├── test_flow.py
 │   └── fixtures/
+├── LocalWhisperUI/                  # Swift UI app (menu bar, overlay, settings)
+│   ├── Package.swift
+│   └── Sources/LocalWhisperUI/
+│       ├── AppMain.swift            # @main entry, MenuBarExtra + Settings scenes
+│       ├── AppState.swift           # @Observable state, IPC message handler
+│       ├── IPCClient.swift          # Unix socket client, auto-reconnect
+│       ├── IPCMessages.swift        # Codable message types
+│       ├── MenuBarView.swift        # Menu with grammar/engine submenus, history
+│       ├── OverlayWindowController.swift
+│       ├── OverlayView.swift        # Pill with glassEffect, animated waveform
+│       ├── GeneralSettingsView.swift
+│       ├── AdvancedSettingsView.swift
+│       ├── SettingsView.swift
+│       ├── SharedViews.swift
+│       ├── AboutView.swift
+│       └── Constants.swift
 └── src/whisper_voice/
-    ├── app.py              # Menu bar application
+    ├── app.py              # Headless app, hotkey handling, IPC integration
     ├── cli.py              # CLI controller (wh)
+    ├── ipc_server.py       # Unix socket IPC server
     ├── audio.py            # Audio recording + pre-buffer
     ├── audio_processor.py  # VAD, noise reduction, normalization
     ├── backup.py           # File backup
     ├── config.py           # Config management
     ├── grammar.py          # Backend factory
-    ├── overlay.py          # Floating UI + audio level indicator
-    ├── theme.py            # Centralized styling (colors, typography, dimensions)
-    ├── settings.py         # Settings window (3-tab NSPanel)
     ├── transcriber.py      # Engine routing wrapper
     ├── utils.py            # Helpers
     ├── shortcuts.py        # Keyboard shortcuts
@@ -528,6 +558,8 @@ Data stored in `~/.whisper/`:
 ```
 ~/.whisper/
 ├── config.toml             # Settings
+├── ipc.sock                # Unix socket for Python/Swift IPC
+├── LocalWhisperUI.app      # Swift UI app (built by setup.sh / wh build)
 ├── last_recording.wav      # Audio file
 ├── last_raw.txt            # Before grammar fix
 ├── last_transcription.txt  # Final text
@@ -541,7 +573,7 @@ Data stored in `~/.whisper/`:
 
 ## Credits
 
-[WhisperKit](https://github.com/argmaxinc/WhisperKit) by [Argmax](https://www.argmaxinc.com) · [Apple Intelligence](https://www.apple.com/apple-intelligence/) · [Ollama](https://ollama.ai) · [rumps](https://github.com/jaredks/rumps) · [LM Studio](https://lmstudio.ai)
+[WhisperKit](https://github.com/argmaxinc/WhisperKit) by [Argmax](https://www.argmaxinc.com) · [Apple Intelligence](https://www.apple.com/apple-intelligence/) · [Ollama](https://ollama.ai) · [LM Studio](https://lmstudio.ai) · [SwiftUI](https://developer.apple.com/xcode/swiftui/)
 
 <details>
 <summary><strong>Legal notices</strong></summary>

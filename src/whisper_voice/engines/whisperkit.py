@@ -7,6 +7,7 @@ Handles speech-to-text transcription via local WhisperKit server.
 """
 
 import atexit
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -72,6 +73,10 @@ class WhisperKitEngine(TranscriptionEngine):
             log("Whisper server ready", "OK")
             return True
 
+        if shutil.which("whisperkit-cli") is None:
+            log("whisperkit-cli not installed. Run: brew install whisperkit-cli", "ERR")
+            raise RuntimeError("WhisperKit CLI not installed. Run: brew install whisperkit-cli")
+
         log("Starting WhisperKit server...")
         try:
             self._process = subprocess.Popen(
@@ -85,7 +90,7 @@ class WhisperKitEngine(TranscriptionEngine):
             )
         except FileNotFoundError:
             log("whisperkit-cli not found! Run: brew install whisperkit-cli", "ERR")
-            return False
+            raise RuntimeError("WhisperKit CLI not installed. Run: brew install whisperkit-cli")
 
         for i in range(STARTUP_TIMEOUT):
             time.sleep(1)
