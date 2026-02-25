@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 import requests
 
 from ..config import get_config
-from ..utils import log, TRANSCRIBE_CHECK_TIMEOUT
+from ..utils import TRANSCRIBE_CHECK_TIMEOUT, log
 from .base import TranscriptionEngine
 
 # Startup timeout for WhisperKit server

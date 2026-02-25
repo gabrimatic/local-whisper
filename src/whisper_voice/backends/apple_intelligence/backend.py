@@ -13,13 +13,12 @@ import select
 import subprocess
 import threading
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 
-from ..base import GrammarBackend, ERROR_TRUNCATE_LENGTH
-from ..modes import get_mode
 from ...config import get_config
-from ...utils import log, SERVICE_CHECK_TIMEOUT
-
+from ...utils import SERVICE_CHECK_TIMEOUT, log
+from ..base import ERROR_TRUNCATE_LENGTH, GrammarBackend
+from ..modes import get_mode
 
 # Path to the Swift CLI helper
 CLI_DIR = Path(__file__).parent / "cli"

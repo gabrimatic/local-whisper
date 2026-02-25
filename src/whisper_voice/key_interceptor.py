@@ -19,30 +19,29 @@ import threading
 from typing import Callable, Dict, Optional, Set, Tuple
 
 from Quartz import (
-    CGEventTapCreate,
-    kCGSessionEventTap,
-    kCGHeadInsertEventTap,
-    kCGEventTapOptionDefault,
-    CGEventMaskBit,
-    kCGEventKeyDown,
-    CGEventTapEnable,
-    CGEventGetIntegerValueField,
-    CGEventGetFlags,
-    kCGKeyboardEventKeycode,
-    kCGEventFlagMaskCommand,
-    kCGEventFlagMaskShift,
-    kCGEventFlagMaskControl,
-    kCGEventFlagMaskAlternate,
     CFMachPortCreateRunLoopSource,
     CFRunLoopAddSource,
     CFRunLoopGetCurrent,
     CFRunLoopRun,
     CFRunLoopStop,
+    CGEventGetFlags,
+    CGEventGetIntegerValueField,
+    CGEventMaskBit,
+    CGEventTapCreate,
+    CGEventTapEnable,
     kCFRunLoopCommonModes,
+    kCGEventFlagMaskAlternate,
+    kCGEventFlagMaskCommand,
+    kCGEventFlagMaskControl,
+    kCGEventFlagMaskShift,
+    kCGEventKeyDown,
+    kCGEventTapOptionDefault,
+    kCGHeadInsertEventTap,
+    kCGKeyboardEventKeycode,
+    kCGSessionEventTap,
 )
 
 from .utils import log, request_accessibility_permission
-
 
 # macOS virtual key codes to character mapping
 VK_TO_CHAR = {

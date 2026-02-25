@@ -27,7 +27,7 @@ FIXTURES_DIR = TESTS_DIR / "fixtures"
 sys.path.insert(0, str(PROJECT_DIR / "src"))
 
 from whisper_voice.config import get_config
-from whisper_voice.transcriber import Whisper
+from whisper_voice.transcriber import Transcriber
 from whisper_voice.grammar import Grammar
 from whisper_voice.utils import is_hallucination, strip_hallucination_lines, log
 
@@ -75,7 +75,7 @@ def test_full_flow():
     # Step 1: Check WhisperKit server
     # -------------------------------------------------------------------------
     log("Checking WhisperKit server...", "INFO")
-    whisper = Whisper()
+    whisper = Transcriber()
 
     if not whisper.running():
         log("WhisperKit not running at localhost:50060", "ERR")

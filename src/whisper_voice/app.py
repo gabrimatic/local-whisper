@@ -24,37 +24,49 @@ Privacy: All processing on-device. No internet. No cloud. No tracking.
 import atexit
 import fcntl
 import os
-import subprocess
 import signal
+import subprocess
 import sys
-import time
 import threading
+import time
 import warnings
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
-
 from pynput import keyboard
 
-from .config import get_config, CONFIG_FILE
-from .utils import (
-    log, play_sound, is_hallucination, truncate, time_ago,
-    strip_hallucination_lines, check_microphone_permission,
-    check_accessibility_trusted, request_accessibility_permission, send_notification,
-    LOG_TRUNCATE, PREVIEW_TRUNCATE,
-    DURATION_UPDATE_INTERVAL, CLIPBOARD_TIMEOUT,
-    C_RESET, C_BOLD, C_DIM, C_CYAN, C_GREEN, C_YELLOW,
-)
 from .audio import Recorder
 from .audio_processor import AudioProcessor
-from .backup import Backup
-from .transcriber import Transcriber
-from .grammar import Grammar
 from .backends import BACKEND_REGISTRY
-from .shortcuts import ShortcutProcessor, build_shortcut_map
-from .key_interceptor import KeyInterceptor
+from .backup import Backup
+from .config import CONFIG_FILE, get_config
+from .grammar import Grammar
 from .ipc_server import IPCServer
+from .key_interceptor import KeyInterceptor
+from .shortcuts import ShortcutProcessor, build_shortcut_map
+from .transcriber import Transcriber
+from .utils import (
+    C_BOLD,
+    C_CYAN,
+    C_DIM,
+    C_GREEN,
+    C_RESET,
+    C_YELLOW,
+    CLIPBOARD_TIMEOUT,
+    DURATION_UPDATE_INTERVAL,
+    LOG_TRUNCATE,
+    PREVIEW_TRUNCATE,
+    check_accessibility_trusted,
+    check_microphone_permission,
+    is_hallucination,
+    log,
+    play_sound,
+    request_accessibility_permission,
+    send_notification,
+    strip_hallucination_lines,
+    truncate,
+)
 
 warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
 
@@ -614,13 +626,13 @@ class App:
         print()
         print(f"  {C_BOLD}{C_YELLOW}Accessibility Permission Required{C_RESET}")
         print()
-        print(f"  Whisper needs Accessibility access to detect hotkeys.")
+        print("  Whisper needs Accessibility access to detect hotkeys.")
         print()
         print(f"  {C_BOLD}How to fix:{C_RESET}")
         print(f"  1. Open {C_CYAN}System Settings{C_RESET} -> {C_CYAN}Privacy & Security{C_RESET} -> {C_CYAN}Accessibility{C_RESET}")
         print(f"  2. Click the {C_CYAN}+{C_RESET} button")
         print(f"  3. Add {C_CYAN}Terminal{C_RESET} (or your terminal app: iTerm, VS Code, etc.)")
-        print(f"  4. Restart this app")
+        print("  4. Restart this app")
         print()
 
     def _on_key_press(self, key):

@@ -12,9 +12,9 @@ import tempfile
 from pathlib import Path
 from typing import Optional, Tuple
 
-from .base import TranscriptionEngine
 from ..config import get_config
 from ..utils import log
+from .base import TranscriptionEngine
 
 _DEFAULT_MODEL = "mlx-community/Qwen3-ASR-1.7B-bf16"
 
@@ -136,6 +136,7 @@ class Qwen3ASREngine(TranscriptionEngine):
         self._model = None
         try:
             import gc
+
             import mlx.core as mx
             gc.collect()
             mx.clear_cache()

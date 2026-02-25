@@ -161,6 +161,21 @@ pip install -e "$SCRIPT_DIR" || fail "Failed to install package"
 log_ok "Package installed (editable mode)"
 
 # ============================================================================
+# Write default configuration
+# ============================================================================
+
+echo ""
+log_step "Writing default configuration..."
+mkdir -p "$HOME/.whisper"
+"$VENV_DIR/bin/python" -c "
+from whisper_voice.config import DEFAULT_CONFIG
+from pathlib import Path
+config_path = Path.home() / '.whisper' / 'config.toml'
+config_path.write_text(DEFAULT_CONFIG, encoding='utf-8')
+print(f'Config written to {config_path}')
+" && log_ok "Config written to ~/.whisper/config.toml" || log_warn "Could not write config"
+
+# ============================================================================
 # Pre-download and warm up Qwen3-ASR model (default transcription engine)
 # ============================================================================
 

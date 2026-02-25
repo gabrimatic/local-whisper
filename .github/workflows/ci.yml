@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  python-checks:
+    name: Python checks
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e . ruff pytest
+
+      - name: Import smoke test
+        run: |
+          python -c "
+          from whisper_voice.app import App
+          from whisper_voice.ipc_server import IPCServer
+          from whisper_voice.config import get_config
+          from whisper_voice.transcriber import Transcriber
+          from whisper_voice.audio import Recorder
+          from whisper_voice.audio_processor import AudioProcessor
+          from whisper_voice.grammar import Grammar
+          from whisper_voice.backup import Backup
+          print('All imports OK')
+          "
+
+      - name: Unit tests
+        run: python -m pytest tests/ -v --ignore=tests/test_flow.py
+
+      - name: Lint with ruff
+        run: ruff check src/
+
+  swift-build:
+    name: Swift build
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Swift package
+        run: cd LocalWhisperUI && swift build
+
+  setup-check:
+    name: setup.sh syntax check
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check setup.sh syntax
+        run: bash -n setup.sh

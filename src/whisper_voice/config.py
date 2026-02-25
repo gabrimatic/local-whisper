@@ -11,12 +11,11 @@ import os
 import re
 import sys
 import threading
-from pathlib import Path
-from urllib.parse import urlparse
-
 import tomllib
 from dataclasses import dataclass, field
-from typing import Optional, Literal
+from pathlib import Path
+from typing import Literal, Optional
+from urllib.parse import urlparse
 
 CONFIG_DIR = Path.home() / ".whisper"
 CONFIG_FILE = CONFIG_DIR / "config.toml"
@@ -30,7 +29,7 @@ GrammarBackendType = Literal["ollama", "apple_intelligence", "lm_studio"]
 DEFAULT_WHISPER_PROMPT = ""
 
 # Default configuration
-DEFAULT_CONFIG = f"""# Local Whisper Configuration
+DEFAULT_CONFIG = """# Local Whisper Configuration
 # Edit this file to customize behavior
 
 [hotkey]

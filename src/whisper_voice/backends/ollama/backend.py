@@ -6,15 +6,15 @@ Ollama backend implementation for grammar correction.
 Handles grammar correction via local Ollama server.
 """
 
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 from urllib.parse import urlparse
 
 import requests
 
+from ...config import get_config
+from ...utils import SERVICE_CHECK_TIMEOUT, log
 from ..base import GrammarBackend
 from ..modes import get_mode, get_mode_ollama_prompt
-from ...config import get_config
-from ...utils import log, SERVICE_CHECK_TIMEOUT
 
 
 class OllamaBackend(GrammarBackend):

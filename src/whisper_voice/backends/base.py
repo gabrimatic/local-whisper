@@ -9,7 +9,7 @@ and implement the required methods.
 
 import re
 from abc import ABC, abstractmethod
-from typing import Tuple, List, Optional, Union
+from typing import List, Optional, Tuple, Union
 
 # Shared constants
 ERROR_TRUNCATE_LENGTH = 50  # Consistent error message truncation

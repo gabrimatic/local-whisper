@@ -749,7 +749,7 @@ def cmd_uninstall():
         if not rc.exists():
             continue
         lines = rc.read_text().splitlines(keepends=True)
-        cleaned = [l for l in lines if not alias_pattern.match(l)]
+        cleaned = [line for line in lines if not alias_pattern.match(line)]
         if len(cleaned) != len(lines):
             rc.write_text("".join(cleaned))
             print(f"  {C_GREEN}✓{C_RESET}  Removed wh alias from {rc.name}")

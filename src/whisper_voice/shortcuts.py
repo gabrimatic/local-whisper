@@ -11,17 +11,16 @@ import subprocess
 import threading
 import time
 import uuid
-from typing import Optional, Set, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Set
 
 from ApplicationServices import (
-    AXUIElementCreateSystemWide,
     AXUIElementCopyAttributeValue,
+    AXUIElementCreateSystemWide,
     kAXFocusedUIElementAttribute,
     kAXSelectedTextAttribute,
 )
 
-from .backends.modes import MODE_REGISTRY, get_mode
-from .config import get_config
+from .backends.modes import get_mode
 from .utils import log, play_sound
 
 if TYPE_CHECKING:

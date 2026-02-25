@@ -7,7 +7,7 @@ Double-tap Right Option -> speak -> tap to stop -> polished text copied to clipb
 All processing runs locally. No internet. No cloud. No tracking.
 """
 
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
 
 try:
     __version__ = version("local-whisper")

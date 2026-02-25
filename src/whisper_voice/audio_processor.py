@@ -14,7 +14,6 @@ from numpy.lib.stride_tricks import as_strided
 
 from .utils import log
 
-
 _SPEECH_PAD_SAMPLES = 4800     # 0.3s padding around speech segments at 16kHz
 
 # Noise reduction parameters

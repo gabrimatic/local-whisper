@@ -4,11 +4,11 @@
 Audio recording functionality for Local Whisper.
 """
 
-import time
 import threading
+import time
 
-import sounddevice as sd
 import numpy as np
+import sounddevice as sd
 
 from .config import get_config
 from .utils import log

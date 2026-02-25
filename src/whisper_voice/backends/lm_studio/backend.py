@@ -6,15 +6,15 @@ LM Studio backend implementation for grammar correction.
 Handles grammar correction via LM Studio's OpenAI-compatible API.
 """
 
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 from urllib.parse import urlparse
 
 import requests
 
+from ...config import get_config
+from ...utils import SERVICE_CHECK_TIMEOUT, log
 from ..base import GrammarBackend
 from ..modes import get_mode, get_mode_lm_studio_messages
-from ...config import get_config
-from ...utils import log, SERVICE_CHECK_TIMEOUT
 
 
 class LMStudioBackend(GrammarBackend):
@@ -56,8 +56,6 @@ class LMStudioBackend(GrammarBackend):
         if not self.running():
             log("LM Studio not running - start LM Studio and load a model", "WARN")
             return False
-
-        config = get_config()
 
         # Verify model is available
         model_ok, model_info = self._check_model()

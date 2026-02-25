@@ -8,16 +8,15 @@ Handles persistence of audio recordings and transcriptions.
 
 import glob
 import os
-import wave
 import threading
-from pathlib import Path
+import wave
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 
 from .config import get_config
 from .utils import log
-
 
 
 class Backup:

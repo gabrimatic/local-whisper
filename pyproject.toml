@@ -45,6 +45,14 @@ Repository = "https://github.com/gabrimatic/local-whisper"
 "Bug Tracker" = "https://github.com/gabrimatic/local-whisper/issues"
 Changelog = "https://github.com/gabrimatic/local-whisper/blob/main/CHANGELOG.md"
 
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]  # line length handled by formatter
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/whisper_voice"]
 include = ["src/whisper_voice/assets/*.png"]

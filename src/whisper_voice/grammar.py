@@ -19,9 +19,9 @@ Usage:
     grammar.close()
 """
 
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 
-from .backends import create_backend, GrammarBackend
+from .backends import GrammarBackend, create_backend
 from .config import get_config
 from .utils import log
 

@@ -190,7 +190,6 @@ def check_microphone_permission() -> tuple[bool, str]:
     """
     try:
         import AVFoundation
-        import objc
 
         status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(
             AVFoundation.AVMediaTypeAudio
