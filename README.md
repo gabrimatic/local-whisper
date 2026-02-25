@@ -573,20 +573,20 @@ Data stored in `~/.whisper/`:
 
 ## Credits
 
-[WhisperKit](https://github.com/argmaxinc/WhisperKit) by [Argmax](https://www.argmaxinc.com) · [Apple Intelligence](https://www.apple.com/apple-intelligence/) · [Ollama](https://ollama.ai) · [LM Studio](https://lmstudio.ai) · [SwiftUI](https://developer.apple.com/xcode/swiftui/)
+[Qwen3-ASR](https://github.com/QwenLM/Qwen3) by [Qwen Team](https://qwenlm.github.io) · [mlx-audio](https://github.com/Blaizzy/mlx-audio) · [WhisperKit](https://github.com/argmaxinc/WhisperKit) by [Argmax](https://www.argmaxinc.com) · [Apple Intelligence](https://www.apple.com/apple-intelligence/) · [Ollama](https://ollama.ai) · [LM Studio](https://lmstudio.ai) · [SwiftUI](https://developer.apple.com/xcode/swiftui/)
 
 <details>
 <summary><strong>Legal notices</strong></summary>
 
 ### Trademarks
 
-"Whisper" is a trademark of OpenAI. "Apple Intelligence" is a trademark of Apple Inc. "WhisperKit" is a trademark of Argmax, Inc. "Ollama" and "LM Studio" are trademarks of their respective owners.
+"Whisper" is a trademark of OpenAI. "Apple Intelligence" is a trademark of Apple Inc. "WhisperKit" is a trademark of Argmax, Inc. "Qwen" is a trademark of Alibaba Cloud. "Ollama" and "LM Studio" are trademarks of their respective owners.
 
-This project is not affiliated with, endorsed by, or sponsored by OpenAI, Apple, Argmax, or any other trademark holder. All trademark names are used solely to describe compatibility with their respective technologies.
+This project is not affiliated with, endorsed by, or sponsored by OpenAI, Apple, Argmax, Alibaba Cloud, or any other trademark holder. All trademark names are used solely to describe compatibility with their respective technologies.
 
 ### Third-Party Licenses
 
-This project depends on [pynput](https://github.com/moses-palmer/pynput), licensed under LGPL-3.0. When installed via pip (the default), pynput is dynamically linked and fully compatible with this project's MIT license. If you redistribute the py2app bundle (`scripts/build_app.sh`), pynput is statically bundled; LGPL-3.0 requires that you allow end users to re-link against their own version of pynput. The complete source of this project (including build scripts) satisfies this requirement.
+This project depends on [pynput](https://github.com/moses-palmer/pynput), licensed under LGPL-3.0. When installed via pip (the default), pynput is dynamically linked and fully compatible with this project's MIT license.
 
 All other dependencies use MIT, BSD, or Apache 2.0 licenses. See each package for details.
 
