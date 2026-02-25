@@ -161,7 +161,7 @@ pip install -e "$SCRIPT_DIR" || fail "Failed to install package"
 log_ok "Package installed (editable mode)"
 
 # ============================================================================
-# Pre-download Qwen3-ASR model (default transcription engine)
+# Pre-download and warm up Qwen3-ASR model (default transcription engine)
 # ============================================================================
 
 echo ""
@@ -169,74 +169,43 @@ log_step "Pre-downloading Qwen3-ASR model..."
 log_info "Downloads and caches the speech model to ~/.cache/huggingface/."
 log_info "This only happens once."
 
-"$VENV_DIR/bin/python3" -c "
+if "$VENV_DIR/bin/python3" -c "
 from mlx_audio.stt.utils import load_model
-print('Downloading Qwen3-ASR model (this may take a moment)...')
-load_model('mlx-community/Qwen3-ASR-1.7B-8bit')
-print('Qwen3-ASR model ready')
-" 2>&1 | tail -1 && log_ok "Qwen3-ASR model ready" || log_warn "Qwen3-ASR model download failed - first use may download automatically"
-
-# ============================================================================
-# WhisperKit CLI
-# ============================================================================
-
-echo ""
-log_step "Checking WhisperKit CLI..."
-
-if ! command -v whisperkit-cli &> /dev/null; then
-    log_warn "WhisperKit CLI not found. Installing via Homebrew..."
-    brew install whisperkit-cli || fail "Failed to install WhisperKit CLI. Try: brew tap argmaxinc/whisperkit && brew install whisperkit-cli"
-fi
-log_ok "WhisperKit CLI ready"
-
-# ============================================================================
-# Pre-compile WhisperKit model (one-time, required before first use)
-# ============================================================================
-
-echo ""
-log_step "Pre-compiling WhisperKit model..."
-log_info "First-time setup: downloads and compiles the speech model."
-log_info "This can take 5-15 minutes. Only happens once."
-
-WHISPER_MODEL="whisper-large-v3-v20240930"
-WHISPER_PORT=50060
-WHISPER_PRECOMPILE_TIMEOUT=1200  # 20 minutes
-
-# Kill anything already on the port
-lsof -ti:$WHISPER_PORT 2>/dev/null | xargs kill -9 2>/dev/null || true
-sleep 1
-
-# Start whisperkit-cli - this downloads + compiles the CoreML model
-whisperkit-cli serve --model "$WHISPER_MODEL" > /tmp/whisperkit-precompile.log 2>&1 &
-WHISPER_PRECOMPILE_PID=$!
-
-WHISPER_READY=false
-for i in $(seq 1 $WHISPER_PRECOMPILE_TIMEOUT); do
-    sleep 1
-    if ! kill -0 $WHISPER_PRECOMPILE_PID 2>/dev/null; then
-        echo ""
-        log_warn "WhisperKit exited unexpectedly during compilation"
-        log_info "Check /tmp/whisperkit-precompile.log for details"
-        break
-    fi
-    if curl -sf "http://localhost:$WHISPER_PORT/" > /dev/null 2>&1; then
-        WHISPER_READY=true
-        break
-    fi
-    if [ $((i % 10)) -eq 0 ]; then
-        log_info "Compiling... ${i}s elapsed"
-    fi
-done
-echo ""
-
-kill $WHISPER_PRECOMPILE_PID 2>/dev/null || true
-wait $WHISPER_PRECOMPILE_PID 2>/dev/null || true
-
-if $WHISPER_READY; then
-    log_ok "WhisperKit model compiled and ready (future starts will be fast)"
+load_model('mlx-community/Qwen3-ASR-1.7B-bf16')
+" 2>/dev/null; then
+    log_ok "Qwen3-ASR model downloaded"
 else
-    log_warn "WhisperKit model compilation did not complete - first service start may be slow"
+    log_warn "Qwen3-ASR model download failed - first use may download automatically"
 fi
+
+echo ""
+log_step "Warming up Qwen3-ASR model..."
+log_info "Compiling the MLX compute graph so first transcription is fast."
+log_info "This may take 60-120 seconds. Only happens once."
+
+if "$VENV_DIR/bin/python3" -c "
+import numpy as np
+import tempfile
+import soundfile as sf
+from mlx_audio.stt.utils import load_model
+
+model = load_model('mlx-community/Qwen3-ASR-1.7B-bf16')
+silence = np.zeros(8000, dtype=np.float32)
+with tempfile.NamedTemporaryFile(suffix='.wav', delete=True) as tmp:
+    sf.write(tmp.name, silence, 16000)
+    model.generate(tmp.name, max_tokens=1)
+" 2>/dev/null; then
+    log_ok "Qwen3-ASR model warmed up and ready"
+else
+    log_warn "Model warm-up failed - first transcription may be slower"
+fi
+
+# ============================================================================
+# WhisperKit CLI (alternative transcription engine)
+# WhisperKit is not installed by default. If you want to use it, install
+# manually: brew install whisperkit-cli
+# Then switch engines via: wh engine whisperkit
+# ============================================================================
 
 # ============================================================================
 # Ollama Model Setup (if Ollama is installed)
@@ -316,22 +285,86 @@ if [[ -d "$SWIFT_CLI_DIR" ]]; then
     # Build the Swift CLI in release mode
     cd "$SWIFT_CLI_DIR"
 
-    if swift build -c release 2>&1 | grep -v "^Building\|^Build complete"; then
+    swift build -c release 2>&1
+    if [[ -f "$SWIFT_CLI_DIR/.build/release/apple-ai-cli" ]]; then
         log_ok "Apple Intelligence CLI built successfully"
         log_info "Binary: $SWIFT_CLI_DIR/.build/release/apple-ai-cli"
     else
-        if [[ -f "$SWIFT_CLI_DIR/.build/release/apple-ai-cli" ]]; then
-            log_ok "Apple Intelligence CLI built successfully"
-        else
-            log_warn "Failed to build Apple Intelligence CLI"
-            log_warn "This requires macOS 26+ and Xcode 26+"
-            log_warn "Grammar correction will not be available"
-        fi
+        log_warn "Failed to build Apple Intelligence CLI"
+        log_warn "This requires macOS 26+ and Xcode 26+"
+        log_warn "Grammar correction will not be available"
     fi
 
     cd "$SCRIPT_DIR"
 else
     log_warn "Apple Intelligence CLI source not found at $SWIFT_CLI_DIR"
+fi
+
+# ============================================================================
+# Build LocalWhisperUI (Swift menu bar app)
+# ============================================================================
+
+echo ""
+log_step "Building LocalWhisperUI..."
+log_info "This is a one-time build. The app is launched automatically by the service."
+
+SWIFT_UI_DIR="$SCRIPT_DIR/LocalWhisperUI"
+SWIFT_UI_DEST="$HOME/.whisper/LocalWhisperUI.app"
+
+if [[ -d "$SWIFT_UI_DIR" ]]; then
+    if ! command -v swift &> /dev/null; then
+        log_warn "Swift not found — skipping UI build"
+        log_info "The service will run headless until you rebuild with: wh build"
+    else
+        cd "$SWIFT_UI_DIR"
+
+        swift build -c release 2>&1
+        SWIFT_BIN="$SWIFT_UI_DIR/.build/release/LocalWhisperUI"
+        if [[ -f "$SWIFT_BIN" ]]; then
+            # Assemble the .app bundle
+            APP_MACOS="$SWIFT_UI_DEST/Contents/MacOS"
+            APP_RES="$SWIFT_UI_DEST/Contents/Resources"
+            mkdir -p "$APP_MACOS" "$APP_RES"
+
+            cp "$SWIFT_BIN" "$APP_MACOS/LocalWhisperUI"
+
+            cat > "$SWIFT_UI_DEST/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>LocalWhisperUI</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.local-whisper.ui</string>
+    <key>CFBundleName</key>
+    <string>Local Whisper</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+</dict>
+</plist>
+PLIST
+
+            log_ok "LocalWhisperUI built and installed at $SWIFT_UI_DEST"
+        else
+            log_warn "LocalWhisperUI build failed — service will run headless"
+            log_warn "Requires macOS 26+ SDK and Xcode 26+"
+        fi
+
+        cd "$SCRIPT_DIR"
+    fi
+else
+    log_warn "LocalWhisperUI source not found at $SWIFT_UI_DIR — skipping"
 fi
 
 # ============================================================================

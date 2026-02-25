@@ -25,7 +25,7 @@ cd local-whisper
 ./setup.sh
 ```
 
-`setup.sh` handles everything: Python venv, Homebrew, dependencies, model download, Swift CLI build, LaunchAgent for auto-start, Accessibility permission, and the `wh` shell alias. Qwen3-ASR (`mlx-community/Qwen3-ASR-1.7B-8bit`) is downloaded on first use. WhisperKit CLI and its model are also installed during setup alongside Qwen3-ASR.
+`setup.sh` handles everything: Python venv, Homebrew, dependencies, model download, Swift CLI build, LaunchAgent for auto-start, Accessibility permission, and the `wh` shell alias. Qwen3-ASR (`mlx-community/Qwen3-ASR-1.7B-bf16`) is downloaded on first use. WhisperKit CLI and its model are also installed during setup alongside Qwen3-ASR.
 
 | Action | Key |
 |--------|-----|
@@ -200,7 +200,7 @@ double_tap_threshold = 0.4  # seconds
 engine = "qwen3_asr"
 
 [qwen3_asr]
-model = "mlx-community/Qwen3-ASR-1.7B-8bit"
+model = "mlx-community/Qwen3-ASR-1.7B-bf16"
 language = "auto"  # e.g. "en", or "auto" for detection
 timeout = 0        # no limit
 
@@ -339,7 +339,7 @@ Runs in-process via MLX. No server. Handles long audio (up to 20 minutes) native
 
 | Setting | Default | Notes |
 |---------|---------|-------|
-| `model` | `mlx-community/Qwen3-ASR-1.7B-8bit` | Downloaded on first use |
+| `model` | `mlx-community/Qwen3-ASR-1.7B-bf16` | Downloaded on first use |
 | `language` | `auto` | Set to `en`, `fa`, etc. to force a language |
 | `timeout` | `0` | 0 = no limit |
 
@@ -432,7 +432,7 @@ Build the Swift CLI: `wh build`. `setup.sh` does this automatically.
 
 First run downloads the transcription model. Subsequent runs load from disk.
 
-- **Qwen3-ASR** (default): downloads `mlx-community/Qwen3-ASR-1.7B-8bit` from Hugging Face on first use.
+- **Qwen3-ASR** (default): downloads `mlx-community/Qwen3-ASR-1.7B-bf16` from Hugging Face on first use.
 - **WhisperKit**: downloads the Whisper model and starts a local server on first use.
 
 </details>
