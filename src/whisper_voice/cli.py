@@ -312,31 +312,6 @@ def cmd_stop():
         sys.exit(1)
 
 
-def _swift_cli_dir() -> Path:
-    """Return the Apple Intelligence Swift CLI source directory."""
-    return Path(__file__).parent / "backends" / "apple_intelligence" / "cli"
-
-
-def _swift_cli_binary() -> Path:
-    """Return the expected path of the compiled apple-ai-cli binary."""
-    return _swift_cli_dir() / ".build" / "release" / "apple-ai-cli"
-
-
-def _swift_sources_newer_than_binary() -> bool:
-    """Return True if any Swift source is newer than the compiled binary."""
-    binary = _swift_cli_binary()
-    if not binary.exists():
-        return True
-    binary_mtime = binary.stat().st_mtime
-    sources_dir = _swift_cli_dir() / "Sources"
-    if not sources_dir.exists():
-        return False
-    for src in sources_dir.rglob("*.swift"):
-        if src.stat().st_mtime > binary_mtime:
-            return True
-    return False
-
-
 def _local_whisper_ui_dir() -> Path:
     """Return the LocalWhisperUI Swift package source directory (repo root)."""
     return Path(__file__).parent.parent.parent / "LocalWhisperUI"
@@ -430,55 +405,26 @@ def _build_local_whisper_ui(swift: str) -> bool:
 
 
 def cmd_build():
-    """Build the Apple Intelligence Swift CLI and the LocalWhisperUI Swift package."""
-    cli_dir = _swift_cli_dir()
-    if not cli_dir.exists():
-        print(f"{C_RED}Swift CLI directory not found: {cli_dir}{C_RESET}", file=sys.stderr)
-        sys.exit(1)
-
+    """Build the LocalWhisperUI Swift package."""
     swift = shutil.which("swift")
     if not swift:
         print(f"{C_RED}swift not found - install Xcode or Xcode Command Line Tools{C_RESET}", file=sys.stderr)
         sys.exit(1)
-
-    print(f"{C_DIM}Building Apple Intelligence CLI...{C_RESET}")
-    result = subprocess.run(
-        [swift, "build", "-c", "release"],
-        cwd=str(cli_dir),
-    )
-    if result.returncode != 0:
-        print(f"{C_RED}Build failed{C_RESET}", file=sys.stderr)
-        sys.exit(result.returncode)
-    print(f"{C_GREEN}Apple Intelligence CLI built{C_RESET}")
 
     if not _build_local_whisper_ui(swift):
         sys.exit(1)
 
 
 def cmd_restart(rebuild: bool = False):
-    """Stop then start, optionally rebuilding Swift targets first."""
-    needs_ai_rebuild = rebuild or _swift_sources_newer_than_binary()
+    """Stop then start, optionally rebuilding LocalWhisperUI first."""
     needs_ui_rebuild = rebuild or _local_whisper_ui_sources_newer_than_binary()
 
     swift = None
-    if needs_ai_rebuild or needs_ui_rebuild:
+    if needs_ui_rebuild:
         swift = shutil.which("swift")
         if not swift:
             print(f"{C_RED}swift not found - install Xcode or Xcode Command Line Tools{C_RESET}", file=sys.stderr)
             sys.exit(1)
-
-    if needs_ai_rebuild:
-        if not rebuild:
-            print(f"{C_YELLOW}Apple Intelligence CLI sources changed - rebuilding...{C_RESET}")
-        cli_dir = _swift_cli_dir()
-        result = subprocess.run(
-            [swift, "build", "-c", "release"],
-            cwd=str(cli_dir),
-        )
-        if result.returncode != 0:
-            print(f"{C_RED}Apple Intelligence CLI build failed{C_RESET}", file=sys.stderr)
-            sys.exit(result.returncode)
-        print(f"{C_GREEN}Apple Intelligence CLI built{C_RESET}")
 
     if needs_ui_rebuild:
         if not rebuild:
@@ -720,7 +666,6 @@ def cmd_uninstall():
             pass
     _cleanup_lock()
     subprocess.run(["pkill", "-9", "-f", "whisperkit-cli serve"], capture_output=True)
-    subprocess.run(["pkill", "-9", "-f", "apple-ai-cli serve"], capture_output=True)
     print(f"  {C_GREEN}✓{C_RESET}  Service stopped")
 
     # Remove LaunchAgent (current + legacy)
@@ -796,8 +741,8 @@ def _print_help():
         ("wh status",        "Service status, PID, backend"),
         ("wh start",         "Launch the service"),
         ("wh stop",          "Stop the service"),
-        ("wh restart",       "Restart (auto-rebuilds Swift targets if sources changed)"),
-        ("wh build",         "Rebuild Swift targets (Apple Intelligence CLI + LocalWhisperUI)"),
+        ("wh restart",       "Restart (auto-rebuilds LocalWhisperUI if sources changed)"),
+        ("wh build",         "Rebuild LocalWhisperUI"),
         ("wh backend",       "Show current backend + list available"),
         ("wh backend <name>","Switch grammar backend (restarts if running)"),
         ("wh engine",        "Show current transcription engine + list available"),
@@ -874,29 +819,14 @@ def cmd_update():
     if result.returncode != 0:
         print(f"{C_YELLOW}  Model check failed - skipping{C_RESET}")
 
-    # Step 4: rebuild Swift binaries if sources newer than binary
-    print(f"\n  {C_BOLD}4/5  Rebuilding Swift targets if needed...{C_RESET}")
+    # Step 4: rebuild LocalWhisperUI if sources newer than binary
+    print(f"\n  {C_BOLD}4/5  Rebuilding LocalWhisperUI if needed...{C_RESET}")
     swift = shutil.which("swift")
-    needs_ai_rebuild = _swift_sources_newer_than_binary()
     needs_ui_rebuild = _local_whisper_ui_sources_newer_than_binary()
 
-    if not swift and (needs_ai_rebuild or needs_ui_rebuild):
-        print(f"  {C_YELLOW}swift not found - skipping Swift rebuild{C_RESET}")
+    if not swift and needs_ui_rebuild:
+        print(f"  {C_YELLOW}swift not found - skipping LocalWhisperUI rebuild{C_RESET}")
     else:
-        if needs_ai_rebuild and swift:
-            print(f"  {C_DIM}Rebuilding Apple Intelligence CLI...{C_RESET}")
-            cli_dir = _swift_cli_dir()
-            result = subprocess.run(
-                [swift, "build", "-c", "release"],
-                cwd=str(cli_dir),
-            )
-            if result.returncode != 0:
-                print(f"  {C_RED}Apple Intelligence CLI build failed{C_RESET}", file=sys.stderr)
-            else:
-                print(f"  {C_GREEN}Apple Intelligence CLI built{C_RESET}")
-        elif not needs_ai_rebuild:
-            print(f"  {C_DIM}Apple Intelligence CLI up to date{C_RESET}")
-
         if needs_ui_rebuild and swift:
             if not _build_local_whisper_ui(swift):
                 print(f"  {C_RED}LocalWhisperUI build failed{C_RESET}", file=sys.stderr)

@@ -3,8 +3,8 @@
 """
 Apple Intelligence backend for grammar correction.
 
-Uses Apple's on-device Foundation Models via a Swift CLI helper.
-Requires macOS 15+ with Apple Intelligence enabled.
+Uses Apple's Foundation Models Python SDK for on-device text generation.
+Requires macOS 26+ with Apple Intelligence enabled on Apple Silicon.
 """
 
 from .backend import AppleIntelligenceBackend

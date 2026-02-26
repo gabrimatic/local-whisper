@@ -3,92 +3,92 @@
 """
 Apple Intelligence backend implementation for grammar correction.
 
-Uses Apple's on-device Foundation Models via a Swift CLI helper.
-The CLI runs in server mode, keeping the LanguageModelSession warm
-for efficient repeated calls without reloading the model.
+Uses Apple's Foundation Models Python SDK for on-device text generation.
 """
 
-import json
-import select
-import subprocess
+import asyncio
+import concurrent.futures
 import threading
-from pathlib import Path
 from typing import Optional, Tuple
 
 from ...config import get_config
-from ...utils import SERVICE_CHECK_TIMEOUT, log
+from ...utils import log
 from ..base import ERROR_TRUNCATE_LENGTH, GrammarBackend
 from ..modes import get_mode
 
-# Path to the Swift CLI helper
-CLI_DIR = Path(__file__).parent / "cli"
-CLI_BUILD_DIR = CLI_DIR / ".build" / "release"
-CLI_BINARY = CLI_BUILD_DIR / "apple-ai-cli"
-
-# Server startup timeout
-SERVER_STARTUP_TIMEOUT = 10
+try:
+    import apple_fm_sdk as fm
+    _SDK_AVAILABLE = True
+except ImportError:
+    _SDK_AVAILABLE = False
 
 
 class AppleIntelligenceBackend(GrammarBackend):
     """
-    Grammar correction backend using Apple Intelligence.
+    Grammar correction backend using Apple Intelligence Foundation Models.
 
-    Uses a long-lived Swift CLI process in server mode to keep the
-    LanguageModelSession warm, avoiding repeated model loading.
+    Uses the official Python SDK for direct on-device text generation,
+    with a persistent event loop in a background thread so sessions
+    stay warm across calls.
     """
 
     def __init__(self):
-        self._available: Optional[bool] = None
-        self._server_process: Optional[subprocess.Popen] = None
-        self._server_lock = threading.Lock()
+        self._session: Optional[object] = None
+        self._last_system_prompt: Optional[str] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop_thread: Optional[threading.Thread] = None
+        self._session_lock = threading.Lock()
 
     @property
     def name(self) -> str:
         return "Apple Intelligence"
 
     def close(self) -> None:
-        """Clean up resources and shut down the server process."""
-        self._stop_server()
+        """Clean up session and stop the background event loop."""
+        with self._session_lock:
+            self._session = None
+            self._last_system_prompt = None
+        if self._loop is not None and not self._loop.is_closed():
+            self._loop.call_soon_threadsafe(self._loop.stop)
+        self._loop = None
+        self._loop_thread = None
 
     def running(self) -> bool:
-        """Check if Apple Intelligence is available."""
-        # Use SERVICE_CHECK_TIMEOUT to prevent hanging
-        stdout, stderr, code = self._run_cli(["check"], timeout=SERVICE_CHECK_TIMEOUT)
+        """Check if Apple Intelligence is available on this device."""
+        if not _SDK_AVAILABLE:
+            log("apple-fm-sdk not installed. Run: pip install -e .", "ERR")
+            return False
 
-        if code == 0 and stdout and "available" in stdout.lower():
-            self._available = True
+        try:
+            model = fm.SystemLanguageModel()
+            available, reason = model.is_available()
+        except Exception as e:
+            log(f"Apple Intelligence availability check failed: {e}", "ERR")
+            return False
+
+        if available:
             return True
 
-        self._available = False
-
-        if stderr:
-            reason = stderr.strip()
-            if "apple_intelligence_not_enabled" in reason:
+        if reason is not None:
+            reason_name = reason.name if hasattr(reason, "name") else str(reason)
+            if "not_enabled" in reason_name.lower() or "not_enabled" in str(reason).lower():
                 log("Apple Intelligence not enabled. Enable in System Settings.", "WARN")
-            elif "device_not_eligible" in reason:
+            elif "not_eligible" in reason_name.lower() or "not_eligible" in str(reason).lower():
                 log("Device not eligible for Apple Intelligence.", "WARN")
-            elif "model_not_ready" in reason:
+            elif "not_ready" in reason_name.lower() or "not_ready" in str(reason).lower():
                 log("Apple Intelligence model not ready yet.", "WARN")
+            else:
+                log(f"Apple Intelligence unavailable: {reason_name}", "WARN")
 
         return False
 
     def start(self) -> bool:
-        """Check Apple Intelligence availability and start the server process."""
-        if not CLI_BINARY.exists():
-            log(f"CLI not built. Run: cd {CLI_DIR} && swift build -c release", "ERR")
-            return False
-
+        """Verify Apple Intelligence is available."""
         if not self.running():
             log("Apple Intelligence not available", "WARN")
             return False
-
-        # Start the server process
-        if self._start_server():
-            log("Apple Intelligence ready (server mode)", "OK")
-            return True
-
-        log("Failed to start Apple Intelligence server", "ERR")
-        return False
+        log("Apple Intelligence ready", "OK")
+        return True
 
     def fix(self, text: str) -> Tuple[str, Optional[str]]:
         """Fix grammar using Apple Intelligence. Delegates to transcription mode."""
@@ -100,13 +100,11 @@ class AppleIntelligenceBackend(GrammarBackend):
             log("Text too short for mode processing, returning as-is", "INFO")
             return text, None
 
-        # Validate mode exists before processing
         mode = get_mode(mode_id)
         if not mode:
             log(f"Unknown mode requested: {mode_id}", "ERR")
             return text, f"Unknown mode: {mode_id}"
 
-        # Handle max_chars chunking
         config = get_config()
         max_chars = config.apple_intelligence.max_chars
         if max_chars > 0 and len(text) > max_chars:
@@ -123,43 +121,22 @@ class AppleIntelligenceBackend(GrammarBackend):
 
         log(f"Apple Intelligence fix_with_mode: {mode.name} ({len(text)} chars)", "INFO")
 
-        # Ensure server is running
-        if not self._ensure_server():
-            log("Apple Intelligence server not running", "ERR")
-            return text, "Server not running"
-
         timeout = config.apple_intelligence.timeout if config.apple_intelligence.timeout > 0 else None
+        full_prompt = mode.user_prompt_template.replace("{text}", text)
 
-        # Build request for server mode using mode-specific prompts
         try:
-            request = {
-                "system": mode.system_prompt,
-                "user_prompt": mode.user_prompt_template,
-                "text": text
-            }
+            result = self._run_async(
+                self._generate(mode.system_prompt, full_prompt),
+                timeout=timeout,
+            )
+        except (TimeoutError, concurrent.futures.TimeoutError):
+            log(f"Apple Intelligence timed out for {mode.name}", "ERR")
+            return text, "Timeout"
         except Exception as e:
-            log(f"Failed to build request for mode {mode_id}: {e}", "ERR")
-            return text, f"Request build error: {e}"
+            err_msg = self._classify_error(e)
+            log(f"Apple Intelligence error for {mode.name}: {err_msg}", "ERR")
+            return text, err_msg[:ERROR_TRUNCATE_LENGTH]
 
-        response, err = self._send_request(request, timeout=timeout)
-
-        if err:
-            log(f"Apple Intelligence server error for {mode.name}: {err}", "ERR")
-            return text, err[:ERROR_TRUNCATE_LENGTH]
-
-        if response is None:
-            log("No response received from Apple Intelligence server", "ERR")
-            return text, "No response from server"
-
-        if not response.get("success", False):
-            error_msg = response.get("error", "Unknown error")
-            if "unavailable" in error_msg.lower() or "not available" in error_msg.lower():
-                log("Apple Intelligence reported unavailable", "ERR")
-                return text, "Apple Intelligence not available"
-            log(f"Apple Intelligence error: {error_msg}", "ERR")
-            return text, error_msg[:ERROR_TRUNCATE_LENGTH]
-
-        result = response.get("result", "").strip()
         if not result:
             log("Apple Intelligence returned empty result", "WARN")
             return text, "Empty response"
@@ -171,163 +148,69 @@ class AppleIntelligenceBackend(GrammarBackend):
         return (result if result else text), None
 
     # ─────────────────────────────────────────────────────────────────
-    # Server management
+    # Async helpers
     # ─────────────────────────────────────────────────────────────────
 
-    def _start_server(self) -> bool:
-        """Start the CLI server process."""
-        with self._server_lock:
-            if self._server_process is not None:
-                # Check if still running
-                if self._server_process.poll() is None:
-                    return True
-                # Process died, clean up
-                self._server_process = None
+    def _ensure_loop(self) -> None:
+        """Start a persistent background event loop if one isn't running."""
+        if self._loop is not None and not self._loop.is_closed():
+            return
+        self._loop = asyncio.new_event_loop()
+        self._loop_thread = threading.Thread(
+            target=self._loop.run_forever,
+            daemon=True,
+            name="apple-intelligence-loop",
+        )
+        self._loop_thread.start()
 
-            try:
-                self._server_process = subprocess.Popen(
-                    [str(CLI_BINARY), "serve"],
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    bufsize=1,  # Line buffered
+    def _run_async(self, coro, timeout: Optional[float] = None) -> str:
+        """Submit a coroutine to the background loop and wait for the result."""
+        self._ensure_loop()
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        return future.result(timeout=timeout)
+
+    async def _generate(self, system_prompt: str, user_prompt: str) -> str:
+        """Create or reuse a session and call respond()."""
+        with self._session_lock:
+            if self._session is None or self._last_system_prompt != system_prompt:
+                model = fm.SystemLanguageModel(
+                    use_case=fm.SystemLanguageModelUseCase.GENERAL,
+                    guardrails=fm.SystemLanguageModelGuardrails.PERMISSIVE_CONTENT_TRANSFORMATIONS,
                 )
+                self._session = fm.LanguageModelSession(
+                    instructions=system_prompt,
+                    model=model,
+                )
+                self._last_system_prompt = system_prompt
+            session = self._session
 
-                # Wait for READY signal on stderr
-                ready = False
-                timeout_remaining = SERVER_STARTUP_TIMEOUT
-
-                while timeout_remaining > 0:
-                    # Check if process died
-                    if self._server_process.poll() is not None:
-                        stderr_output = self._server_process.stderr.read()
-                        log(f"Server process exited: {stderr_output}", "ERR")
-                        self._server_process = None
-                        return False
-
-                    # Use select to check for data with timeout
-                    rlist, _, _ = select.select([self._server_process.stderr], [], [], 0.5)
-                    if rlist:
-                        line = self._server_process.stderr.readline()
-                        if "READY" in line:
-                            ready = True
-                            break
-
-                    timeout_remaining -= 0.5
-
-                if not ready:
-                    log("Server startup timeout", "ERR")
-                    self._stop_server()
-                    return False
-
-                return True
-
-            except Exception as e:
-                log(f"Failed to start server: {e}", "ERR")
-                self._server_process = None
-                return False
-
-    def _stop_server(self) -> None:
-        """Stop the CLI server process."""
-        with self._server_lock:
-            if self._server_process is not None:
-                try:
-                    # Close stdin to signal server to exit
-                    if self._server_process.stdin:
-                        self._server_process.stdin.close()
-                    # Wait briefly for graceful exit
-                    self._server_process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    # Force kill if needed
-                    self._server_process.kill()
-                    self._server_process.wait()
-                except Exception:
-                    pass
-                finally:
-                    self._server_process = None
-
-    def _ensure_server(self) -> bool:
-        """Ensure the server is running, restart if needed."""
-        with self._server_lock:
-            if self._server_process is not None:
-                if self._server_process.poll() is None:
-                    return True
-                # Process died
-                self._server_process = None
-
-        # Restart server
-        return self._start_server()
+        return await session.respond(user_prompt)
 
     # ─────────────────────────────────────────────────────────────────
-    # Private methods
+    # Error classification
     # ─────────────────────────────────────────────────────────────────
 
-    def _run_cli(
-        self,
-        args: list,
-        input_text: str = None,
-        timeout: int = None
-    ) -> Tuple[Optional[str], Optional[str], int]:
-        """
-        Run the Apple AI CLI with given arguments (for one-shot commands like 'check').
+    def _classify_error(self, exc: Exception) -> str:
+        """Map SDK exceptions to human-readable error strings."""
+        if not _SDK_AVAILABLE:
+            return str(exc)
 
-        Returns: (stdout, stderr, returncode)
-        """
-        if not CLI_BINARY.exists():
-            return None, "CLI not built. Run: swift build -c release", 1
-
-        try:
-            result = subprocess.run(
-                [str(CLI_BINARY)] + args,
-                input=input_text,
-                capture_output=True,
-                text=True,
-                timeout=timeout if timeout and timeout > 0 else None
-            )
-            return result.stdout, result.stderr, result.returncode
-
-        except subprocess.TimeoutExpired:
-            return None, "Timeout", 1
-        except Exception as e:
-            return None, str(e), 1
-
-    def _send_request(self, request: dict, timeout: Optional[float] = None) -> Tuple[Optional[dict], Optional[str]]:
-        """
-        Send a request to the server process.
-
-        Returns: (response_dict, error_message)
-        """
-        if not self._ensure_server():
-            return None, "Server not running"
-
-        try:
-            with self._server_lock:
-                if self._server_process is None:
-                    return None, "Server not running"
-
-                # Send request as JSON line
-                json_line = json.dumps(request) + "\n"
-                self._server_process.stdin.write(json_line)
-                self._server_process.stdin.flush()
-
-                # Read response with timeout
-                if timeout and timeout > 0:
-                    rlist, _, _ = select.select([self._server_process.stdout], [], [], timeout)
-                    if not rlist:
-                        return None, "Timeout waiting for response"
-
-                response_line = self._server_process.stdout.readline()
-                if not response_line:
-                    # Server died - mark for cleanup (still inside lock)
-                    self._server_process = None
-                    return None, "Server process died"
-
-                response = json.loads(response_line)
-                return response, None
-
-        except json.JSONDecodeError as e:
-            return None, f"Invalid JSON response: {e}"
-        except Exception as e:
-            return None, str(e)
-
+        name = type(exc).__name__
+        if name == "GuardrailViolationError":
+            return "Guardrail violation"
+        if name == "RateLimitedError":
+            return "Rate limited"
+        if name == "RefusalError":
+            reason = getattr(exc, "reason", "")
+            return f"Refusal: {reason}" if reason else "Model refused"
+        if name == "ExceededContextWindowSizeError":
+            return "Context window exceeded"
+        if name == "AssetsUnavailableError":
+            return "Model assets unavailable"
+        if name == "ConcurrentRequestsError":
+            return "Too many concurrent requests"
+        if name == "UnsupportedLanguageOrLocaleError":
+            return "Unsupported language"
+        if name == "DecodingFailureError":
+            return "Decoding failure"
+        return str(exc)

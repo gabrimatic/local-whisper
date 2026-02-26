@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.0] - 2026-02-26
+
+### Changed
+
+- Apple Intelligence backend now uses Apple's official Foundation Models Python SDK (`apple-fm-sdk`) instead of a custom Swift CLI bridge. Same on-device grammar correction, fewer moving parts.
+
+### Removed
+
+- Swift CLI bridge for Apple Intelligence (`apple-ai-cli`). The `swift build` step for the grammar backend is no longer needed during setup.
+
+---
+
 ## [1.1.0] - 2026-02-25
 
 ### Added

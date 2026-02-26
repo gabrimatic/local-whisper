@@ -160,6 +160,13 @@ pip install --upgrade pip -q || fail "Failed to upgrade pip"
 pip install -e "$SCRIPT_DIR" || fail "Failed to install package"
 log_ok "Package installed (editable mode)"
 
+# Verify Apple Intelligence SDK
+if "$VENV_DIR/bin/python3" -c "import apple_fm_sdk" 2>/dev/null; then
+    log_ok "Apple Intelligence SDK ready"
+else
+    log_warn "Apple Intelligence SDK not available (requires macOS 26+ and Xcode 26+)"
+fi
+
 # ============================================================================
 # Write default configuration
 # ============================================================================
@@ -276,43 +283,6 @@ if command -v lms &> /dev/null; then
     fi
 else
     log_info "LM Studio not installed (optional - download from https://lmstudio.ai)"
-fi
-
-# ============================================================================
-# Build Apple Intelligence CLI Helper
-# ============================================================================
-
-echo ""
-log_step "Building Apple Intelligence CLI helper..."
-log_info "This is a one-time build. The CLI is called automatically by the app."
-
-SWIFT_CLI_DIR="$SCRIPT_DIR/src/whisper_voice/backends/apple_intelligence/cli"
-
-if [[ -d "$SWIFT_CLI_DIR" ]]; then
-    # Check if Xcode command line tools are available
-    if ! command -v swift &> /dev/null; then
-        log_warn "Swift not found. Installing Xcode Command Line Tools..."
-        xcode-select --install 2>/dev/null || true
-        log_warn "Please complete the Xcode Command Line Tools installation and run this script again"
-        fail "Swift compiler required for Apple Intelligence CLI"
-    fi
-
-    # Build the Swift CLI in release mode
-    cd "$SWIFT_CLI_DIR"
-
-    swift build -c release 2>&1
-    if [[ -f "$SWIFT_CLI_DIR/.build/release/apple-ai-cli" ]]; then
-        log_ok "Apple Intelligence CLI built successfully"
-        log_info "Binary: $SWIFT_CLI_DIR/.build/release/apple-ai-cli"
-    else
-        log_warn "Failed to build Apple Intelligence CLI"
-        log_warn "This requires macOS 26+ and Xcode 26+"
-        log_warn "Grammar correction will not be available"
-    fi
-
-    cd "$SCRIPT_DIR"
-else
-    log_warn "Apple Intelligence CLI source not found at $SWIFT_CLI_DIR"
 fi
 
 # ============================================================================
@@ -560,9 +530,9 @@ echo ""
 echo -e "${BOLD}Grammar Backends:${NC}"
 echo ""
 echo -e "  ${CYAN}Apple Intelligence${NC} (recommended):"
-echo -e "     - macOS 26 (Tahoe) or later"
-echo -e "     - Apple Silicon (M1/M2/M3/M4)"
+echo -e "     - macOS 26 (Tahoe) or later, Apple Silicon"
 echo -e "     - Enable in System Settings → Apple Intelligence & Siri"
+echo -e "     - Uses Apple's Foundation Models SDK (installed with pip)"
 echo ""
 echo -e "  ${CYAN}Ollama${NC} (alternative):"
 echo -e "     - Download from ${DIM}https://ollama.com${NC}"

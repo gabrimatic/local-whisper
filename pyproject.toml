@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "local-whisper"
-version = "1.0.1"
+version = "1.2.0"
 description = "Local voice transcription with grammar correction for macOS"
 readme = "README.md"
 license = "MIT"
@@ -34,6 +34,7 @@ dependencies = [
     "pyobjc-framework-Quartz>=8.0",
     "mlx-audio>=0.3.0",
     "soundfile>=0.12.0",
+    "apple-fm-sdk @ git+https://github.com/apple/python-apple-fm-sdk.git",
 ]
 
 [project.scripts]
@@ -52,6 +53,9 @@ line-length = 120
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
 ignore = ["E501"]  # line length handled by formatter
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/whisper_voice"]

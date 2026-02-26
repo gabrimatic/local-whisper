@@ -1259,20 +1259,8 @@ class App:
             # Step 3: rebuild Swift targets
             swift = shutil.which("swift")
             if swift:
-                # Apple Intelligence CLI
-                self._send_state_update("processing", status_text="Updating: rebuilding...")
-                cli_dir = repo_root / "src" / "whisper_voice" / "backends" / "apple_intelligence" / "cli"
-                if cli_dir.exists():
-                    result = subprocess.run(
-                        [swift, "build", "-c", "release"],
-                        cwd=str(cli_dir),
-                        capture_output=True,
-                        timeout=300,
-                    )
-                    if result.returncode != 0:
-                        log("Apple Intelligence CLI build failed - continuing", "ERR")
-
                 # LocalWhisperUI
+                self._send_state_update("processing", status_text="Updating: rebuilding...")
                 ui_dir = repo_root / "LocalWhisperUI"
                 if ui_dir.exists():
                     result = subprocess.run(

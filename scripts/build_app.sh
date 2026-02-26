@@ -20,8 +20,6 @@ cd "$SCRIPT_DIR"
 # Ensure py2app and Pillow are installed
 "$VENV_DIR/bin/pip" install --quiet py2app Pillow
 
-SWIFT_CLI="$SCRIPT_DIR/src/whisper_voice/backends/apple_intelligence/cli/.build/release/apple-ai-cli"
-
 # Write a temporary setup_app.py for py2app
 cat > "$SCRIPT_DIR/setup_app.py" <<'PYEOF'
 from setuptools import setup
@@ -34,8 +32,8 @@ OPTIONS = {
         'CFBundleName': 'Local Whisper',
         'CFBundleDisplayName': 'Local Whisper',
         'CFBundleIdentifier': 'com.gabrimatic.local-whisper',
-        'CFBundleVersion': '1.0.1',
-        'CFBundleShortVersionString': '1.0.1',
+        'CFBundleVersion': '1.2.0',
+        'CFBundleShortVersionString': '1.2.0',
         'LSUIElement': True,
         'LSMinimumSystemVersion': '13.0',
         'NSMicrophoneUsageDescription': 'Local Whisper needs microphone access for voice transcription.',
@@ -78,12 +76,6 @@ APP_BUNDLE="$SCRIPT_DIR/dist/Local Whisper.app"
 if [[ ! -d "$APP_BUNDLE" ]]; then
     echo "ERROR: App bundle not found at $APP_BUNDLE" >&2
     exit 1
-fi
-
-# Copy the Swift CLI binary into the bundle if it exists
-if [[ -f "$SWIFT_CLI" ]]; then
-    mkdir -p "$APP_BUNDLE/Contents/Resources/bin"
-    cp "$SWIFT_CLI" "$APP_BUNDLE/Contents/Resources/bin/apple-ai-cli"
 fi
 
 # Write entitlements and ad-hoc sign the bundle

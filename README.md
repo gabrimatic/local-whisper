@@ -25,7 +25,7 @@ cd local-whisper
 ./setup.sh
 ```
 
-`setup.sh` handles everything: Python venv, dependencies, Qwen3-ASR model download and warm-up, Swift CLI builds (Apple Intelligence helper and the menu bar UI), LaunchAgent for auto-start, Accessibility permission, and the `wh` shell alias.
+`setup.sh` handles everything: Python venv, dependencies, Qwen3-ASR model download and warm-up, Swift UI app build, LaunchAgent for auto-start, Accessibility permission, and the `wh` shell alias.
 
 | Action | Key |
 |--------|-----|
@@ -130,8 +130,8 @@ wh                  # Status + help
 wh status           # Service status, PID, backend
 wh start            # Launch the service
 wh stop             # Stop the service
-wh restart          # Restart (auto-rebuilds Swift binaries if sources changed)
-wh build            # Rebuild Apple Intelligence CLI and Swift UI app
+wh restart          # Restart the service
+wh build            # Rebuild Swift UI app
 wh engine           # Show current transcription engine + list available
 wh engine whisperkit  # Switch transcription engine
 wh backend          # Show current grammar backend + list available
@@ -333,7 +333,7 @@ Swift (subprocess, all UI)
 │  Grammar Backend                                          │
 │                                                           │
 │  Apple Intelligence  │  Ollama        │  LM Studio        │
-│  On-device Swift     │  localhost LLM │  OpenAI-compatible │
+│  On-device SDK       │  localhost LLM │  OpenAI-compatible │
 │                                                           │
 │  Removes filler words, fixes grammar and punctuation      │
 └──────────────────────────┬────────────────────────────────┘
@@ -407,7 +407,6 @@ Verify:
 1. You're on **macOS 26** (Tahoe) or later
 2. You have **Apple Silicon** (M1/M2/M3/M4)
 3. **Apple Intelligence** is enabled in System Settings > Apple Intelligence & Siri
-4. The Swift CLI is built (`./setup.sh` or `wh build`)
 
 </details>
 
@@ -432,13 +431,6 @@ Verify:
    - Confirm "Server running on port 1234" in LM Studio
    - Loading a model does **not** start the server automatically
 4. Server is accessible: `curl http://localhost:1234/v1/models`
-
-</details>
-
-<details>
-<summary><strong>"CLI not built" error</strong></summary>
-
-Build both Swift binaries: `wh build`. `setup.sh` does this automatically.
 
 </details>
 
@@ -477,7 +469,7 @@ Check `show_overlay = true` in `~/.whisper/config.toml`.
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 
-# Build Swift binaries (one-time, for Apple Intelligence and the UI app)
+# Build Swift UI app (one-time)
 wh build
 
 # Run
@@ -550,8 +542,7 @@ local-whisper/
         ├── ollama/
         ├── lm_studio/
         └── apple_intelligence/
-            ├── backend.py
-            └── cli/        # Swift CLI helper
+            └── backend.py
 ```
 
 Data stored in `~/.whisper/`:
@@ -573,7 +564,7 @@ Data stored in `~/.whisper/`:
 
 ## Credits
 
-[Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR) by [Qwen Team](https://qwen.ai) · [mlx-audio](https://github.com/Blaizzy/mlx-audio) · [WhisperKit](https://github.com/argmaxinc/WhisperKit) by [Argmax](https://www.argmaxinc.com) · [Apple Intelligence](https://www.apple.com/apple-intelligence/) · [Ollama](https://ollama.com) · [LM Studio](https://lmstudio.ai) · [SwiftUI](https://developer.apple.com/swiftui/)
+[Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR) by [Qwen Team](https://qwen.ai) · [mlx-audio](https://github.com/Blaizzy/mlx-audio) · [WhisperKit](https://github.com/argmaxinc/WhisperKit) by [Argmax](https://www.argmaxinc.com) · [Apple Intelligence](https://www.apple.com/apple-intelligence/) · [Apple FM SDK](https://github.com/apple/python-apple-fm-sdk) · [Ollama](https://ollama.com) · [LM Studio](https://lmstudio.ai) · [SwiftUI](https://developer.apple.com/swiftui/)
 
 <details>
 <summary><strong>Legal notices</strong></summary>
