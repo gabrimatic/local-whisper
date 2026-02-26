@@ -157,13 +157,12 @@ echo ""
 log_step "Installing local-whisper package..."
 
 pip install --upgrade pip -q || fail "Failed to upgrade pip"
-pip install -e "$SCRIPT_DIR" || fail "Failed to install package"
-log_ok "Package installed (editable mode)"
-
-# Verify Apple Intelligence SDK
-if "$VENV_DIR/bin/python3" -c "import apple_fm_sdk" 2>/dev/null; then
-    log_ok "Apple Intelligence SDK ready"
+if [[ "$MACOS_MAJOR" -ge 26 ]]; then
+    pip install -e "$SCRIPT_DIR[apple-intelligence]" || fail "Failed to install package"
+    log_ok "Package installed (editable mode, with Apple Intelligence)"
 else
+    pip install -e "$SCRIPT_DIR" || fail "Failed to install package"
+    log_ok "Package installed (editable mode)"
     log_warn "Apple Intelligence SDK not available (requires macOS 26+ and Xcode 26+)"
 fi
 

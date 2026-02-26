@@ -34,6 +34,10 @@ dependencies = [
     "pyobjc-framework-Quartz>=8.0",
     "mlx-audio>=0.3.0",
     "soundfile>=0.12.0",
+]
+
+[project.optional-dependencies]
+apple-intelligence = [
     "apple-fm-sdk @ git+https://github.com/apple/python-apple-fm-sdk.git",
 ]
 
