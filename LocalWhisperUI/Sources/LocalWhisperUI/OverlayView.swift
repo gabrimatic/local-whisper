@@ -20,6 +20,8 @@ struct OverlayView: View {
                 doneView
             case .error:
                 errorView
+            case .speaking:
+                speakingView
             }
         }
         .padding(.horizontal, 22)
@@ -97,6 +99,22 @@ struct OverlayView: View {
         .frame(maxWidth: .infinity, alignment: .center)
     }
 
+    // MARK: - Speaking
+
+    private var speakingView: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "speaker.wave.2.fill")
+                .font(.system(size: 15))
+                .foregroundStyle(.primary)
+                .symbolEffect(.variableColor.iterative.reversing)
+
+            Text(appState.statusText.isEmpty ? "Speaking..." : appState.statusText)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.primary)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
     // MARK: - RMS bar
 
     private var audioLevelBar: some View {
@@ -154,6 +172,8 @@ struct OverlayView: View {
             return "Transcription complete, copied to clipboard"
         case .error:
             return appState.statusText.isEmpty ? "Transcription failed" : appState.statusText
+        case .speaking:
+            return appState.statusText.isEmpty ? "Speaking" : appState.statusText
         }
     }
 }

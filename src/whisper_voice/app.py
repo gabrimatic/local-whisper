@@ -44,7 +44,8 @@ from .config import CONFIG_FILE, get_config
 from .grammar import Grammar
 from .ipc_server import IPCServer
 from .key_interceptor import KeyInterceptor
-from .shortcuts import ShortcutProcessor, build_shortcut_map
+from .shortcuts import ShortcutProcessor, build_shortcut_map, parse_shortcut
+from .tts_processor import TTSProcessor
 from .transcriber import Transcriber
 from .utils import (
     C_BOLD,
@@ -130,6 +131,9 @@ class App:
         self._shortcut_processor: Optional[ShortcutProcessor] = None
         self._shortcut_map: dict = {}
         self._key_interceptor: Optional[KeyInterceptor] = None
+
+        # TTS processor
+        self._tts_processor: Optional[TTSProcessor] = None
 
         # Swift process handle
         self._swift_process = None
@@ -554,7 +558,8 @@ class App:
         self._key_interceptor = KeyInterceptor()
         self._key_interceptor.set_recording_handler(self._on_recording_key)
 
-        # Register text transformation shortcuts if enabled (only when grammar is working)
+        # Register text transformation shortcuts if grammar is ready and shortcuts are enabled
+        has_shortcuts = False
         if self._grammar_ready and self.grammar is not None and self.config.shortcuts.enabled:
             self._shortcut_processor = ShortcutProcessor(self.grammar, status_callback=self._shortcut_status_callback)
             self._shortcut_map = build_shortcut_map(self.config)
@@ -563,20 +568,34 @@ class App:
                     modifiers, key,
                     lambda mid=mode_id: self._shortcut_processor.trigger(mid)
                 )
+            has_shortcuts = True
+
+        # Register TTS shortcut if TTS is enabled (independent of grammar)
+        has_tts = False
+        if self.config.tts.enabled:
+            self._tts_processor = TTSProcessor(status_callback=self._tts_status_callback)
+            self._key_interceptor.set_speaking_handler(self._tts_processor.stop)
+            modifiers, key = parse_shortcut(self.config.tts.speak_shortcut)
+            if key:
+                self._key_interceptor.register_shortcut(modifiers, key, self._tts_processor.trigger)
+                has_tts = True
+
+        # Set enabled guard if any shortcuts are registered
+        if has_shortcuts or has_tts:
             self._key_interceptor.set_enabled_guard(
                 lambda: (not self.recorder.recording
                          and not self._busy
-                         and not self._shortcut_processor.is_busy())
+                         and not (self._shortcut_processor and self._shortcut_processor.is_busy()))
             )
-            if self._key_interceptor.start():
+
+        if self._key_interceptor.start():
+            log("Key interceptor started", "OK")
+            if has_shortcuts:
                 log("Shortcuts: Ctrl+Shift+G (proofread) Ctrl+Shift+R (rewrite) Ctrl+Shift+P (prompt)", "OK")
-            else:
-                log("Shortcut interception failed (shortcuts will still work but won't suppress keys)", "WARN")
+            if has_tts:
+                log(f"TTS: {self.config.tts.speak_shortcut} to speak selected text", "OK")
         else:
-            if self._key_interceptor.start():
-                log("Key interceptor started (recording-mode suppression active)", "OK")
-            else:
-                log("Key interceptor failed to start", "WARN")
+            log("Key interceptor failed to start", "WARN")
 
         self._current_status = "Ready"
         self._send_state_update()
@@ -751,6 +770,10 @@ class App:
 
     def _start_recording(self):
         """Start audio recording."""
+        # Stop TTS immediately if speaking (recording takes priority)
+        if self._tts_processor and self._tts_processor.is_speaking():
+            self._tts_processor.stop()
+
         with self._state_lock:
             if self._busy or not self._ready:
                 return
@@ -1207,6 +1230,19 @@ class App:
             "status_text": status_text,
         })
 
+    def _tts_status_callback(self, phase: str, status_text: str):
+        """Forward TTS processor status to Swift via IPC. Also manages Esc interception."""
+        if self._key_interceptor:
+            self._key_interceptor.set_speaking_active(phase in ("speaking", "processing"))
+        self.ipc.send({
+            "type": "state_update",
+            "phase": phase,
+            "duration_seconds": 0.0,
+            "rms_level": 0.0,
+            "text": None,
+            "status_text": status_text,
+        })
+
     # ------------------------------------------------------------------
     # Update
     # ------------------------------------------------------------------
@@ -1338,6 +1374,14 @@ class App:
             try:
                 self._keyboard_listener.stop()
                 log("Keyboard listener stopped", "OK")
+            except Exception:
+                pass
+
+        # Stop TTS processor
+        if self._tts_processor:
+            try:
+                self._tts_processor.close()
+                log("TTS processor stopped", "OK")
             except Exception:
                 pass
 

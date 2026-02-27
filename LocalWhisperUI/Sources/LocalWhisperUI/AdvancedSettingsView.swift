@@ -1,66 +1,6 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Deferred text field
-//
-// Binds locally; sends the config update only on Return or focus loss.
-// This prevents a config_update IPC call on every keystroke.
-
-private struct DeferredTextField: View {
-    let label: String
-    let placeholder: String
-    let onCommit: (String) -> Void
-
-    @State private var localValue: String
-    @FocusState private var isFocused: Bool
-
-    init(label: String, placeholder: String = "", initialValue: String, onCommit: @escaping (String) -> Void) {
-        self.label = label
-        self.placeholder = placeholder
-        self.onCommit = onCommit
-        _localValue = State(initialValue: initialValue)
-    }
-
-    var body: some View {
-        TextField(label, text: $localValue)
-            .focused($isFocused)
-            .onSubmit { onCommit(localValue) }
-            .onChange(of: isFocused) { _, focused in
-                if !focused { onCommit(localValue) }
-            }
-    }
-}
-
-// Numeric variant (Int) — same pattern but formats as integer text.
-private struct DeferredIntTextField: View {
-    let label: String
-    let placeholder: String
-    let onCommit: (Int) -> Void
-
-    @State private var localValue: String
-    @FocusState private var isFocused: Bool
-
-    init(label: String, placeholder: String = "", initialValue: Int, onCommit: @escaping (Int) -> Void) {
-        self.label = label
-        self.placeholder = placeholder
-        self.onCommit = onCommit
-        _localValue = State(initialValue: initialValue == 0 ? "" : "\(initialValue)")
-    }
-
-    var body: some View {
-        TextField(label, text: $localValue)
-            .focused($isFocused)
-            .onSubmit { commit() }
-            .onChange(of: isFocused) { _, focused in
-                if !focused { commit() }
-            }
-    }
-
-    private func commit() {
-        if let v = Int(localValue) { onCommit(v) }
-    }
-}
-
 // TextEditor variant for the WhisperKit custom prompt.
 private struct DeferredTextEditor: View {
     let onCommit: (String) -> Void
@@ -101,6 +41,7 @@ struct AdvancedSettingsView: View {
                 lmStudioSection
                 appleIntelligenceSection
                 shortcutsSection
+                ttsSection
                 storageSection
             }
             .formStyle(.grouped)
@@ -926,6 +867,40 @@ struct AdvancedSettingsView: View {
         }
 
         ollamaFetching = false
+    }
+
+    // MARK: - TTS
+
+    private var ttsSection: some View {
+        Section("Text to Speech") {
+            LabeledContent("Speak shortcut") {
+                DeferredTextField(
+                    label: "e.g. alt+t",
+                    initialValue: appState.config.tts.speakShortcut
+                ) { value in
+                    appState.config.tts.speakShortcut = value
+                    appState.ipcClient?.sendConfigUpdate(section: "tts", key: "speak_shortcut", value: value)
+                }
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 180)
+            }
+            .help("Key combination to speak selected text. Format: modifier+key, e.g. alt+t (⌥T)")
+
+            LabeledContent("Model") {
+                DeferredTextField(
+                    label: "mlx-community/Qwen3-TTS-...",
+                    initialValue: appState.config.qwen3Tts.model
+                ) { value in
+                    appState.config.qwen3Tts.model = value
+                    appState.ipcClient?.sendConfigUpdate(section: "qwen3_tts", key: "model", value: value)
+                }
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 300)
+            }
+            .help("Qwen3-TTS model from mlx-community. VoiceDesign variants use free-form voice descriptions. CustomVoice variants use preset speakers.")
+
+            RestartNote()
+        }
     }
 
     // MARK: - Shortcuts

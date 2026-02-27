@@ -71,6 +71,8 @@ class KeyInterceptor:
         self._lock = threading.Lock()
         self._recording_active = False
         self._recording_handler: Optional[Callable] = None
+        self._speaking_active = False
+        self._speaking_handler: Optional[Callable] = None
 
     def register_shortcut(self, modifiers: Set[str], key: str, callback: Callable):
         """
@@ -93,6 +95,16 @@ class KeyInterceptor:
         """Set the callback invoked for every key during recording mode."""
         with self._lock:
             self._recording_handler = callback
+
+    def set_speaking_active(self, active: bool):
+        """Enable or disable speaking-mode Esc interception (thread-safe)."""
+        with self._lock:
+            self._speaking_active = active
+
+    def set_speaking_handler(self, callback: Callable):
+        """Set the callback invoked when Esc is pressed during speaking."""
+        with self._lock:
+            self._speaking_handler = callback
 
     def set_enabled_guard(self, guard: Callable[[], bool]):
         """
@@ -210,11 +222,19 @@ class KeyInterceptor:
             with self._lock:
                 recording_active = self._recording_active
                 recording_handler = self._recording_handler
+                speaking_active = self._speaking_active
+                speaking_handler = self._speaking_handler
 
             if recording_active and keycode in _RECORDING_KEYS:
                 if recording_handler:
                     threading.Thread(target=recording_handler, args=(keycode, flags), daemon=True).start()
                 return None  # suppress only these keys
+
+            # Speaking mode: intercept Esc to stop TTS
+            if speaking_active and keycode == 53:  # Esc
+                if speaking_handler:
+                    threading.Thread(target=speaking_handler, daemon=True).start()
+                return None  # suppress Esc while speaking
 
             char = VK_TO_CHAR.get(keycode)
 

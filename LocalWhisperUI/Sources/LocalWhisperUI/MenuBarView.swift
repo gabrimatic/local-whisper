@@ -143,6 +143,7 @@ struct MenuBarView: View {
         case .processing: return .secondary
         case .done: return .green
         case .error: return .orange
+        case .speaking: return .primary
         }
     }
 
@@ -163,6 +164,7 @@ struct MenuBarView: View {
         case .processing: return "Local Whisper: Processing transcription"
         case .done: return "Local Whisper: Transcription copied"
         case .error: return "Local Whisper: Error"
+        case .speaking: return "Local Whisper: Speaking"
         }
     }
 

@@ -205,6 +205,71 @@ struct GeneralSettingsView: View {
                     }
                 }
 
+                Section("Text to Speech") {
+                    Toggle("Enable Text to Speech", isOn: Binding(
+                        get: { appState.config.tts.enabled },
+                        set: { newValue in
+                            appState.config.tts.enabled = newValue
+                            appState.ipcClient?.sendConfigUpdate(section: "tts", key: "enabled", value: newValue)
+                        }
+                    ))
+                    .accessibilityHint("Select text in any app and press the shortcut to hear it read aloud")
+
+                    if appState.config.tts.enabled {
+                        LabeledContent("Shortcut") {
+                            Text(appState.config.tts.speakShortcut)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Picker("Voice", selection: Binding(
+                            get: { appState.config.qwen3Tts.speaker },
+                            set: { newValue in
+                                appState.config.qwen3Tts.speaker = newValue
+                                appState.ipcClient?.sendConfigUpdate(section: "qwen3_tts", key: "speaker", value: newValue)
+                            }
+                        )) {
+                            Text("Aiden (American male)").tag("Aiden")
+                            Text("Ryan (English male)").tag("Ryan")
+                            Text("Serena (Chinese female)").tag("Serena")
+                            Text("Vivian (Chinese female)").tag("Vivian")
+                            Text("Ono_Anna (Japanese female)").tag("Ono_Anna")
+                            Text("Sohee (Korean female)").tag("Sohee")
+                            Text("Uncle_Fu (Chinese male)").tag("Uncle_Fu")
+                            Text("Dylan (Beijing male)").tag("Dylan")
+                            Text("Eric (Sichuan male)").tag("Eric")
+                        }
+
+                        Picker("Language", selection: Binding(
+                            get: { appState.config.qwen3Tts.language },
+                            set: { newValue in
+                                appState.config.qwen3Tts.language = newValue
+                                appState.ipcClient?.sendConfigUpdate(section: "qwen3_tts", key: "language", value: newValue)
+                            }
+                        )) {
+                            Text("Auto-detect").tag("Auto")
+                            Text("English").tag("English")
+                            Text("Chinese").tag("Chinese")
+                            Text("Japanese").tag("Japanese")
+                            Text("Korean").tag("Korean")
+                            Text("German").tag("German")
+                            Text("French").tag("French")
+                            Text("Spanish").tag("Spanish")
+                            Text("Italian").tag("Italian")
+                            Text("Portuguese").tag("Portuguese")
+                            Text("Russian").tag("Russian")
+                        }
+
+                        HStack {
+                            Image(systemName: "info.circle")
+                                .foregroundStyle(.secondary)
+                            Text("Select text in any app and press ⌥T to hear it read aloud. Press ⌥T again to stop.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 Section("History") {
                     Stepper(
                         "Keep \(appState.config.backup.historyLimit) entries",

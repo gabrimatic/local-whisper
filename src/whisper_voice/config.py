@@ -213,6 +213,32 @@ rewrite = "ctrl+shift+r"
 
 # Shortcut for prompt engineering (optimize text as LLM prompt)
 prompt_engineer = "ctrl+shift+p"
+
+[tts]
+# Enable Text-to-Speech (select text in any app and press the shortcut to hear it read aloud)
+enabled = true
+
+# TTS provider (currently only qwen3_tts is supported)
+provider = "qwen3_tts"
+
+# Shortcut to trigger/stop speech (alt = Option key on macOS)
+speak_shortcut = "alt+t"
+
+[qwen3_tts]
+# Qwen3-TTS model from mlx-community
+# CustomVoice variants: built-in named speakers, no reference audio needed
+# Base variants: voice cloning from a reference audio clip
+model = "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16"
+
+# Built-in speaker for CustomVoice models (Ryan, Aiden, Serena, Vivian, Ono_Anna, Sohee, Uncle_Fu, Dylan, Eric)
+speaker = "Aiden"
+
+# Language for synthesis ("Auto" detects from text; or one of: Chinese, English, Japanese, Korean,
+# German, French, Russian, Portuguese, Spanish, Italian)
+language = "Auto"
+
+# Optional speaking style instruction, e.g. "calm and professional" (leave empty for neutral)
+instruct = ""
 """
 
 
@@ -336,6 +362,23 @@ class ShortcutsConfig:
 
 
 @dataclass
+class TTSConfig:
+    """Text-to-Speech configuration."""
+    enabled: bool = True
+    provider: str = "qwen3_tts"
+    speak_shortcut: str = "alt+t"
+
+
+@dataclass
+class Qwen3TTSConfig:
+    """Qwen3-TTS provider configuration."""
+    model: str = "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16"
+    speaker: str = "Aiden"
+    language: str = "Auto"
+    instruct: str = ""
+
+
+@dataclass
 class Config:
     hotkey: HotkeyConfig = field(default_factory=HotkeyConfig)
     transcription: TranscriptionConfig = field(default_factory=TranscriptionConfig)
@@ -349,6 +392,8 @@ class Config:
     ui: UIConfig = field(default_factory=UIConfig)
     backup: BackupConfig = field(default_factory=BackupConfig)
     shortcuts: ShortcutsConfig = field(default_factory=ShortcutsConfig)
+    tts: TTSConfig = field(default_factory=TTSConfig)
+    qwen3_tts: Qwen3TTSConfig = field(default_factory=Qwen3TTSConfig)
 
 
 def load_config() -> Config:
@@ -494,6 +539,23 @@ def load_config() -> Config:
             proofread=data['shortcuts'].get('proofread', config.shortcuts.proofread),
             rewrite=data['shortcuts'].get('rewrite', config.shortcuts.rewrite),
             prompt_engineer=data['shortcuts'].get('prompt_engineer', config.shortcuts.prompt_engineer),
+        )
+
+    # TTS settings
+    if 'tts' in data:
+        config.tts = TTSConfig(
+            enabled=data['tts'].get('enabled', config.tts.enabled),
+            provider=data['tts'].get('provider', config.tts.provider),
+            speak_shortcut=data['tts'].get('speak_shortcut', config.tts.speak_shortcut),
+        )
+
+    # Qwen3-TTS settings
+    if 'qwen3_tts' in data:
+        config.qwen3_tts = Qwen3TTSConfig(
+            model=data['qwen3_tts'].get('model', config.qwen3_tts.model),
+            speaker=data['qwen3_tts'].get('speaker', config.qwen3_tts.speaker),
+            language=data['qwen3_tts'].get('language', config.qwen3_tts.language),
+            instruct=data['qwen3_tts'].get('instruct', config.qwen3_tts.instruct),
         )
 
     # Validate and sanitize config values
@@ -728,7 +790,10 @@ def _replace_in_section(content: str, section: str, key: str, new_value: str) ->
         lines.insert(section_header_idx + 1, new_line)
         return "".join(lines)
 
-    return content
+    # Section not found at all - append a new section at the end of the file
+    lines.append(f"\n[{section}]\n")
+    lines.append(f"{key} = {new_value}\n")
+    return "".join(lines)
 
 
 def update_config_backend(new_backend: str) -> bool:

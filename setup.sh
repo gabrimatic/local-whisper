@@ -174,12 +174,41 @@ echo ""
 log_step "Writing default configuration..."
 mkdir -p "$HOME/.whisper"
 "$VENV_DIR/bin/python" -c "
+import re
 from whisper_voice.config import DEFAULT_CONFIG
 from pathlib import Path
+
 config_path = Path.home() / '.whisper' / 'config.toml'
-config_path.write_text(DEFAULT_CONFIG, encoding='utf-8')
-print(f'Config written to {config_path}')
-" && log_ok "Config written to ~/.whisper/config.toml" || log_warn "Could not write config"
+
+if not config_path.exists():
+    config_path.write_text(DEFAULT_CONFIG, encoding='utf-8')
+    print('Config written (fresh install)')
+else:
+    # Parse section names present in existing config and in the default
+    existing = config_path.read_text(encoding='utf-8')
+    existing_sections = set(re.findall(r'^\[([^\]]+)\]', existing, re.MULTILINE))
+
+    # Extract each section block from DEFAULT_CONFIG
+    default_blocks = re.split(r'(?=^\[[^\]]+\])', DEFAULT_CONFIG, flags=re.MULTILINE)
+    appended = []
+    for block in default_blocks:
+        m = re.match(r'^\[([^\]]+)\]', block)
+        if m and m.group(1) not in existing_sections:
+            appended.append(block.rstrip())
+
+    if appended:
+        names = [re.match(r'^\[([^\]]+)\]', b).group(1) for b in appended]
+        with config_path.open('a', encoding='utf-8') as f:
+            f.write('\n')
+            f.write('\n'.join(appended))
+            f.write('\n')
+        print('Added missing sections:', names)
+    else:
+        print('Config already up to date')
+" && log_ok "Config updated at ~/.whisper/config.toml" || log_warn "Could not update config"
+
+MODEL_DIR="$HOME/.whisper/models"
+mkdir -p "$MODEL_DIR"
 
 # ============================================================================
 # Pre-download and warm up Qwen3-ASR model (default transcription engine)
@@ -187,10 +216,10 @@ print(f'Config written to {config_path}')
 
 echo ""
 log_step "Pre-downloading Qwen3-ASR model..."
-log_info "Downloads and caches the speech model to ~/.cache/huggingface/."
+log_info "Downloads and caches the speech model to ~/.whisper/models/."
 log_info "This only happens once."
 
-if "$VENV_DIR/bin/python3" -c "
+if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
 from mlx_audio.stt.utils import load_model
 load_model('mlx-community/Qwen3-ASR-1.7B-bf16')
 " 2>/dev/null; then
@@ -204,7 +233,7 @@ log_step "Warming up Qwen3-ASR model..."
 log_info "Compiling the MLX compute graph so first transcription is fast."
 log_info "This may take 60-120 seconds. Only happens once."
 
-if "$VENV_DIR/bin/python3" -c "
+if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
 import numpy as np
 import tempfile
 import soundfile as sf
@@ -219,6 +248,24 @@ with tempfile.NamedTemporaryFile(suffix='.wav', delete=True) as tmp:
     log_ok "Qwen3-ASR model warmed up and ready"
 else
     log_warn "Model warm-up failed - first transcription may be slower"
+fi
+
+# ============================================================================
+# Pre-download Qwen3-TTS model (Text-to-Speech)
+# ============================================================================
+
+echo ""
+log_step "Pre-downloading Qwen3-TTS model..."
+log_info "Downloads and caches the TTS model to ~/.whisper/models/."
+log_info "This only happens once."
+
+if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
+from mlx_audio.tts.utils import load_model
+load_model('mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16')
+" 2>/dev/null; then
+    log_ok "Qwen3-TTS model downloaded"
+else
+    log_warn "Qwen3-TTS model download failed - first use will download automatically"
 fi
 
 # ============================================================================
@@ -324,9 +371,9 @@ if [[ -d "$SWIFT_UI_DIR" ]]; then
     <key>CFBundleName</key>
     <string>Local Whisper</string>
     <key>CFBundleVersion</key>
-    <string>1.0</string>
+    <string>1.3.0</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>1.3.0</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>LSUIElement</key>
@@ -407,6 +454,8 @@ cat > "$PLIST_PATH" <<PLIST_EOF
     <dict>
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HF_HUB_CACHE</key>
+        <string>$HOME/.whisper/models</string>
         <key>HF_HUB_OFFLINE</key>
         <string>1</string>
         <key>HF_HUB_DISABLE_TELEMETRY</key>
@@ -520,7 +569,7 @@ echo -e "${BOLD}Transcription Engine:${NC}"
 echo ""
 echo -e "  ${CYAN}Qwen3-ASR${NC} (default):"
 echo -e "     - On-device, Apple Silicon (MLX)"
-echo -e "     - Model cached at ${DIM}~/.cache/huggingface/${NC}"
+echo -e "     - Model cached at ${DIM}~/.whisper/models/${NC}"
 echo ""
 echo -e "  ${CYAN}WhisperKit${NC} (alternative):"
 echo -e "     - CoreML, Apple Silicon"

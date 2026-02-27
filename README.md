@@ -5,7 +5,7 @@
 [![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-required-blue.svg)]()
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)]()
 
-**Local voice transcription with grammar correction for macOS.**
+**Local voice transcription, grammar correction, and text-to-speech for macOS.**
 
 Double-tap a key, speak, tap to stop. Polished text lands in your clipboard. No cloud, no internet, no tracking. Transcription runs entirely on-device via Qwen3-ASR (MLX) by default.
 
@@ -25,15 +25,17 @@ cd local-whisper
 ./setup.sh
 ```
 
-`setup.sh` handles everything: Python venv, dependencies, Qwen3-ASR model download and warm-up, Swift UI app build, LaunchAgent for auto-start, Accessibility permission, and the `wh` shell alias.
+`setup.sh` handles everything: Python venv, dependencies, Qwen3-ASR and Qwen3-TTS model downloads, Swift UI app build, LaunchAgent for auto-start, Accessibility permission, and the `wh` shell alias.
 
 | Action | Key |
 |--------|-----|
 | Start recording | Double-tap **Right Option** |
 | Stop and process | Tap **Right Option** or **Space** |
 | Cancel | Tap **Esc** |
+| Read selected text aloud | Press **⌥T** |
+| Stop speech | Press **⌥T** again or **Esc** |
 
-A floating overlay shows status and duration while you record.
+A floating overlay shows status during recording and speech.
 
 ---
 
@@ -94,24 +96,26 @@ ollama serve
 - **Hallucination filter** that blocks common false transcription outputs
 - **Vocabulary prompt presets** for technical or dictation use cases (WhisperKit engine)
 - **Retry function** if transcription fails
+- **Text to Speech**: select text in any app and press ⌥T; Qwen3-TTS reads it aloud with multilingual auto-detection across 10 languages. Press ⌥T again or Esc to stop at any time.
 
 ### Keyboard Shortcuts
 
-Transform selected text in any app with global shortcuts:
+Global shortcuts work on selected text in any app:
 
-| Shortcut | Mode | What it does |
-|----------|------|-------------|
-| **Ctrl+Shift+G** | Proofread | Fix spelling, grammar, and punctuation |
-| **Ctrl+Shift+R** | Rewrite | Improve readability while preserving meaning |
-| **Ctrl+Shift+P** | Prompt Engineer | Optimize text as an LLM prompt |
+| Shortcut | What it does |
+|----------|-------------|
+| **⌥T** | Read selected text aloud (press again or Esc to stop) |
+| **Ctrl+Shift+G** | Proofread: fix spelling, grammar, and punctuation |
+| **Ctrl+Shift+R** | Rewrite: improve readability while preserving meaning |
+| **Ctrl+Shift+P** | Prompt Engineer: optimize text as an LLM prompt |
 
-Select text, press the shortcut, result lands in your clipboard.
+Text transformation shortcuts (Ctrl+Shift+*) put the result in your clipboard. TTS plays the selection through your speakers.
 
 ### Feedback
 
-- **Sounds**: Pop on record start, Glass on success, Basso on failure
-- **Menu bar icon**: Animated waveform during recording
-- **Overlay states**: `0.0` recording · `···` processing · `Copied` done · `Failed` error
+- **Sounds**: Pop on record start/TTS start, Glass on success, Basso on failure
+- **Menu bar icon**: Animated waveform during recording, speaker icon during speech
+- **Overlay states**: `0.0` recording · `···` processing · `Copied` done · `Failed` error · `Generating speech...` TTS preparing · `Speaking...` TTS playing
 
 <p align="center">
   <img src="assets/overlay-recording.png" width="280" alt="Floating overlay during recording">
@@ -275,6 +279,17 @@ enabled = true
 proofread = "ctrl+shift+g"
 rewrite = "ctrl+shift+r"
 prompt_engineer = "ctrl+shift+p"
+
+[tts]
+enabled = true
+provider = "qwen3_tts"
+speak_shortcut = "alt+t"
+
+[qwen3_tts]
+model = "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16"
+speaker = "Aiden"   # Aiden, Ryan, Serena, Vivian, Ono_Anna, Sohee, Uncle_Fu, Dylan, Eric
+language = "Auto"   # Auto, English, Chinese, Japanese, Korean, German, French, Spanish, Italian, Portuguese, Russian
+instruct = ""       # optional speaking style, e.g. "calm and measured"
 ```
 
 </details>
@@ -287,7 +302,8 @@ Everything runs on your Mac. Zero data leaves your machine.
 
 | Component | Location |
 |-----------|----------|
-| Qwen3-ASR | In-process (no network) |
+| Qwen3-ASR | In-process (no network), cached at `~/.whisper/models/` |
+| Qwen3-TTS | In-process (no network), cached at `~/.whisper/models/` |
 | WhisperKit | localhost:50060 |
 | Apple Intelligence | On-device |
 | Ollama | localhost:11434 |
@@ -303,6 +319,7 @@ Python runs as a headless background service. Swift owns all UI.
 ```
 Python (LaunchAgent, headless)
   ├── Recording, transcription, grammar, clipboard, hotkeys
+  ├── Text-to-Speech (Qwen3-TTS via mlx-audio, in-process)
   └── IPC server at ~/.whisper/ipc.sock
 
 Swift (subprocess, all UI)
@@ -439,7 +456,7 @@ Verify:
 
 First run downloads the transcription model. Subsequent runs load from disk.
 
-**Qwen3-ASR** (default): downloads `mlx-community/Qwen3-ASR-1.7B-bf16` from Hugging Face on first use. `setup.sh` pre-downloads and warms up the model so the first real transcription is fast.
+**Qwen3-ASR** (default): downloads `mlx-community/Qwen3-ASR-1.7B-bf16` to `~/.whisper/models/` on first use. `setup.sh` pre-downloads and warms up the model so the first real transcription is fast.
 
 **WhisperKit**: downloads the Whisper model and starts a local server on first use. Install with `brew install whisperkit-cli`, then switch with `wh engine whisperkit`.
 
@@ -532,6 +549,10 @@ local-whisper/
     ├── utils.py            # Helpers
     ├── shortcuts.py        # Keyboard shortcuts
     ├── key_interceptor.py  # CGEvent tap
+    ├── tts_processor.py    # TTS shortcut handler (⌥T)
+    ├── tts/
+    │   ├── base.py         # TTSProvider abstract base
+    │   └── qwen3_tts.py    # Qwen3-TTS provider (MLX in-process)
     ├── engines/
     │   ├── base.py         # TranscriptionEngine abstract base
     │   ├── qwen3_asr.py    # Qwen3-ASR engine (MLX in-process)
@@ -555,7 +576,8 @@ Data stored in `~/.whisper/`:
 ├── last_raw.txt            # Before grammar fix
 ├── last_transcription.txt  # Final text
 ├── audio_history/          # Audio recording history
-└── history/                # Transcription history (last 100)
+├── history/                # Transcription history (last 100)
+└── models/                 # Cached ML models (Qwen3-ASR, Qwen3-TTS)
 ```
 
 </details>
@@ -564,7 +586,7 @@ Data stored in `~/.whisper/`:
 
 ## Credits
 
-[Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR) by [Qwen Team](https://qwen.ai) · [mlx-audio](https://github.com/Blaizzy/mlx-audio) · [WhisperKit](https://github.com/argmaxinc/WhisperKit) by [Argmax](https://www.argmaxinc.com) · [Apple Intelligence](https://www.apple.com/apple-intelligence/) · [Apple FM SDK](https://github.com/apple/python-apple-fm-sdk) · [Ollama](https://ollama.com) · [LM Studio](https://lmstudio.ai) · [SwiftUI](https://developer.apple.com/swiftui/)
+[Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR) · [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS) by [Qwen Team](https://qwen.ai) · [mlx-audio](https://github.com/Blaizzy/mlx-audio) · [WhisperKit](https://github.com/argmaxinc/WhisperKit) by [Argmax](https://www.argmaxinc.com) · [Apple Intelligence](https://www.apple.com/apple-intelligence/) · [Apple FM SDK](https://github.com/apple/python-apple-fm-sdk) · [Ollama](https://ollama.com) · [LM Studio](https://lmstudio.ai) · [SwiftUI](https://developer.apple.com/swiftui/)
 
 <details>
 <summary><strong>Legal notices</strong></summary>

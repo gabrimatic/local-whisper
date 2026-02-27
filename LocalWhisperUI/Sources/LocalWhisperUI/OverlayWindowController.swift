@@ -67,7 +67,7 @@ final class OverlayWindowController {
         switch phase {
         case .idle:
             hidePanel()
-        case .recording, .processing, .done, .error:
+        case .recording, .processing, .done, .error, .speaking:
             showPanel()
         }
     }

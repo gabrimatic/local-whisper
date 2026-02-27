@@ -56,6 +56,7 @@ LOCK_FILE = str(Path.home() / ".whisper" / "service.lock")
 LAUNCHAGENT_LABEL = "com.local-whisper"
 LAUNCHAGENT_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.local-whisper.plist"
 LOG_FILE = Path.home() / ".whisper" / "service.log"
+MODEL_DIR = Path.home() / ".whisper" / "models"
 
 
 def _is_running() -> tuple:
@@ -349,9 +350,9 @@ _LOCAL_WHISPER_UI_INFO_PLIST = """\
     <key>CFBundleName</key>
     <string>Local Whisper</string>
     <key>CFBundleVersion</key>
-    <string>1.0</string>
+    <string>1.3.0</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>1.3.0</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>LSUIElement</key>
@@ -575,6 +576,7 @@ def cmd_install():
     log_path = str(LOG_FILE)
     LAUNCHAGENT_PLIST.parent.mkdir(parents=True, exist_ok=True)
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
     # Include Homebrew and common tool paths since launchd has a minimal PATH
     path_value = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -594,6 +596,8 @@ def cmd_install():
     <dict>
         <key>PATH</key>
         <string>{path_value}</string>
+        <key>HF_HUB_CACHE</key>
+        <string>{MODEL_DIR}</string>
         <key>HF_HUB_OFFLINE</key>
         <string>1</string>
         <key>HF_HUB_DISABLE_TELEMETRY</key>
@@ -686,11 +690,11 @@ def cmd_uninstall():
     )
     print(f"  {C_GREEN}✓{C_RESET}  Login Item removed")
 
-    # Remove ~/.whisper (config, logs, backups)
+    # Remove ~/.whisper (config, logs, backups, and models)
     whisper_dir = Path.home() / ".whisper"
     if whisper_dir.exists():
         shutil.rmtree(whisper_dir)
-        print(f"  {C_GREEN}✓{C_RESET}  Removed ~/.whisper")
+        print(f"  {C_GREEN}✓{C_RESET}  Removed ~/.whisper (including cached models)")
 
     # Remove wh alias from shell configs
     alias_pattern = re.compile(r"^\s*#\s*Local Whisper CLI\s*$|^\s*alias wh=.*local-whisper.*$")
@@ -802,22 +806,36 @@ def cmd_update():
     else:
         print(f"  {C_GREEN}Done{C_RESET}")
 
-    # Step 3: check for Qwen3-ASR model updates (HF_HUB_OFFLINE=0 so HF can be reached)
-    print(f"\n  {C_BOLD}3/5  Checking Qwen3-ASR model...{C_RESET}")
+    # Step 3: check for model updates (HF_HUB_OFFLINE=0 so HF can be reached)
+    print(f"\n  {C_BOLD}3/5  Checking models...{C_RESET}")
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
     model_env = os.environ.copy()
     model_env["HF_HUB_OFFLINE"] = "0"
     model_env["HF_HUB_DISABLE_TELEMETRY"] = "1"
+    model_env["HF_HUB_CACHE"] = str(MODEL_DIR)
     result = subprocess.run(
         [
             python, "-c",
             "from mlx_audio.stt.utils import load_model; "
             "load_model('mlx-community/Qwen3-ASR-1.7B-bf16'); "
-            "print('Model up to date.')",
+            "print('Qwen3-ASR up to date.')",
         ],
         env=model_env,
     )
     if result.returncode != 0:
-        print(f"{C_YELLOW}  Model check failed - skipping{C_RESET}")
+        print(f"{C_YELLOW}  Qwen3-ASR model check failed - skipping{C_RESET}")
+
+    result = subprocess.run(
+        [
+            python, "-c",
+            "from mlx_audio.tts.utils import load_model; "
+            "load_model('mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16'); "
+            "print('Qwen3-TTS up to date.')",
+        ],
+        env=model_env,
+    )
+    if result.returncode != 0:
+        print(f"{C_YELLOW}  Qwen3-TTS model check failed - skipping{C_RESET}")
 
     # Step 4: rebuild LocalWhisperUI if sources newer than binary
     print(f"\n  {C_BOLD}4/5  Rebuilding LocalWhisperUI if needed...{C_RESET}")

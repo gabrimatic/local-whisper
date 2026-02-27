@@ -8,6 +8,7 @@ enum AppPhase: String, Codable, Sendable {
     case processing
     case done
     case error
+    case speaking
 }
 
 // MARK: - Config structs
@@ -185,6 +186,24 @@ struct ShortcutsConfig: Codable, Sendable {
     }
 }
 
+struct TTSConfig: Codable, Sendable {
+    var enabled: Bool
+    var provider: String
+    var speakShortcut: String
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, provider
+        case speakShortcut = "speak_shortcut"
+    }
+}
+
+struct Qwen3TTSConfig: Codable, Sendable {
+    var model: String
+    var speaker: String
+    var language: String
+    var instruct: String
+}
+
 struct AppConfig: Codable, Sendable {
     var hotkey: HotkeyConfig
     var transcription: TranscriptionConfig
@@ -198,12 +217,15 @@ struct AppConfig: Codable, Sendable {
     var ui: UIConfig
     var backup: BackupConfig
     var shortcuts: ShortcutsConfig
+    var tts: TTSConfig
+    var qwen3Tts: Qwen3TTSConfig
 
     enum CodingKeys: String, CodingKey {
-        case hotkey, transcription, whisper, grammar, ollama, audio, ui, backup, shortcuts
+        case hotkey, transcription, whisper, grammar, ollama, audio, ui, backup, shortcuts, tts
         case qwen3Asr = "qwen3_asr"
         case appleIntelligence = "apple_intelligence"
         case lmStudio = "lm_studio"
+        case qwen3Tts = "qwen3_tts"
     }
 
     static var defaultConfig: AppConfig {
@@ -256,6 +278,13 @@ struct AppConfig: Codable, Sendable {
                 proofread: "ctrl+shift+g",
                 rewrite: "ctrl+shift+r",
                 promptEngineer: "ctrl+shift+p"
+            ),
+            tts: TTSConfig(enabled: true, provider: "qwen3_tts", speakShortcut: "alt+t"),
+            qwen3Tts: Qwen3TTSConfig(
+                model: "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16",
+                speaker: "Vivian",
+                language: "English",
+                instruct: ""
             )
         )
     }

@@ -68,6 +68,7 @@ final class AppState {
         case .processing: return "Transcribing..."
         case .done: return "Done"
         case .error: return "Error"
+        case .speaking: return "Speaking..."
         }
     }
 
@@ -85,6 +86,8 @@ final class AppState {
             return "Copied!"
         case .error:
             return statusText.isEmpty ? "Error" : statusText
+        case .speaking:
+            return statusText.isEmpty ? "Speaking..." : statusText
         }
     }
 
@@ -95,6 +98,7 @@ final class AppState {
         case .processing: return "ellipsis"
         case .done: return "checkmark.circle"
         case .error: return "xmark.circle"
+        case .speaking: return "speaker.wave.2"
         }
     }
 

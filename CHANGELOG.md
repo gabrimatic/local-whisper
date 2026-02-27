@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3.0] - 2026-02-27
+
+### Added
+
+- Text to Speech: select text in any app and press ⌥T to hear it read aloud. Qwen3-TTS (1.7B, in-process MLX) synthesizes speech entirely on-device with no network required.
+- Multilingual TTS with auto language detection across 10 languages: Chinese, English, Japanese, Korean, German, French, Spanish, Italian, Portuguese, and Russian.
+- Nine preset voices: Aiden (default), Ryan, Serena, Vivian, Ono_Anna, Sohee, Uncle_Fu, Dylan, and Eric. Selectable from General settings.
+- Overlay shows "Generating speech..." while the model synthesizes, then "Speaking..." once audio starts playing.
+- Press ⌥T again, Esc, or start a recording to stop speech at any point, including during model generation.
+- Voice and language pickers in the TTS section of the General settings tab.
+- Qwen3-TTS model downloaded automatically during `setup.sh` and stored in `~/.whisper/models/`. Removed cleanly by `wh uninstall`.
+
+---
+
 ## [1.2.0] - 2026-02-26
 
 ### Changed
