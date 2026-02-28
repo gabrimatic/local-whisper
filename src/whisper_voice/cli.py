@@ -1272,6 +1272,7 @@ def _print_help():
     """Print grouped help listing."""
     groups = [
         ("Service", [
+            ("wh status",          "Running? PID, engine, backend, config path"),
             ("wh start",           "Launch the service"),
             ("wh stop",            "Stop the service"),
             ("wh restart",         "Restart (rebuilds UI if sources changed)"),
@@ -1286,9 +1287,10 @@ def _print_help():
             ("wh engine [name]",   "Show or switch transcription engine"),
             ("wh backend [name]",  "Show or switch grammar backend"),
             ("wh replace",         "Manage text replacement rules"),
-            ("wh config [edit]",   "Interactive config editor, or open in $EDITOR"),
+            ("wh config [edit|path]", "Interactive config editor, open in $EDITOR, or print path"),
         ]),
         ("Maintenance", [
+            ("wh version",         "Show version"),
             ("wh update",          "Pull, update deps, rebuild, restart"),
             ("wh doctor [--fix]",  "Check system health, auto-repair"),
             ("wh build",           "Rebuild Swift UI"),
