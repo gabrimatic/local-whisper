@@ -248,6 +248,8 @@ struct GeneralSettingsView: View {
                             Text("Emma — British female").tag("bf_emma")
                             Text("Adam — American male").tag("am_adam")
                             Text("Echo — American male").tag("am_echo")
+                            Text("Eric — American male").tag("am_eric")
+                            Text("Liam — American male").tag("am_liam")
                             Text("Daniel — British male").tag("bm_daniel")
                             Text("George — British male").tag("bm_george")
                         }

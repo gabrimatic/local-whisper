@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Auto-paste at cursor: when enabled in General settings (`auto_paste`), transcribed text is pasted directly at the active cursor position after transcription. Your clipboard is untouched. Disabled by default.
 - Text to Speech: select text in any app and press ⌥T to hear it read aloud. Kokoro-82M synthesizes speech entirely on-device with no network required.
-- 54 voice presets with prefix-encoded language and gender. Default voice: `af_sky`. Selectable from General settings.
+- Multiple voice presets with prefix-encoded language and gender. Default voice: `af_sky`. Selectable from General settings.
 - Overlay shows "Generating speech..." while the model synthesizes, then "Speaking..." once audio starts playing.
 - Press ⌥T again, Esc, or start a recording to stop speech at any point, including during model generation.
 - Kokoro TTS model downloaded automatically during `setup.sh` and stored in `~/.whisper/models/`. Removed cleanly by `wh uninstall`.

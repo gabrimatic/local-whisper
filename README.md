@@ -7,7 +7,8 @@
 
 **On-device voice transcription, grammar correction, and text-to-speech for macOS. Private, fast, runs on MLX.**
 
-Double-tap, speak, tap to stop. Text is ready. Multiple engines, pluggable grammar, TTS with 14 voices. All MLX-native on Apple Silicon. Nothing leaves your Mac.
+Double-tap, speak, tap to stop. Text is ready. Multiple engines, pluggable grammar, all MLX-native on Apple Silicon. Nothing leaves your Mac.
+Select text, hit ⌥T, hear it read aloud. Multiple voices, streaming playback, same deal.
 
 <p align="center">
   <img src="assets/hero.png" width="600" alt="Local Whisper recording in Notes">
@@ -42,7 +43,7 @@ One command. Installs deps, downloads models, builds the UI, sets up auto-start,
 
 - **On-device transcription** via MLX. Multiple engines, up to 20 minutes per recording.
 - **Grammar correction** with pluggable backends: Apple Intelligence, Ollama, LM Studio. Or disable it.
-- **Text-to-speech** on any selected text. 14 on-device voice presets via Kokoro MLX.
+- **Text-to-speech** reads any selected text aloud. Works in any app, multiple voices, streaming playback, fully offline via Kokoro MLX.
 - **Text replacements** for custom spoken-to-correct mappings.
 - **Audio processing**: VAD, silence trimming, noise reduction, normalization.
 - **Keyboard shortcuts** for proofreading, rewriting, prompt engineering on selected text.
@@ -79,7 +80,7 @@ Switch via Settings, `wh engine <name>`, or config.
 
 ### Qwen3-ASR (default)
 
-In-process MLX. No server, no network. Long audio native.
+In-process via [qwen3-asr-mlx](https://github.com/gabrimatic/qwen3-asr-mlx). No server, no network. Long audio native.
 
 | Setting | Default | Notes |
 |---------|---------|-------|
@@ -98,6 +99,39 @@ Whisper on Apple Neural Engine via [Argmax](https://github.com/argmaxinc/Whisper
 | `base` / `base.en` | |
 | `small` / `small.en` | |
 | `whisper-large-v3-v20240930` | Best accuracy (default) |
+
+---
+
+## Text-to-Speech
+
+Kokoro-82M via [kokoro-mlx](https://github.com/gabrimatic/kokoro-mlx). Runs in-process, no server, no network. Streaming playback starts before full synthesis completes.
+
+**Usage:**
+- **⌥T** on selected text in any app. Press ⌥T again, Esc, or start a recording to stop.
+- **CLI:** `wh whisper "text"`, `wh whisper --voice af_bella "text"`, or pipe stdin with `echo "hello" | wh whisper`.
+
+The overlay shows "Generating speech..." during synthesis, then "Speaking..." during playback. The shortcut is configurable via `tts.speak_shortcut` in config.
+
+### Voices
+
+Multiple presets available. Default is Sky (`af_sky`).
+
+| Voice | ID | Type |
+|-------|-----|------|
+| Heart | `af_heart` | American female |
+| Bella | `af_bella` | American female |
+| Nova | `af_nova` | American female |
+| Sky | `af_sky` (default) | American female |
+| Sarah | `af_sarah` | American female |
+| Nicole | `af_nicole` | American female |
+| Alice | `bf_alice` | British female |
+| Emma | `bf_emma` | British female |
+| Adam | `am_adam` | American male |
+| Echo | `am_echo` | American male |
+| Eric | `am_eric` | American male |
+| Liam | `am_liam` | American male |
+| Daniel | `bm_daniel` | British male |
+| George | `bm_george` | British male |
 
 ---
 
@@ -327,10 +361,7 @@ speak_shortcut = "alt+t"
 
 [kokoro_tts]
 model = "mlx-community/Kokoro-82M-bf16"
-voice = "af_sky"           # American female: af_heart, af_bella, af_nova, af_sky, af_sarah, af_nicole
-                           # British female:  bf_alice, bf_emma
-                           # American male:   am_adam, am_echo, am_eric, am_liam
-                           # British male:    bm_daniel, bm_george
+voice = "af_sky"           # See voice table in README for all available presets
 ```
 
 </details>
@@ -590,7 +621,7 @@ Data stored in `~/.whisper/`:
 
 ## Credits
 
-[Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR) by [Qwen Team](https://qwen.ai) · [Kokoro-82M](https://github.com/remsky/Kokoro-FastAPI) · [WhisperKit](https://github.com/argmaxinc/WhisperKit) by [Argmax](https://www.argmaxinc.com) · [Apple Intelligence](https://www.apple.com/apple-intelligence/) · [Apple FM SDK](https://github.com/apple/python-apple-fm-sdk) · [Ollama](https://ollama.com) · [LM Studio](https://lmstudio.ai) · [SwiftUI](https://developer.apple.com/swiftui/)
+[qwen3-asr-mlx](https://github.com/gabrimatic/qwen3-asr-mlx) (MLX port of Qwen3-ASR) · [kokoro-mlx](https://github.com/gabrimatic/kokoro-mlx) (MLX port of Kokoro-82M) · [Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR) by [Qwen Team](https://qwen.ai) · [Kokoro-82M](https://github.com/remsky/Kokoro-FastAPI) · [WhisperKit](https://github.com/argmaxinc/WhisperKit) by [Argmax](https://www.argmaxinc.com) · [Apple Intelligence](https://www.apple.com/apple-intelligence/) · [Apple FM SDK](https://github.com/apple/python-apple-fm-sdk) · [Ollama](https://ollama.com) · [LM Studio](https://lmstudio.ai) · [SwiftUI](https://developer.apple.com/swiftui/)
 
 <details>
 <summary><strong>Legal notices</strong></summary>
