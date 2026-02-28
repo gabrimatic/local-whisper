@@ -680,8 +680,15 @@ def _interactive_config() -> None:
     VLINES  = 14    # content rows visible in viewport
     LW      = 18    # label column width
 
-    BD = "\033[1m"; DM = "\033[2m"; GN = "\033[92m"; CY = "\033[96m"; YL = "\033[93m"
-    RD = "\033[91m"; RS = "\033[0m"; HIDE = "\033[?25l"; SHOW = "\033[?25h"
+    BD = "\033[1m"
+    DM = "\033[2m"
+    GN = "\033[92m"
+    CY = "\033[96m"
+    YL = "\033[93m"
+    RD = "\033[91m"
+    RS = "\033[0m"
+    HIDE = "\033[?25l"
+    SHOW = "\033[?25h"
 
     stdin_fd = sys.stdin.fileno()
     old_tty  = termios.tcgetattr(stdin_fd)
@@ -768,8 +775,9 @@ def _interactive_config() -> None:
 
     def _save(item) -> bool:
         try:
-            from whisper_voice.config import _replace_in_section, _serialize_toml_value
             import fcntl as _fl
+
+            from whisper_voice.config import _replace_in_section, _serialize_toml_value
             fd2 = os.open(str(config_path), os.O_RDWR | os.O_CREAT, 0o644)
             try:
                 _fl.flock(fd2, _fl.LOCK_EX)
