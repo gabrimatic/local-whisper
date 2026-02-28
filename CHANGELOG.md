@@ -8,13 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Text to Speech: select text in any app and press ⌥T to hear it read aloud. Qwen3-TTS (1.7B, in-process MLX) synthesizes speech entirely on-device with no network required.
-- Multilingual TTS with auto language detection across 10 languages: Chinese, English, Japanese, Korean, German, French, Spanish, Italian, Portuguese, and Russian.
-- Nine preset voices: Aiden (default), Ryan, Serena, Vivian, Ono_Anna, Sohee, Uncle_Fu, Dylan, and Eric. Selectable from General settings.
+- Auto-paste at cursor: when enabled in General settings (`auto_paste`), transcribed text is pasted directly at the active cursor position after transcription. Your clipboard is untouched. Disabled by default.
+- Text to Speech: select text in any app and press ⌥T to hear it read aloud. Kokoro-82M synthesizes speech entirely on-device with no network required.
+- 54 voice presets with prefix-encoded language and gender. Default voice: `af_sky`. Selectable from General settings.
 - Overlay shows "Generating speech..." while the model synthesizes, then "Speaking..." once audio starts playing.
 - Press ⌥T again, Esc, or start a recording to stop speech at any point, including during model generation.
-- Voice and language pickers in the TTS section of the General settings tab.
-- Qwen3-TTS model downloaded automatically during `setup.sh` and stored in `~/.whisper/models/`. Removed cleanly by `wh uninstall`.
+- Kokoro TTS model downloaded automatically during `setup.sh` and stored in `~/.whisper/models/`. Removed cleanly by `wh uninstall`.
 
 ---
 
@@ -22,11 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Apple Intelligence backend now uses Apple's official Foundation Models Python SDK (`apple-fm-sdk`) instead of a custom Swift CLI bridge. Same on-device grammar correction, fewer moving parts.
-
-### Removed
-
-- Swift CLI bridge for Apple Intelligence (`apple-ai-cli`). The `swift build` step for the grammar backend is no longer needed during setup.
+- Apple Intelligence backend runs on-device via Apple's official Foundation Models Python SDK (`apple-fm-sdk`).
 
 ---
 
@@ -49,15 +44,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Default Qwen3-ASR model upgraded from 1.7B-8bit to 1.7B-bf16 for higher quality output.
-- Setup no longer installs WhisperKit by default; install it manually if needed.
+- Default Qwen3-ASR model is the 1.7B-bf16 variant for maximum transcription quality.
+- WhisperKit is an optional engine. Install manually with `brew install whisperkit-cli` if needed.
 - Text fields in settings save on Enter or focus loss instead of on every keystroke.
 - Repetition penalty (1.2) added to Qwen3-ASR to reduce hallucination on short or silent recordings.
-
-### Removed
-
-- Python GUI layer (the previous rumps menu bar, AppKit recording overlay, and NSPanel settings window).
-- rumps dependency.
 
 ---
 
@@ -76,7 +66,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Default transcription engine is now Qwen3-ASR instead of WhisperKit. Existing installs will continue using whichever engine is set in config; new installs default to Qwen3-ASR.
+- Qwen3-ASR is the default transcription engine. New installs use it out of the box; the engine is configurable via config or Settings.
 - Long recordings (over 28 seconds) are only split into segments when using WhisperKit. Qwen3-ASR handles them as a single pass.
 - Completion notifications are now off by default.
 - Settings window reorganized from 6 tabs to 3 (General, Advanced, About). Everyday options in General, power-user tuning in Advanced.

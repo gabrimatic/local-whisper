@@ -52,5 +52,7 @@ htmlcov/
 *.xcuserstate
 xcuserdata/
 
-# Reviews
+# Reviews and scratch
 .reviews/
+.review/
+.scratchpad/

@@ -167,6 +167,15 @@ struct GeneralSettingsView: View {
                             appState.ipcClient?.sendConfigUpdate(section: "ui", key: "notifications_enabled", value: newValue)
                         }
                     ))
+
+                    Toggle("Auto-paste at cursor", isOn: Binding(
+                        get: { appState.config.ui.autoPaste },
+                        set: { newValue in
+                            appState.config.ui.autoPaste = newValue
+                            appState.ipcClient?.sendConfigUpdate(section: "ui", key: "auto_paste", value: newValue)
+                        }
+                    ))
+                    .accessibilityHint("When enabled, transcribed text is pasted directly at the cursor. Your clipboard is left unchanged.")
                 }
 
                 Section("Shortcuts") {
@@ -223,41 +232,24 @@ struct GeneralSettingsView: View {
                         }
 
                         Picker("Voice", selection: Binding(
-                            get: { appState.config.qwen3Tts.speaker },
+                            get: { appState.config.kokoroTts.voice },
                             set: { newValue in
-                                appState.config.qwen3Tts.speaker = newValue
-                                appState.ipcClient?.sendConfigUpdate(section: "qwen3_tts", key: "speaker", value: newValue)
+                                appState.config.kokoroTts.voice = newValue
+                                appState.ipcClient?.sendConfigUpdate(section: "kokoro_tts", key: "voice", value: newValue)
                             }
                         )) {
-                            Text("Aiden (American male)").tag("Aiden")
-                            Text("Ryan (English male)").tag("Ryan")
-                            Text("Serena (Chinese female)").tag("Serena")
-                            Text("Vivian (Chinese female)").tag("Vivian")
-                            Text("Ono_Anna (Japanese female)").tag("Ono_Anna")
-                            Text("Sohee (Korean female)").tag("Sohee")
-                            Text("Uncle_Fu (Chinese male)").tag("Uncle_Fu")
-                            Text("Dylan (Beijing male)").tag("Dylan")
-                            Text("Eric (Sichuan male)").tag("Eric")
-                        }
-
-                        Picker("Language", selection: Binding(
-                            get: { appState.config.qwen3Tts.language },
-                            set: { newValue in
-                                appState.config.qwen3Tts.language = newValue
-                                appState.ipcClient?.sendConfigUpdate(section: "qwen3_tts", key: "language", value: newValue)
-                            }
-                        )) {
-                            Text("Auto-detect").tag("Auto")
-                            Text("English").tag("English")
-                            Text("Chinese").tag("Chinese")
-                            Text("Japanese").tag("Japanese")
-                            Text("Korean").tag("Korean")
-                            Text("German").tag("German")
-                            Text("French").tag("French")
-                            Text("Spanish").tag("Spanish")
-                            Text("Italian").tag("Italian")
-                            Text("Portuguese").tag("Portuguese")
-                            Text("Russian").tag("Russian")
+                            Text("Heart — American female").tag("af_heart")
+                            Text("Bella — American female").tag("af_bella")
+                            Text("Nova — American female").tag("af_nova")
+                            Text("Sky — American female").tag("af_sky")
+                            Text("Sarah — American female").tag("af_sarah")
+                            Text("Nicole — American female").tag("af_nicole")
+                            Text("Alice — British female").tag("bf_alice")
+                            Text("Emma — British female").tag("bf_emma")
+                            Text("Adam — American male").tag("am_adam")
+                            Text("Echo — American male").tag("am_echo")
+                            Text("Daniel — British male").tag("bm_daniel")
+                            Text("George — British male").tag("bm_george")
                         }
 
                         HStack {

@@ -71,7 +71,7 @@ struct AboutView: View {
 
                     creditRow(category: "Speech", name: "Qwen3-ASR by Alibaba Qwen Team", url: "https://github.com/QwenLM/Qwen3-ASR")
                     creditRow(category: "Speech", name: "WhisperKit by Argmax", url: "https://github.com/argmaxinc/WhisperKit")
-                    creditRow(category: "Speech", name: "mlx-audio by Prince Canuma", url: "https://github.com/Blaizzy/mlx-audio")
+                    creditRow(category: "Speech", name: "Kokoro-82M by Kokoro Team", url: "https://github.com/remsky/Kokoro-FastAPI")
                     creditRow(category: "Grammar", name: "Apple Foundation Models", url: "https://developer.apple.com/documentation/foundationmodels")
                     creditRow(category: "LLM", name: "Ollama", url: "https://ollama.com")
                     creditRow(category: "LLM", name: "LM Studio", url: "https://lmstudio.ai")

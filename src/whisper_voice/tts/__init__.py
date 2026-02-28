@@ -16,17 +16,17 @@ class TTSProviderInfo:
     factory: Callable[[], TTSProvider]
 
 
-def _qwen3_tts_factory() -> TTSProvider:
-    from .qwen3_tts import Qwen3TTSProvider
-    return Qwen3TTSProvider()
+def _kokoro_factory() -> TTSProvider:
+    from .kokoro_tts import KokoroTTSProvider
+    return KokoroTTSProvider()
 
 
 TTS_REGISTRY: Dict[str, TTSProviderInfo] = {
-    "qwen3_tts": TTSProviderInfo(
-        id="qwen3_tts",
-        name="Qwen3-TTS",
-        description="On-device TTS via mlx-audio (Apple Silicon)",
-        factory=_qwen3_tts_factory,
+    "kokoro": TTSProviderInfo(
+        id="kokoro",
+        name="Kokoro",
+        description="On-device TTS via kokoro-mlx (Apple Silicon, fast English)",
+        factory=_kokoro_factory,
     ),
 }
 

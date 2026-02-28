@@ -32,8 +32,10 @@ dependencies = [
     "pynput>=1.7.0",
     "pyobjc-framework-Cocoa>=8.0",
     "pyobjc-framework-Quartz>=8.0",
-    "mlx-audio>=0.3.0",
+    "qwen3-asr-mlx @ git+https://github.com/gabrimatic/qwen3-asr-mlx.git",
+    "kokoro-mlx @ git+https://github.com/gabrimatic/kokoro-mlx.git",
     "soundfile>=0.12.0",
+    "misaki[en]>=0.9.4",
 ]
 
 [project.optional-dependencies]

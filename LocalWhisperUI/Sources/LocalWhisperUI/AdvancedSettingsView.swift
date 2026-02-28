@@ -888,16 +888,16 @@ struct AdvancedSettingsView: View {
 
             LabeledContent("Model") {
                 DeferredTextField(
-                    label: "mlx-community/Qwen3-TTS-...",
-                    initialValue: appState.config.qwen3Tts.model
+                    label: "mlx-community/Kokoro-...",
+                    initialValue: appState.config.kokoroTts.model
                 ) { value in
-                    appState.config.qwen3Tts.model = value
-                    appState.ipcClient?.sendConfigUpdate(section: "qwen3_tts", key: "model", value: value)
+                    appState.config.kokoroTts.model = value
+                    appState.ipcClient?.sendConfigUpdate(section: "kokoro_tts", key: "model", value: value)
                 }
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 300)
             }
-            .help("Qwen3-TTS model from mlx-community. VoiceDesign variants use free-form voice descriptions. CustomVoice variants use preset speakers.")
+            .help("Kokoro model from mlx-community. The default mlx-community/Kokoro-82M-bf16 runs fully offline after setup.")
 
             RestartNote()
         }

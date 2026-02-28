@@ -183,16 +183,16 @@ class App:
             "status_text": status_text if status_text is not None else self._current_status,
         })
 
-    def _send_state_done(self, text: str):
+    def _send_state_done(self, text: str, status: str = "Copied!"):
         """Send done state with final text."""
-        self._current_status = "Copied!"
+        self._current_status = status
         self.ipc.send({
             "type": "state_update",
             "phase": "done",
             "duration_seconds": 0.0,
             "rms_level": 0.0,
             "text": text,
-            "status_text": "Copied!",
+            "status_text": status,
         })
 
     def _send_state_error(self, msg: str):
@@ -297,6 +297,7 @@ class App:
                 "overlay_opacity": cfg.ui.overlay_opacity,
                 "sounds_enabled": cfg.ui.sounds_enabled,
                 "notifications_enabled": cfg.ui.notifications_enabled,
+                "auto_paste": cfg.ui.auto_paste,
             },
             "backup": {
                 "directory": str(cfg.backup.directory),
@@ -307,6 +308,15 @@ class App:
                 "proofread": cfg.shortcuts.proofread,
                 "rewrite": cfg.shortcuts.rewrite,
                 "prompt_engineer": cfg.shortcuts.prompt_engineer,
+            },
+            "tts": {
+                "enabled": cfg.tts.enabled,
+                "provider": cfg.tts.provider,
+                "speak_shortcut": cfg.tts.speak_shortcut,
+            },
+            "kokoro_tts": {
+                "model": cfg.kokoro_tts.model,
+                "voice": cfg.kokoro_tts.voice,
             },
         }})
 
@@ -1028,8 +1038,11 @@ class App:
             self._check_grammar_connection()
             final_text = self._apply_grammar(raw_text)
 
-            # 4. Copy to clipboard
-            clipboard_ok = self._copy_to_clipboard(final_text, show_error=False)
+            # 4. Copy to clipboard / auto-paste
+            if config.ui.auto_paste:
+                clipboard_ok = self._paste_text_at_cursor(final_text)
+            else:
+                clipboard_ok = self._copy_to_clipboard(final_text, show_error=False)
 
             # 5. Save backup
             self.backup.save_text(final_text)
@@ -1077,8 +1090,12 @@ class App:
         """Display success state."""
         if self.config.ui.sounds_enabled:
             play_sound("Glass")
-        log(f"Copied: {truncate(text, PREVIEW_TRUNCATE)}", "OK")
-        self._send_state_done(text)
+        if self.config.ui.auto_paste:
+            log(f"Pasted: {truncate(text, PREVIEW_TRUNCATE)}", "OK")
+            self._send_state_done(text, status="Pasted!")
+        else:
+            log(f"Copied: {truncate(text, PREVIEW_TRUNCATE)}", "OK")
+            self._send_state_done(text, status="Copied!")
         self._send_history_update()
         threading.Timer(1.5, self._reset_to_idle).start()
 
@@ -1161,6 +1178,42 @@ class App:
                 self._show_error("Copy failed", f"Copy failed: {e}")
             return False
 
+    def _paste_text_at_cursor(self, text: str) -> bool:
+        """Paste text at the current cursor position without permanently modifying the clipboard.
+
+        Saves the current clipboard, temporarily puts the text in it, simulates Cmd+V,
+        then restores the original clipboard content.
+        """
+        try:
+            saved = subprocess.run(['pbpaste'], capture_output=True, timeout=CLIPBOARD_TIMEOUT)
+            saved_content = saved.stdout if saved.returncode == 0 else None
+
+            subprocess.run(['pbcopy'], input=text.encode(), check=True, timeout=CLIPBOARD_TIMEOUT)
+            time.sleep(0.05)
+
+            result = subprocess.run(
+                ['osascript', '-e', 'tell application "System Events" to keystroke "v" using command down'],
+                capture_output=True, timeout=CLIPBOARD_TIMEOUT
+            )
+            if result.returncode != 0:
+                log(f"Auto-paste keystroke failed (code={result.returncode})", "ERR")
+                if saved_content is not None:
+                    subprocess.run(['pbcopy'], input=saved_content, timeout=CLIPBOARD_TIMEOUT)
+                return False
+
+            time.sleep(0.4)
+
+            if saved_content is not None:
+                restore = subprocess.run(['pbcopy'], input=saved_content, timeout=CLIPBOARD_TIMEOUT)
+                if restore.returncode != 0:
+                    log("Auto-paste: clipboard restore failed", "WARN")
+
+            log("Auto-pasted at cursor", "OK")
+            return True
+        except Exception as e:
+            log(f"Auto-paste failed: {e}", "ERR")
+            return False
+
     # ------------------------------------------------------------------
     # Retry / copy last
     # ------------------------------------------------------------------
@@ -1190,7 +1243,11 @@ class App:
                 self._check_grammar_connection()
                 final_text = self._apply_grammar(raw_text)
 
-                if not self._copy_to_clipboard(final_text):
+                if self.config.ui.auto_paste:
+                    ok = self._paste_text_at_cursor(final_text)
+                else:
+                    ok = self._copy_to_clipboard(final_text)
+                if not ok:
                     return
 
                 self._show_success(final_text)

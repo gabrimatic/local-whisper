@@ -30,7 +30,6 @@ def _import_engine_registry():
         "Quartz": None,
         "mlx": None,
         "mlx.core": None,
-        "mlx_audio": None,
     }
     with patch.dict("sys.modules", stubs):
         from whisper_voice.engines import ENGINE_REGISTRY, create_engine
@@ -60,7 +59,6 @@ def _import_language_map():
     stubs = {
         "mlx": None,
         "mlx.core": None,
-        "mlx_audio": None,
         "sounddevice": None,
         "AppKit": None,
         "Foundation": None,

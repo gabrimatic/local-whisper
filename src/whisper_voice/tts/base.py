@@ -24,8 +24,7 @@ class TTSProvider(ABC):
 
     @abstractmethod
     def speak(self, text: str, stop_event: threading.Event,
-              speaker: str = "Vivian", language: str = "English",
-              instruct: str = "",
+              speaker: str = "af_sky",
               on_playback_start: Optional[Callable] = None) -> None:
         """
         Synthesize and play text. Blocks until done or stop_event is set.

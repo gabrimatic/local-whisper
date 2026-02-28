@@ -25,7 +25,7 @@ cd local-whisper
 ./setup.sh
 ```
 
-`setup.sh` handles everything: Python venv, dependencies, Qwen3-ASR and Qwen3-TTS model downloads, Swift UI app build, LaunchAgent for auto-start, Accessibility permission, and the `wh` shell alias.
+`setup.sh` handles everything: Python venv, dependencies, Qwen3-ASR and Kokoro TTS model downloads, Swift UI app build, LaunchAgent for auto-start, Accessibility permission, and the `wh` shell alias.
 
 | Action | Key |
 |--------|-----|
@@ -90,13 +90,13 @@ ollama serve
 - **Real-time duration** display while recording
 - **Floating overlay** showing status (recording, processing, copied) with macOS 26 Liquid Glass design
 - **Automatic grammar correction** that removes filler words and fixes punctuation
-- **Clipboard integration** for immediate paste
+- **Clipboard integration** for immediate paste, with optional auto-paste directly at the cursor (preserves your clipboard)
 - **Settings window** with full GUI for all config options
 - **Auto-backup** of every recording and transcription
 - **Hallucination filter** that blocks common false transcription outputs
 - **Vocabulary prompt presets** for technical or dictation use cases (WhisperKit engine)
 - **Retry function** if transcription fails
-- **Text to Speech**: select text in any app and press ⌥T; Qwen3-TTS reads it aloud with multilingual auto-detection across 10 languages. Press ⌥T again or Esc to stop at any time.
+- **Text to Speech**: select text in any app and press ⌥T; Kokoro reads it aloud with fast, on-device synthesis via Kokoro-82M. Press ⌥T again or Esc to stop at any time.
 
 ### Keyboard Shortcuts
 
@@ -273,6 +273,7 @@ show_overlay = true
 overlay_opacity = 0.92
 sounds_enabled = true
 notifications_enabled = false
+auto_paste = false      # paste at cursor without overwriting your clipboard
 
 [shortcuts]
 enabled = true
@@ -282,14 +283,12 @@ prompt_engineer = "ctrl+shift+p"
 
 [tts]
 enabled = true
-provider = "qwen3_tts"
+provider = "kokoro"
 speak_shortcut = "alt+t"
 
-[qwen3_tts]
-model = "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16"
-speaker = "Aiden"   # Aiden, Ryan, Serena, Vivian, Ono_Anna, Sohee, Uncle_Fu, Dylan, Eric
-language = "Auto"   # Auto, English, Chinese, Japanese, Korean, German, French, Spanish, Italian, Portuguese, Russian
-instruct = ""       # optional speaking style, e.g. "calm and measured"
+[kokoro_tts]
+model = "mlx-community/Kokoro-82M-bf16"
+voice = "af_sky"   # af_heart, af_bella, af_nova, af_sky, af_sarah, af_nicole, bf_alice, bf_emma, am_adam, am_echo, am_eric, am_liam, bm_daniel, bm_george
 ```
 
 </details>
@@ -303,7 +302,7 @@ Everything runs on your Mac. Zero data leaves your machine.
 | Component | Location |
 |-----------|----------|
 | Qwen3-ASR | In-process (no network), cached at `~/.whisper/models/` |
-| Qwen3-TTS | In-process (no network), cached at `~/.whisper/models/` |
+| Kokoro TTS | In-process (no network), cached at `~/.whisper/models/` |
 | WhisperKit | localhost:50060 |
 | Apple Intelligence | On-device |
 | Ollama | localhost:11434 |
@@ -319,7 +318,7 @@ Python runs as a headless background service. Swift owns all UI.
 ```
 Python (LaunchAgent, headless)
   ├── Recording, transcription, grammar, clipboard, hotkeys
-  ├── Text-to-Speech (Qwen3-TTS via mlx-audio, in-process)
+  ├── Text-to-Speech (Kokoro-82M via kokoro-mlx, in-process)
   └── IPC server at ~/.whisper/ipc.sock
 
 Swift (subprocess, all UI)
@@ -356,7 +355,8 @@ Swift (subprocess, all UI)
 └──────────────────────────┬────────────────────────────────┘
                            ▼
 ┌───────────────────────────────────────────────────────────┐
-│  Clipboard (⌘V to paste) · Saved to ~/.whisper/           │
+│  Clipboard · Saved to ~/.whisper/                         │
+│  (auto_paste=true: pasted at cursor, clipboard preserved) │
 └───────────────────────────────────────────────────────────┘
 ```
 
@@ -552,7 +552,7 @@ local-whisper/
     ├── tts_processor.py    # TTS shortcut handler (⌥T)
     ├── tts/
     │   ├── base.py         # TTSProvider abstract base
-    │   └── qwen3_tts.py    # Qwen3-TTS provider (MLX in-process)
+    │   └── kokoro_tts.py   # Kokoro TTS provider (MLX in-process)
     ├── engines/
     │   ├── base.py         # TranscriptionEngine abstract base
     │   ├── qwen3_asr.py    # Qwen3-ASR engine (MLX in-process)
@@ -577,7 +577,7 @@ Data stored in `~/.whisper/`:
 ├── last_transcription.txt  # Final text
 ├── audio_history/          # Audio recording history
 ├── history/                # Transcription history (last 100)
-└── models/                 # Cached ML models (Qwen3-ASR, Qwen3-TTS)
+└── models/                 # Cached ML models (Qwen3-ASR, Kokoro TTS)
 ```
 
 </details>
@@ -586,7 +586,7 @@ Data stored in `~/.whisper/`:
 
 ## Credits
 
-[Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR) · [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS) by [Qwen Team](https://qwen.ai) · [mlx-audio](https://github.com/Blaizzy/mlx-audio) · [WhisperKit](https://github.com/argmaxinc/WhisperKit) by [Argmax](https://www.argmaxinc.com) · [Apple Intelligence](https://www.apple.com/apple-intelligence/) · [Apple FM SDK](https://github.com/apple/python-apple-fm-sdk) · [Ollama](https://ollama.com) · [LM Studio](https://lmstudio.ai) · [SwiftUI](https://developer.apple.com/swiftui/)
+[Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR) by [Qwen Team](https://qwen.ai) · [Kokoro-82M](https://github.com/remsky/Kokoro-FastAPI) · [WhisperKit](https://github.com/argmaxinc/WhisperKit) by [Argmax](https://www.argmaxinc.com) · [Apple Intelligence](https://www.apple.com/apple-intelligence/) · [Apple FM SDK](https://github.com/apple/python-apple-fm-sdk) · [Ollama](https://ollama.com) · [LM Studio](https://lmstudio.ai) · [SwiftUI](https://developer.apple.com/swiftui/)
 
 <details>
 <summary><strong>Legal notices</strong></summary>

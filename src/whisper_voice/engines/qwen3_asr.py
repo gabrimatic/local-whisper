@@ -3,12 +3,11 @@
 """
 Qwen3-ASR transcription engine for Local Whisper.
 
-Uses mlx-audio to run Qwen3-ASR locally via MLX, supporting up to 20 minutes
+Uses qwen3-asr-mlx to run Qwen3-ASR locally via MLX, supporting up to 20 minutes
 of audio natively without chunking.
 """
 
 import concurrent.futures
-import tempfile
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -36,7 +35,7 @@ LANGUAGE_MAP = {
 
 
 class Qwen3ASREngine(TranscriptionEngine):
-    """Transcription engine backed by Qwen3-ASR via mlx-audio."""
+    """Transcription engine backed by Qwen3-ASR via qwen3-asr-mlx."""
 
     def __init__(self):
         self._model = None
@@ -58,25 +57,18 @@ class Qwen3ASREngine(TranscriptionEngine):
 
         log(f"Loading Qwen3-ASR model ({model_name})...", "INFO")
         try:
-            from mlx_audio.stt.utils import load_model
-            self._model = load_model(model_name)
+            from qwen3_asr_mlx import Qwen3ASR
+            self._model = Qwen3ASR.from_pretrained(model_name)
         except ImportError:
-            log("mlx-audio is not installed. Run: pip install mlx-audio", "ERR")
+            log("qwen3-asr-mlx is not installed. Run: pip install qwen3-asr-mlx", "ERR")
             return False
         except Exception as e:
             log(f"Qwen3-ASR failed to load: {e}", "ERR")
             return False
 
-        # Warm up the MLX compute graph so the first real transcription is fast.
         log("Warming up Qwen3-ASR...", "INFO")
         try:
-            import numpy as np
-            import soundfile as sf
-
-            silence = np.zeros(8000, dtype=np.float32)  # 0.5s at 16kHz
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
-                sf.write(tmp.name, silence, 16000)
-                self._model.generate(tmp.name, max_tokens=1)
+            self._model.warm_up()
         except Exception:
             pass  # Warm-up failure is non-fatal
 
@@ -94,32 +86,18 @@ class Qwen3ASREngine(TranscriptionEngine):
             config = get_config()
             qwen3_cfg = getattr(config, "qwen3_asr", None)
             language = getattr(qwen3_cfg, "language", "auto") if qwen3_cfg else "auto"
-            prefill_step_size = getattr(qwen3_cfg, "prefill_step_size", 4096) if qwen3_cfg else 4096
             timeout = getattr(qwen3_cfg, "timeout", self._timeout) if qwen3_cfg else self._timeout
-
-            # Compute a duration-scaled token budget to avoid wasteful generation.
-            max_tokens = 8192
-            try:
-                import soundfile as sf
-                info = sf.info(str(path))
-                max_tokens = max(256, int(info.duration * 50))
-            except Exception:
-                pass  # Fall back to the safe default
 
             temperature = getattr(qwen3_cfg, "temperature", 0.0) if qwen3_cfg else 0.0
             top_p = getattr(qwen3_cfg, "top_p", 1.0) if qwen3_cfg else 1.0
             top_k = getattr(qwen3_cfg, "top_k", 0) if qwen3_cfg else 0
-            repetition_context_size = getattr(qwen3_cfg, "repetition_context_size", 100) if qwen3_cfg else 100
             chunk_duration = getattr(qwen3_cfg, "chunk_duration", 1200.0) if qwen3_cfg else 1200.0
 
             kwargs: dict = {
-                "max_tokens": max_tokens,
                 "repetition_penalty": getattr(qwen3_cfg, "repetition_penalty", 1.2) if qwen3_cfg else 1.2,
-                "prefill_step_size": prefill_step_size,
                 "temperature": temperature,
                 "top_p": top_p,
                 "top_k": top_k,
-                "repetition_context_size": repetition_context_size,
                 "chunk_duration": chunk_duration,
             }
 
@@ -130,10 +108,10 @@ class Qwen3ASREngine(TranscriptionEngine):
 
             timeout_val = timeout if timeout and timeout > 0 else None
             if timeout_val is None:
-                result = self._model.generate(str(path), **kwargs)
+                result = self._model.transcribe(str(path), **kwargs)
             else:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(self._model.generate, str(path), **kwargs)
+                    future = executor.submit(self._model.transcribe, str(path), **kwargs)
                     try:
                         result = future.result(timeout=timeout_val)
                     except concurrent.futures.TimeoutError:
@@ -147,13 +125,10 @@ class Qwen3ASREngine(TranscriptionEngine):
             return None, str(e)
 
     def close(self) -> None:
+        if self._model is not None:
+            try:
+                self._model.close()
+            except Exception:
+                pass
         self._model = None
-        try:
-            import gc
-
-            import mlx.core as mx
-            gc.collect()
-            mx.clear_cache()
-        except Exception:
-            pass
         log("Qwen3-ASR model unloaded", "INFO")

@@ -192,6 +192,9 @@ sounds_enabled = true
 # Show macOS notifications on completion/error
 notifications_enabled = false
 
+# Automatically paste transcribed text at the cursor after transcription completes
+auto_paste = false
+
 [backup]
 # Backup directory
 directory = "~/.whisper"
@@ -218,27 +221,21 @@ prompt_engineer = "ctrl+shift+p"
 # Enable Text-to-Speech (select text in any app and press the shortcut to hear it read aloud)
 enabled = true
 
-# TTS provider (currently only qwen3_tts is supported)
-provider = "qwen3_tts"
+provider = "kokoro"
 
 # Shortcut to trigger/stop speech (alt = Option key on macOS)
 speak_shortcut = "alt+t"
 
-[qwen3_tts]
-# Qwen3-TTS model from mlx-community
-# CustomVoice variants: built-in named speakers, no reference audio needed
-# Base variants: voice cloning from a reference audio clip
-model = "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16"
+[kokoro_tts]
+# Kokoro model from mlx-community (downloaded by setup.sh, runs fully offline)
+model = "mlx-community/Kokoro-82M-bf16"
 
-# Built-in speaker for CustomVoice models (Ryan, Aiden, Serena, Vivian, Ono_Anna, Sohee, Uncle_Fu, Dylan, Eric)
-speaker = "Aiden"
-
-# Language for synthesis ("Auto" detects from text; or one of: Chinese, English, Japanese, Korean,
-# German, French, Russian, Portuguese, Spanish, Italian)
-language = "Auto"
-
-# Optional speaking style instruction, e.g. "calm and professional" (leave empty for neutral)
-instruct = ""
+# Voice preset — prefix encodes language and gender:
+#   American female: af_heart, af_bella, af_nova, af_sky, af_sarah, af_nicole
+#   British female:  bf_alice, bf_emma (default)
+#   American male:   am_adam, am_echo, am_eric, am_liam
+#   British male:    bm_daniel, bm_george
+voice = "af_sky"
 """
 
 
@@ -340,6 +337,7 @@ class UIConfig:
     overlay_opacity: float = 0.92
     sounds_enabled: bool = True
     notifications_enabled: bool = False
+    auto_paste: bool = False
 
 
 @dataclass
@@ -365,17 +363,15 @@ class ShortcutsConfig:
 class TTSConfig:
     """Text-to-Speech configuration."""
     enabled: bool = True
-    provider: str = "qwen3_tts"
+    provider: str = "kokoro"
     speak_shortcut: str = "alt+t"
 
 
 @dataclass
-class Qwen3TTSConfig:
-    """Qwen3-TTS provider configuration."""
-    model: str = "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16"
-    speaker: str = "Aiden"
-    language: str = "Auto"
-    instruct: str = ""
+class KokoroTTSConfig:
+    """Kokoro TTS provider configuration."""
+    model: str = "mlx-community/Kokoro-82M-bf16"
+    voice: str = "af_sky"
 
 
 @dataclass
@@ -393,7 +389,7 @@ class Config:
     backup: BackupConfig = field(default_factory=BackupConfig)
     shortcuts: ShortcutsConfig = field(default_factory=ShortcutsConfig)
     tts: TTSConfig = field(default_factory=TTSConfig)
-    qwen3_tts: Qwen3TTSConfig = field(default_factory=Qwen3TTSConfig)
+    kokoro_tts: KokoroTTSConfig = field(default_factory=KokoroTTSConfig)
 
 
 def load_config() -> Config:
@@ -523,6 +519,7 @@ def load_config() -> Config:
             overlay_opacity=data['ui'].get('overlay_opacity', config.ui.overlay_opacity),
             sounds_enabled=data['ui'].get('sounds_enabled', config.ui.sounds_enabled),
             notifications_enabled=data['ui'].get('notifications_enabled', config.ui.notifications_enabled),
+            auto_paste=data['ui'].get('auto_paste', config.ui.auto_paste),
         )
 
     # Backup settings
@@ -549,13 +546,11 @@ def load_config() -> Config:
             speak_shortcut=data['tts'].get('speak_shortcut', config.tts.speak_shortcut),
         )
 
-    # Qwen3-TTS settings
-    if 'qwen3_tts' in data:
-        config.qwen3_tts = Qwen3TTSConfig(
-            model=data['qwen3_tts'].get('model', config.qwen3_tts.model),
-            speaker=data['qwen3_tts'].get('speaker', config.qwen3_tts.speaker),
-            language=data['qwen3_tts'].get('language', config.qwen3_tts.language),
-            instruct=data['qwen3_tts'].get('instruct', config.qwen3_tts.instruct),
+    # Kokoro TTS settings
+    if 'kokoro_tts' in data:
+        config.kokoro_tts = KokoroTTSConfig(
+            model=data['kokoro_tts'].get('model', config.kokoro_tts.model),
+            voice=data['kokoro_tts'].get('voice', config.kokoro_tts.voice),
         )
 
     # Validate and sanitize config values

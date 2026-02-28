@@ -816,8 +816,8 @@ def cmd_update():
     result = subprocess.run(
         [
             python, "-c",
-            "from mlx_audio.stt.utils import load_model; "
-            "load_model('mlx-community/Qwen3-ASR-1.7B-bf16'); "
+            "from qwen3_asr_mlx import Qwen3ASR; "
+            "Qwen3ASR.from_pretrained('mlx-community/Qwen3-ASR-1.7B-bf16'); "
             "print('Qwen3-ASR up to date.')",
         ],
         env=model_env,
@@ -828,14 +828,14 @@ def cmd_update():
     result = subprocess.run(
         [
             python, "-c",
-            "from mlx_audio.tts.utils import load_model; "
-            "load_model('mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16'); "
-            "print('Qwen3-TTS up to date.')",
+            "from kokoro_mlx import KokoroTTS; "
+            "KokoroTTS.from_pretrained('mlx-community/Kokoro-82M-bf16'); "
+            "print('Kokoro TTS up to date.')",
         ],
         env=model_env,
     )
     if result.returncode != 0:
-        print(f"{C_YELLOW}  Qwen3-TTS model check failed - skipping{C_RESET}")
+        print(f"{C_YELLOW}  Kokoro TTS model check failed - skipping{C_RESET}")
 
     # Step 4: rebuild LocalWhisperUI if sources newer than binary
     print(f"\n  {C_BOLD}4/5  Rebuilding LocalWhisperUI if needed...{C_RESET}")

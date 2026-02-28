@@ -155,12 +155,14 @@ struct UIConfig: Codable, Sendable {
     var overlayOpacity: Double
     var soundsEnabled: Bool
     var notificationsEnabled: Bool
+    var autoPaste: Bool
 
     enum CodingKeys: String, CodingKey {
         case showOverlay = "show_overlay"
         case overlayOpacity = "overlay_opacity"
         case soundsEnabled = "sounds_enabled"
         case notificationsEnabled = "notifications_enabled"
+        case autoPaste = "auto_paste"
     }
 }
 
@@ -197,11 +199,9 @@ struct TTSConfig: Codable, Sendable {
     }
 }
 
-struct Qwen3TTSConfig: Codable, Sendable {
+struct KokoroTTSConfig: Codable, Sendable {
     var model: String
-    var speaker: String
-    var language: String
-    var instruct: String
+    var voice: String
 }
 
 struct AppConfig: Codable, Sendable {
@@ -218,14 +218,14 @@ struct AppConfig: Codable, Sendable {
     var backup: BackupConfig
     var shortcuts: ShortcutsConfig
     var tts: TTSConfig
-    var qwen3Tts: Qwen3TTSConfig
+    var kokoroTts: KokoroTTSConfig
 
     enum CodingKeys: String, CodingKey {
         case hotkey, transcription, whisper, grammar, ollama, audio, ui, backup, shortcuts, tts
         case qwen3Asr = "qwen3_asr"
         case appleIntelligence = "apple_intelligence"
         case lmStudio = "lm_studio"
-        case qwen3Tts = "qwen3_tts"
+        case kokoroTts = "kokoro_tts"
     }
 
     static var defaultConfig: AppConfig {
@@ -271,7 +271,7 @@ struct AppConfig: Codable, Sendable {
                 normalizeAudio: true,
                 preBuffer: 0.0
             ),
-            ui: UIConfig(showOverlay: true, overlayOpacity: 0.92, soundsEnabled: true, notificationsEnabled: false),
+            ui: UIConfig(showOverlay: true, overlayOpacity: 0.92, soundsEnabled: true, notificationsEnabled: false, autoPaste: false),
             backup: BackupConfig(directory: "~/.whisper", historyLimit: 100),
             shortcuts: ShortcutsConfig(
                 enabled: true,
@@ -279,13 +279,8 @@ struct AppConfig: Codable, Sendable {
                 rewrite: "ctrl+shift+r",
                 promptEngineer: "ctrl+shift+p"
             ),
-            tts: TTSConfig(enabled: true, provider: "qwen3_tts", speakShortcut: "alt+t"),
-            qwen3Tts: Qwen3TTSConfig(
-                model: "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16",
-                speaker: "Vivian",
-                language: "English",
-                instruct: ""
-            )
+            tts: TTSConfig(enabled: true, provider: "kokoro", speakShortcut: "alt+t"),
+            kokoroTts: KokoroTTSConfig(model: "mlx-community/Kokoro-82M-bf16", voice: "af_sky")
         )
     }
 }

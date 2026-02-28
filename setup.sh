@@ -220,8 +220,8 @@ log_info "Downloads and caches the speech model to ~/.whisper/models/."
 log_info "This only happens once."
 
 if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
-from mlx_audio.stt.utils import load_model
-load_model('mlx-community/Qwen3-ASR-1.7B-bf16')
+from qwen3_asr_mlx import Qwen3ASR
+Qwen3ASR.from_pretrained('mlx-community/Qwen3-ASR-1.7B-bf16')
 " 2>/dev/null; then
     log_ok "Qwen3-ASR model downloaded"
 else
@@ -235,15 +235,9 @@ log_info "This may take 60-120 seconds. Only happens once."
 
 if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
 import numpy as np
-import tempfile
-import soundfile as sf
-from mlx_audio.stt.utils import load_model
-
-model = load_model('mlx-community/Qwen3-ASR-1.7B-bf16')
-silence = np.zeros(8000, dtype=np.float32)
-with tempfile.NamedTemporaryFile(suffix='.wav', delete=True) as tmp:
-    sf.write(tmp.name, silence, 16000)
-    model.generate(tmp.name, max_tokens=1)
+from qwen3_asr_mlx import Qwen3ASR
+model = Qwen3ASR.from_pretrained('mlx-community/Qwen3-ASR-1.7B-bf16')
+model.warm_up()
 " 2>/dev/null; then
     log_ok "Qwen3-ASR model warmed up and ready"
 else
@@ -251,21 +245,41 @@ else
 fi
 
 # ============================================================================
-# Pre-download Qwen3-TTS model (Text-to-Speech)
+# Kokoro TTS setup (default TTS engine, English, fully offline after setup)
 # ============================================================================
 
-echo ""
-log_step "Pre-downloading Qwen3-TTS model..."
-log_info "Downloads and caches the TTS model to ~/.whisper/models/."
-log_info "This only happens once."
+log_step "Setting up Kokoro TTS dependencies..."
+
+# espeak-ng is required by misaki (the G2P phonemizer used by Kokoro)
+if brew list espeak-ng &>/dev/null 2>&1; then
+    log_ok "espeak-ng already installed"
+else
+    log_info "Installing espeak-ng (phonemizer for Kokoro)..."
+    if brew install espeak-ng -q; then
+        log_ok "espeak-ng installed"
+    else
+        log_warn "espeak-ng install failed — Kokoro TTS may not work correctly"
+    fi
+fi
+
+# Download the spacy English model used by misaki for G2P phonemization
+log_info "Downloading spacy English language model (en_core_web_sm)..."
+if "$VENV_DIR/bin/python3" -m spacy download en_core_web_sm -q 2>/dev/null; then
+    log_ok "spacy en_core_web_sm ready"
+else
+    log_warn "spacy model download failed — Kokoro TTS may not work correctly"
+fi
+
+log_step "Pre-downloading Kokoro TTS model and voices..."
+log_info "Downloads mlx-community/Kokoro-82M-bf16 + voice packs to ~/.whisper/models/ (~400MB, one time)."
 
 if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
-from mlx_audio.tts.utils import load_model
-load_model('mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16')
+from kokoro_mlx import KokoroTTS
+KokoroTTS.from_pretrained('mlx-community/Kokoro-82M-bf16')
 " 2>/dev/null; then
-    log_ok "Qwen3-TTS model downloaded"
+    log_ok "Kokoro model and voices downloaded"
 else
-    log_warn "Qwen3-TTS model download failed - first use will download automatically"
+    log_warn "Kokoro model download failed — first use will download automatically"
 fi
 
 # ============================================================================
