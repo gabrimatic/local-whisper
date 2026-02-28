@@ -45,8 +45,8 @@ from .grammar import Grammar
 from .ipc_server import IPCServer
 from .key_interceptor import KeyInterceptor
 from .shortcuts import ShortcutProcessor, build_shortcut_map, parse_shortcut
-from .tts_processor import TTSProcessor
 from .transcriber import Transcriber
+from .tts_processor import TTSProcessor
 from .utils import (
     C_BOLD,
     C_CYAN,
