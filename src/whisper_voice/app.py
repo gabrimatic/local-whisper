@@ -24,6 +24,7 @@ Privacy: All processing on-device. No internet. No cloud. No tracking.
 import atexit
 import fcntl
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -40,7 +41,8 @@ from .audio import Recorder
 from .audio_processor import AudioProcessor
 from .backends import BACKEND_REGISTRY
 from .backup import Backup
-from .config import CONFIG_FILE, get_config
+from .cmd_server import CommandServer
+from .config import CONFIG_FILE, add_replacement, get_config, remove_replacement
 from .grammar import Grammar
 from .ipc_server import IPCServer
 from .key_interceptor import KeyInterceptor
@@ -147,6 +149,10 @@ class App:
         self.ipc.set_on_connect(self._on_swift_connect)
         self.ipc.set_message_handler(self._handle_ipc_message)
         self.ipc.start()
+
+        # Command server for CLI access (wh whisper/listen/transcribe)
+        self._cmd_server = CommandServer(self._handle_command)
+        self._cmd_server.start()
 
         register_notification_sender(
             lambda title, body: self.ipc.send({"type": "notification", "title": title, "body": body})
@@ -318,6 +324,10 @@ class App:
                 "model": cfg.kokoro_tts.model,
                 "voice": cfg.kokoro_tts.voice,
             },
+            "replacements": {
+                "enabled": cfg.replacements.enabled,
+                "rules": cfg.replacements.rules,
+            },
         }})
 
     def _handle_ipc_message(self, msg: dict):
@@ -358,6 +368,214 @@ class App:
                 update_config_field(section, key, value)
                 self.config = get_config()
                 self._send_config_snapshot()
+        elif msg_type == "replacement_add":
+            spoken = msg.get("spoken", "").strip()
+            replacement = msg.get("replacement", "").strip()
+            if spoken and replacement:
+                add_replacement(spoken, replacement)
+                self.config = get_config()
+                self._send_config_snapshot()
+        elif msg_type == "replacement_remove":
+            spoken = msg.get("spoken", "").strip()
+            if spoken:
+                remove_replacement(spoken)
+                self.config = get_config()
+                self._send_config_snapshot()
+
+    # ------------------------------------------------------------------
+    # Command socket handler (wh whisper / listen / transcribe)
+    # ------------------------------------------------------------------
+
+    def _handle_command(self, request: dict, send: callable):
+        """Handle a CLI command from the command socket."""
+        cmd_type = request.get("type")
+        stop_event = request.get("_stop_event", threading.Event())
+
+        if cmd_type == "whisper":
+            self._cmd_whisper(request, send, stop_event)
+        elif cmd_type == "listen":
+            self._cmd_listen(request, send, stop_event)
+        elif cmd_type == "transcribe":
+            self._cmd_transcribe(request, send, stop_event)
+        elif cmd_type == "stop":
+            # Stop is handled by the disconnect watcher in cmd_server
+            pass
+        else:
+            send({"type": "error", "message": f"Unknown command: {cmd_type}"})
+
+    def _cmd_whisper(self, request: dict, send: callable, stop_event: threading.Event):
+        """Speak text aloud via TTS."""
+        text = request.get("text", "").strip()
+        if not text:
+            send({"type": "error", "message": "No text provided"})
+            return
+
+        if not self.config.tts.enabled:
+            send({"type": "error", "message": "TTS is disabled in config"})
+            return
+
+        send({"type": "started", "action": "whisper"})
+
+        try:
+            # Get or create TTS provider (reuse from TTS processor if available)
+            if self._tts_processor:
+                provider = self._tts_processor.get_provider()
+            else:
+                from .tts import create_tts_provider
+                provider = create_tts_provider(self.config.tts.provider)
+                provider.start()
+
+            if provider is None:
+                send({"type": "error", "message": "TTS provider unavailable"})
+                return
+
+            voice = request.get("voice") or self.config.kokoro_tts.voice
+            provider.refresh(self.config.kokoro_tts.model)
+            provider.speak(text, stop_event, speaker=voice)
+
+            send({"type": "done", "success": True})
+        except Exception as e:
+            send({"type": "error", "message": str(e)})
+
+    def _cmd_listen(self, request: dict, send: callable, stop_event: threading.Event):
+        """Record from microphone, transcribe, and return text."""
+        with self._state_lock:
+            if self._busy or self.recorder.recording:
+                send({"type": "error", "message": "Service is busy"})
+                return
+            if not self._ready:
+                send({"type": "error", "message": "Service not ready"})
+                return
+            self._busy = True
+
+        max_duration = request.get("max_duration", 0)
+        skip_grammar = request.get("raw", False)
+
+        send({"type": "started", "action": "listen"})
+
+        try:
+            # Start recording
+            if not self.recorder.start():
+                send({"type": "error", "message": "Microphone error"})
+                return
+
+            # Wait for stop_event (Ctrl+C on CLI side) or max_duration
+            timeout = max_duration if max_duration > 0 else 600
+            stop_event.wait(timeout=timeout)
+
+            if not self.recorder.recording:
+                send({"type": "error", "message": "Recording ended unexpectedly"})
+                return
+
+            audio = self.recorder.stop()
+
+            if len(audio) == 0 or np.max(np.abs(audio)) == 0:
+                send({"type": "error", "message": "No audio captured"})
+                return
+
+            # Process audio
+            processed = self.audio_processor.process(audio, self.config.audio.sample_rate)
+            if not processed.has_speech:
+                send({"type": "error", "message": "No speech detected"})
+                return
+
+            # Segment if needed
+            if self.transcriber.supports_long_audio:
+                segments = [processed.audio]
+            else:
+                segments = self.audio_processor.segment_long_audio(
+                    processed.audio, self.config.audio.sample_rate,
+                    segments=processed.segments,
+                )
+
+            # Transcribe
+            all_text = []
+            for seg in segments:
+                path = self.backup.save_processed_audio(seg)
+                if not path:
+                    continue
+                text, err = self.transcriber.transcribe(path)
+                if err or not text:
+                    continue
+                cleaned, _ = strip_hallucination_lines(text)
+                if cleaned and not is_hallucination(cleaned):
+                    all_text.append(cleaned)
+
+            raw_text = " ".join(all_text) if all_text else None
+            if not raw_text:
+                send({"type": "error", "message": "No speech detected"})
+                return
+
+            # Grammar
+            final_text = raw_text
+            if not skip_grammar:
+                self._check_grammar_connection()
+                final_text = self._apply_grammar(raw_text)
+
+            # Replacements
+            final_text = self._apply_replacements(final_text)
+
+            send({"type": "done", "text": final_text, "raw_text": raw_text, "success": True})
+
+        except Exception as e:
+            send({"type": "error", "message": str(e)})
+        finally:
+            if self.recorder.recording:
+                self.recorder.stop()
+            with self._state_lock:
+                self._busy = False
+
+    def _cmd_transcribe(self, request: dict, send: callable, stop_event: threading.Event):
+        """Transcribe an audio file."""
+        file_path = request.get("path", "").strip()
+        if not file_path:
+            send({"type": "error", "message": "No file path provided"})
+            return
+
+        path = Path(file_path)
+        if not path.exists():
+            send({"type": "error", "message": f"File not found: {file_path}"})
+            return
+
+        skip_grammar = request.get("raw", False)
+
+        with self._state_lock:
+            if self._busy:
+                send({"type": "error", "message": "Service is busy"})
+                return
+            if not self._ready:
+                send({"type": "error", "message": "Service not ready"})
+                return
+            self._busy = True
+
+        send({"type": "started", "action": "transcribe"})
+
+        try:
+            raw_text, err = self.transcriber.transcribe(str(path))
+            if err or not raw_text:
+                send({"type": "error", "message": err or "No speech detected"})
+                return
+
+            cleaned, _ = strip_hallucination_lines(raw_text)
+            if not cleaned or is_hallucination(cleaned):
+                send({"type": "error", "message": "No speech detected"})
+                return
+
+            raw_text = cleaned
+            final_text = raw_text
+            if not skip_grammar:
+                self._check_grammar_connection()
+                final_text = self._apply_grammar(raw_text)
+
+            final_text = self._apply_replacements(final_text)
+
+            send({"type": "done", "text": final_text, "raw_text": raw_text, "success": True})
+
+        except Exception as e:
+            send({"type": "error", "message": str(e)})
+        finally:
+            with self._state_lock:
+                self._busy = False
 
     # ------------------------------------------------------------------
     # Engine / backend switching
@@ -1038,17 +1256,20 @@ class App:
             self._check_grammar_connection()
             final_text = self._apply_grammar(raw_text)
 
-            # 4. Copy to clipboard / auto-paste
+            # 4. Vocabulary replacements (last text transformation)
+            final_text = self._apply_replacements(final_text)
+
+            # 5. Copy to clipboard / auto-paste
             if config.ui.auto_paste:
                 clipboard_ok = self._paste_text_at_cursor(final_text)
             else:
                 clipboard_ok = self._copy_to_clipboard(final_text, show_error=False)
 
-            # 5. Save backup
+            # 6. Save backup
             self.backup.save_text(final_text)
             self.backup.save_history(raw_text, final_text)
 
-            # 6. Send result
+            # 7. Send result
             if clipboard_ok:
                 self._show_success(final_text)
                 send_notification("Transcription Complete", truncate(final_text, PREVIEW_TRUNCATE))
@@ -1139,6 +1360,15 @@ class App:
             log(f"Grammar fix skipped: {g_err}", "WARN")
             return raw_text
         return final_text
+
+    def _apply_replacements(self, text: str) -> str:
+        """Apply vocabulary replacement rules. Case-insensitive, word-boundary-aware."""
+        rules = self.config.replacements.rules
+        if not self.config.replacements.enabled or not rules:
+            return text
+        for spoken, replacement in rules.items():
+            text = re.sub(r'\b' + re.escape(spoken) + r'\b', replacement, text, flags=re.IGNORECASE)
+        return text
 
     def _transcribe_and_validate(self, path) -> tuple:
         """Transcribe audio and validate result. Returns (raw_text, error)."""
@@ -1242,6 +1472,8 @@ class App:
 
                 self._check_grammar_connection()
                 final_text = self._apply_grammar(raw_text)
+
+                final_text = self._apply_replacements(final_text)
 
                 if self.config.ui.auto_paste:
                     ok = self._paste_text_at_cursor(final_text)
@@ -1465,6 +1697,12 @@ class App:
             self.transcriber.close()
         except Exception as e:
             log(f"Error closing transcription engine: {e}", "ERR")
+
+        # Stop command server
+        try:
+            self._cmd_server.stop()
+        except Exception:
+            pass
 
         # Stop IPC server
         try:

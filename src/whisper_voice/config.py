@@ -236,6 +236,19 @@ model = "mlx-community/Kokoro-82M-bf16"
 #   American male:   am_adam, am_echo, am_eric, am_liam
 #   British male:    bm_daniel, bm_george
 voice = "af_sky"
+
+[replacements]
+# Apply text replacements after transcription (and grammar correction if enabled).
+# Useful for fixing words the model consistently gets wrong, expanding abbreviations,
+# or enforcing specific spelling of names and terms.
+enabled = false
+
+# Replacement rules: "spoken form" = "replacement"
+# Matching is case-insensitive and respects word boundaries.
+[replacements.rules]
+# "open ai" = "OpenAI"
+# "chat gpt" = "ChatGPT"
+# "eye phone" = "iPhone"
 """
 
 
@@ -375,6 +388,13 @@ class KokoroTTSConfig:
 
 
 @dataclass
+class ReplacementsConfig:
+    """Post-transcription text replacement rules."""
+    enabled: bool = False
+    rules: dict = field(default_factory=dict)  # {"spoken form": "replacement"}
+
+
+@dataclass
 class Config:
     hotkey: HotkeyConfig = field(default_factory=HotkeyConfig)
     transcription: TranscriptionConfig = field(default_factory=TranscriptionConfig)
@@ -390,6 +410,7 @@ class Config:
     shortcuts: ShortcutsConfig = field(default_factory=ShortcutsConfig)
     tts: TTSConfig = field(default_factory=TTSConfig)
     kokoro_tts: KokoroTTSConfig = field(default_factory=KokoroTTSConfig)
+    replacements: ReplacementsConfig = field(default_factory=ReplacementsConfig)
 
 
 def load_config() -> Config:
@@ -551,6 +572,19 @@ def load_config() -> Config:
         config.kokoro_tts = KokoroTTSConfig(
             model=data['kokoro_tts'].get('model', config.kokoro_tts.model),
             voice=data['kokoro_tts'].get('voice', config.kokoro_tts.voice),
+        )
+
+    # Replacements settings
+    if 'replacements' in data:
+        rules = data['replacements'].get('rules', {})
+        # Ensure rules is a flat dict of str -> str
+        if isinstance(rules, dict):
+            rules = {str(k): str(v) for k, v in rules.items()}
+        else:
+            rules = {}
+        config.replacements = ReplacementsConfig(
+            enabled=data['replacements'].get('enabled', config.replacements.enabled),
+            rules=rules,
         )
 
     # Validate and sanitize config values
@@ -789,6 +823,95 @@ def _replace_in_section(content: str, section: str, key: str, new_value: str) ->
     lines.append(f"\n[{section}]\n")
     lines.append(f"{key} = {new_value}\n")
     return "".join(lines)
+
+
+def _read_replacements_rules() -> dict:
+    """Read replacement rules from config.toml via tomllib."""
+    if not CONFIG_FILE.exists():
+        return {}
+    try:
+        with open(CONFIG_FILE, 'rb') as f:
+            data = tomllib.load(f)
+        rules = data.get('replacements', {}).get('rules', {})
+        return {str(k): str(v) for k, v in rules.items()} if isinstance(rules, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_replacements_rules(rules: dict) -> bool:
+    """Write replacement rules to config.toml, preserving all other content.
+
+    Replaces the entire [replacements.rules] sub-table with the given dict.
+    Creates the section if it doesn't exist.
+    """
+    try:
+        fd = os.open(str(CONFIG_FILE), os.O_RDWR | os.O_CREAT, 0o644)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            content = CONFIG_FILE.read_text()
+
+            # Build the new rules block
+            rules_lines = []
+            for spoken, replacement in sorted(rules.items()):
+                escaped_k = spoken.replace('\\', '\\\\').replace('"', '\\"')
+                escaped_v = replacement.replace('\\', '\\\\').replace('"', '\\"')
+                rules_lines.append(f'"{escaped_k}" = "{escaped_v}"')
+            rules_block = "\n".join(rules_lines)
+
+            # Find and replace [replacements.rules] section
+            # The section runs from its header to the next [section] header or EOF
+            pattern = re.compile(
+                r'(\[replacements\.rules\]\s*\n)'  # header
+                r'((?:#[^\n]*\n|"(?:[^"\\]|\\.)*"\s*=\s*"(?:[^"\\]|\\.)*"\s*\n|\s*\n)*)',  # body lines
+                re.MULTILINE
+            )
+            match = pattern.search(content)
+            if match:
+                new_body = rules_block + "\n" if rules_block else ""
+                content = content[:match.start(2)] + new_body + content[match.end(2):]
+            else:
+                # Section doesn't exist yet
+                if "[replacements]" in content:
+                    # Append [replacements.rules] after any existing [replacements] content
+                    # Find the end of the [replacements] section
+                    repl_pattern = re.compile(r'\[replacements\]\s*\n((?:[^[\n][^\n]*\n|\s*\n)*)', re.MULTILINE)
+                    repl_match = repl_pattern.search(content)
+                    if repl_match:
+                        insert_pos = repl_match.end()
+                        content = content[:insert_pos] + f"\n[replacements.rules]\n{rules_block}\n" + content[insert_pos:]
+                    else:
+                        content += f"\n[replacements.rules]\n{rules_block}\n"
+                else:
+                    content += f"\n[replacements]\nenabled = true\n\n[replacements.rules]\n{rules_block}\n"
+
+            CONFIG_FILE.write_text(content)
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+        return True
+    except Exception as e:
+        print(f"Config write failed: {e}", file=sys.stderr)
+        return False
+
+
+def add_replacement(spoken: str, replacement: str) -> bool:
+    """Add or update a single replacement rule. Persists to TOML and updates in-memory config."""
+    config = get_config()
+    with _config_lock:
+        config.replacements.rules[spoken] = replacement
+        snapshot = dict(config.replacements.rules)
+    return _write_replacements_rules(snapshot)
+
+
+def remove_replacement(spoken: str) -> bool:
+    """Remove a replacement rule. Returns False if the key doesn't exist."""
+    config = get_config()
+    with _config_lock:
+        if spoken not in config.replacements.rules:
+            return False
+        del config.replacements.rules[spoken]
+        snapshot = dict(config.replacements.rules)
+    return _write_replacements_rules(snapshot)
 
 
 def update_config_backend(new_backend: str) -> bool:

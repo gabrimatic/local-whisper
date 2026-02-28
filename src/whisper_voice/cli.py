@@ -9,6 +9,9 @@ Usage:
     wh start            Launch the service
     wh stop             Graceful kill (SIGTERM -> SIGKILL)
     wh restart          Stop + start
+    wh whisper "text"   Speak text aloud via Kokoro TTS
+    wh listen [secs]    Record from mic, output transcription
+    wh transcribe file  Transcribe an audio file
     wh backend          Show current + list available
     wh backend <name>   Switch backend in config, restart service
     wh engine           Show current engine + list available
@@ -16,6 +19,8 @@ Usage:
     wh config           Print key config values
     wh config edit      Open config.toml in $EDITOR
     wh config path      Print path to config file
+    wh doctor           Check system health
+    wh doctor --fix     Check and auto-repair issues
     wh uninstall        Remove LaunchAgent
     wh log              Tail ~/.whisper/service.log
     wh version          Show version
@@ -522,35 +527,150 @@ def cmd_engine(args: list):
         print(f"{C_DIM}Service not running - start with: wh start{C_RESET}")
 
 
+def cmd_replace(args: list):
+    """Show, add, or remove text replacement rules."""
+    config_file = _get_config_path()
+
+    def _read_replacements() -> tuple:
+        """Read replacements config. Returns (enabled, rules_dict)."""
+        if not config_file.exists():
+            return False, {}
+        try:
+            import tomllib
+            with open(config_file, 'rb') as f:
+                data = tomllib.load(f)
+            repl = data.get('replacements', {})
+            enabled = repl.get('enabled', False)
+            rules = repl.get('rules', {})
+            return enabled, {str(k): str(v) for k, v in rules.items()} if isinstance(rules, dict) else {}
+        except Exception:
+            return False, {}
+
+    if not args:
+        # wh replace — show current rules
+        enabled, rules = _read_replacements()
+        status = f"{C_GREEN}enabled{C_RESET}" if enabled else f"{C_DIM}disabled{C_RESET}"
+        print(f"  {C_DIM}status:{C_RESET} {status}")
+        print()
+        if rules:
+            print(f"  {C_BOLD}Rules:{C_RESET}")
+            max_key = max(len(k) for k in rules)
+            for spoken, replacement in sorted(rules.items()):
+                print(f'    {C_CYAN}"{spoken}"{C_RESET}{" " * (max_key - len(spoken))}  →  {replacement}')
+        else:
+            print(f"  {C_DIM}No replacement rules defined.{C_RESET}")
+            print(f"  {C_DIM}Add one: wh replace add \"spoken form\" \"replacement\"{C_RESET}")
+        return
+
+    subcmd = args[0]
+
+    if subcmd == "add":
+        if len(args) != 3:
+            print(f"{C_RED}Usage: wh replace add \"spoken form\" \"replacement\"{C_RESET}", file=sys.stderr)
+            sys.exit(1)
+        spoken, replacement = args[1], args[2]
+        try:
+            from whisper_voice.config import add_replacement
+            if add_replacement(spoken, replacement):
+                print(f'{C_GREEN}Added:{C_RESET} "{spoken}" → {replacement}')
+            else:
+                print(f"{C_RED}Failed to write config{C_RESET}", file=sys.stderr)
+                sys.exit(1)
+        except Exception as e:
+            print(f"{C_RED}Error: {e}{C_RESET}", file=sys.stderr)
+            sys.exit(1)
+
+    elif subcmd == "remove":
+        if len(args) != 2:
+            print(f"{C_RED}Usage: wh replace remove \"spoken form\"{C_RESET}", file=sys.stderr)
+            sys.exit(1)
+        spoken = args[1]
+        try:
+            from whisper_voice.config import remove_replacement
+            if remove_replacement(spoken):
+                print(f'{C_GREEN}Removed:{C_RESET} "{spoken}"')
+            else:
+                print(f'{C_YELLOW}Not found:{C_RESET} "{spoken}"')
+                sys.exit(1)
+        except Exception as e:
+            print(f"{C_RED}Error: {e}{C_RESET}", file=sys.stderr)
+            sys.exit(1)
+
+    elif subcmd in ("on", "enable"):
+        try:
+            from whisper_voice.config import update_config_field
+            update_config_field("replacements", "enabled", True)
+            print(f"{C_GREEN}Replacements enabled{C_RESET}")
+        except Exception as e:
+            print(f"{C_RED}Error: {e}{C_RESET}", file=sys.stderr)
+            sys.exit(1)
+
+    elif subcmd in ("off", "disable"):
+        try:
+            from whisper_voice.config import update_config_field
+            update_config_field("replacements", "enabled", False)
+            print(f"{C_DIM}Replacements disabled{C_RESET}")
+        except Exception as e:
+            print(f"{C_RED}Error: {e}{C_RESET}", file=sys.stderr)
+            sys.exit(1)
+
+    else:
+        print(f"{C_RED}Unknown subcommand: {subcmd}{C_RESET}", file=sys.stderr)
+        print(f"{C_DIM}Usage: wh replace [add|remove|on|off]{C_RESET}", file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_config(args: list):
     """Show, edit, or print path to config."""
     config_path = _get_config_path()
 
     if not args or args[0] == "show":
-        # Print key values
+        # Print a concise summary of key settings
         if not config_path.exists():
             print(f"{C_YELLOW}Config not found: {config_path}{C_RESET}")
             return
 
         try:
-            content = config_path.read_text()
-            print(f"  {C_DIM}path:{C_RESET}    {config_path}")
-            print()
-            # Show relevant lines
-            in_section = None
-            show_sections = {"grammar", "whisper", "audio", "hotkey", "shortcuts", "transcription", "qwen3_asr"}
-            for line in content.splitlines():
-                stripped = line.strip()
-                if stripped.startswith("[") and stripped.endswith("]"):
-                    section = stripped[1:-1]
-                    in_section = section if section in show_sections else None
-                    if in_section:
-                        print(f"  {C_BOLD}{line}{C_RESET}")
-                    continue
-                if in_section and stripped and not stripped.startswith("#"):
-                    print(f"  {line}")
+            import tomllib
+            with open(config_path, 'rb') as f:
+                data = tomllib.load(f)
         except Exception as e:
             print(f"{C_RED}Error reading config: {e}{C_RESET}", file=sys.stderr)
+            return
+
+        engine = data.get("transcription", {}).get("engine", "qwen3_asr")
+        backend = data.get("grammar", {}).get("backend", "apple_intelligence")
+        grammar_on = data.get("grammar", {}).get("enabled", False)
+        hotkey = data.get("hotkey", {}).get("key", "alt_r")
+        tts_on = data.get("tts", {}).get("enabled", True)
+        tts_voice = data.get("kokoro_tts", {}).get("voice", "af_sky")
+        tts_shortcut = data.get("tts", {}).get("speak_shortcut", "alt+t")
+        repl_on = data.get("replacements", {}).get("enabled", False)
+        repl_rules = data.get("replacements", {}).get("rules", {})
+        auto_paste = data.get("ui", {}).get("auto_paste", False)
+        overlay = data.get("ui", {}).get("show_overlay", True)
+        sounds = data.get("ui", {}).get("sounds_enabled", True)
+        shortcuts_on = data.get("shortcuts", {}).get("enabled", True)
+        language = data.get(engine, {}).get("language", "auto") if engine in data else "auto"
+
+        def _on_off(val: bool) -> str:
+            return f"{C_GREEN}on{C_RESET}" if val else f"{C_DIM}off{C_RESET}"
+
+        print()
+        print(f"  {C_DIM}Engine{C_RESET}        {C_CYAN}{engine}{C_RESET}  {C_DIM}({language}){C_RESET}")
+        print(f"  {C_DIM}Grammar{C_RESET}       {_on_off(grammar_on)}  {C_DIM}{backend}{C_RESET}" if grammar_on else f"  {C_DIM}Grammar{C_RESET}       {_on_off(grammar_on)}")
+        print(f"  {C_DIM}TTS{C_RESET}           {_on_off(tts_on)}  {C_DIM}{tts_voice}  {tts_shortcut}{C_RESET}" if tts_on else f"  {C_DIM}TTS{C_RESET}           {_on_off(tts_on)}")
+        repl_count = len(repl_rules)
+        repl_detail = f"  {C_DIM}{repl_count} rule{'s' if repl_count != 1 else ''}{C_RESET}" if repl_on and repl_count else ""
+        print(f"  {C_DIM}Replacements{C_RESET}  {_on_off(repl_on)}{repl_detail}")
+        print(f"  {C_DIM}Hotkey{C_RESET}        {hotkey.replace('_', ' ')}")
+        print(f"  {C_DIM}Shortcuts{C_RESET}     {_on_off(shortcuts_on)}")
+        print(f"  {C_DIM}Auto-paste{C_RESET}    {_on_off(auto_paste)}")
+        print(f"  {C_DIM}Overlay{C_RESET}       {_on_off(overlay)}")
+        print(f"  {C_DIM}Sounds{C_RESET}        {_on_off(sounds)}")
+        print()
+        print(f"  {C_DIM}{config_path}{C_RESET}")
+        print()
         return
 
     if args[0] == "edit":
@@ -736,33 +856,223 @@ def cmd_version():
         print("Local Whisper (version unknown)")
 
 
+# ---------------------------------------------------------------------------
+# Command socket client (wh whisper / listen / transcribe)
+# ---------------------------------------------------------------------------
+
+CMD_SOCKET_PATH = str(Path.home() / ".whisper" / "cmd.sock")
+
+
+def _cmd_connect():
+    """Connect to the command socket. Raises on failure."""
+    import socket as _socket
+    sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    sock.connect(CMD_SOCKET_PATH)
+    return sock
+
+
+def _cmd_send_recv(request: dict) -> dict:
+    """Send a command and wait for the final response. Returns the last message."""
+    import json
+    import socket as _socket
+
+    running, _ = _is_running()
+    if not running:
+        print(f"{C_RED}Service not running.{C_RESET} Start with: wh start", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        sock = _cmd_connect()
+    except (FileNotFoundError, ConnectionRefusedError):
+        print(f"{C_RED}Cannot connect to service.{C_RESET} Try: wh restart", file=sys.stderr)
+        sys.exit(1)
+
+    # Handle Ctrl+C: send stop and exit cleanly
+    stop_sent = False
+
+    def _on_interrupt(*_):
+        nonlocal stop_sent
+        if not stop_sent:
+            stop_sent = True
+            try:
+                sock.sendall((json.dumps({"type": "stop"}) + "\n").encode())
+            except Exception:
+                pass
+
+    original_sigint = signal.getsignal(signal.SIGINT)
+    signal.signal(signal.SIGINT, _on_interrupt)
+
+    try:
+        data = (json.dumps(request) + "\n").encode()
+        sock.sendall(data)
+
+        # Read responses until we get a terminal one (done/error)
+        buf = b""
+        last_response = None
+        sock.settimeout(300)  # 5 min max for long operations
+        while True:
+            try:
+                chunk = sock.recv(4096)
+            except _socket.timeout:
+                break
+            if not chunk:
+                break
+            buf += chunk
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line.decode("utf-8"))
+                except Exception:
+                    continue
+                last_response = msg
+                msg_type = msg.get("type")
+                if msg_type in ("done", "error"):
+                    return msg
+                # "started" messages: continue waiting
+                if msg_type == "started":
+                    action = msg.get("action", "")
+                    if action == "listen":
+                        print("Recording... (Ctrl+C to stop)", file=sys.stderr)
+
+        return last_response or {"type": "error", "message": "Connection closed unexpectedly"}
+    finally:
+        signal.signal(signal.SIGINT, original_sigint)
+        try:
+            sock.close()
+        except Exception:
+            pass
+
+
+def cmd_whisper(args: list):
+    """Speak text aloud via TTS."""
+    voice = None
+    text_parts = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--voice" and i + 1 < len(args):
+            voice = args[i + 1]
+            i += 2
+        else:
+            text_parts.append(args[i])
+            i += 1
+
+    text = " ".join(text_parts)
+
+    # Read from stdin if no text provided and stdin is piped
+    if not text and not sys.stdin.isatty():
+        text = sys.stdin.read().strip()
+
+    if not text:
+        print(f"{C_RED}No text provided.{C_RESET}", file=sys.stderr)
+        print(f"{C_DIM}Usage: wh whisper \"text\" [--voice NAME]{C_RESET}", file=sys.stderr)
+        sys.exit(1)
+
+    request = {"type": "whisper", "text": text}
+    if voice:
+        request["voice"] = voice
+
+    result = _cmd_send_recv(request)
+    if result.get("type") == "error":
+        print(f"{C_RED}{result.get('message', 'Unknown error')}{C_RESET}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_listen(args: list):
+    """Record from microphone and output transcription."""
+    max_duration = 0
+    raw = False
+    for arg in args:
+        if arg == "--raw":
+            raw = True
+        else:
+            try:
+                max_duration = int(arg)
+            except ValueError:
+                print(f"{C_RED}Invalid argument: {arg}{C_RESET}", file=sys.stderr)
+                print(f"{C_DIM}Usage: wh listen [seconds] [--raw]{C_RESET}", file=sys.stderr)
+                sys.exit(1)
+
+    request = {"type": "listen", "max_duration": max_duration, "raw": raw}
+    result = _cmd_send_recv(request)
+
+    if result.get("type") == "error":
+        print(f"{C_RED}{result.get('message', 'Unknown error')}{C_RESET}", file=sys.stderr)
+        sys.exit(1)
+    elif result.get("type") == "done":
+        text = result.get("text", "")
+        if text:
+            print(text)
+
+
+def cmd_transcribe(args: list):
+    """Transcribe an audio file."""
+    raw = False
+    file_path = None
+    for arg in args:
+        if arg == "--raw":
+            raw = True
+        elif file_path is None:
+            file_path = arg
+        else:
+            print(f"{C_RED}Unexpected argument: {arg}{C_RESET}", file=sys.stderr)
+            sys.exit(1)
+
+    if not file_path:
+        print(f"{C_RED}No file provided.{C_RESET}", file=sys.stderr)
+        print(f"{C_DIM}Usage: wh transcribe <file> [--raw]{C_RESET}", file=sys.stderr)
+        sys.exit(1)
+
+    # Resolve to absolute path
+    file_path = str(Path(file_path).resolve())
+
+    request = {"type": "transcribe", "path": file_path, "raw": raw}
+    result = _cmd_send_recv(request)
+
+    if result.get("type") == "error":
+        print(f"{C_RED}{result.get('message', 'Unknown error')}{C_RESET}", file=sys.stderr)
+        sys.exit(1)
+    elif result.get("type") == "done":
+        text = result.get("text", "")
+        if text:
+            print(text)
+
+
 def _print_help():
-    """Print help listing."""
-    print(f"  {C_BOLD}Commands:{C_RESET}")
-    print()
-    cmds = [
-        ("wh",               "Status + help (this output)"),
-        ("wh status",        "Service status, PID, backend"),
-        ("wh start",         "Launch the service"),
-        ("wh stop",          "Stop the service"),
-        ("wh restart",       "Restart (auto-rebuilds LocalWhisperUI if sources changed)"),
-        ("wh build",         "Rebuild LocalWhisperUI"),
-        ("wh backend",       "Show current backend + list available"),
-        ("wh backend <name>","Switch grammar backend (restarts if running)"),
-        ("wh engine",        "Show current transcription engine + list available"),
-        ("wh engine <name>", "Switch transcription engine (restarts if running)"),
-        ("wh config",        "Show key config values"),
-        ("wh config edit",   "Open config in $EDITOR"),
-        ("wh config path",   "Print path to config file"),
-        ("wh update",        "Pull latest code, update deps, check model, rebuild, restart"),
-        ("wh uninstall",     "Completely remove Local Whisper (service, config, alias)"),
-        ("wh log",           "Tail service log"),
-        ("wh version",       "Show version"),
+    """Print grouped help listing."""
+    groups = [
+        ("Service", [
+            ("wh start",           "Launch the service"),
+            ("wh stop",            "Stop the service"),
+            ("wh restart",         "Restart (rebuilds UI if sources changed)"),
+            ("wh log",             "Tail service log"),
+        ]),
+        ("Voice", [
+            ("wh whisper \"text\"",  "Speak text aloud via Kokoro TTS"),
+            ("wh listen [secs]",   "Record from mic, output transcription"),
+            ("wh transcribe <file>", "Transcribe an audio file"),
+        ]),
+        ("Settings", [
+            ("wh engine [name]",   "Show or switch transcription engine"),
+            ("wh backend [name]",  "Show or switch grammar backend"),
+            ("wh replace",         "Manage text replacement rules"),
+            ("wh config [edit]",   "Show config, or open in $EDITOR"),
+        ]),
+        ("Maintenance", [
+            ("wh update",          "Pull, update deps, rebuild, restart"),
+            ("wh doctor [--fix]",  "Check system health, auto-repair"),
+            ("wh build",           "Rebuild Swift UI"),
+            ("wh uninstall",       "Completely remove Local Whisper"),
+        ]),
     ]
-    width = max(len(c) for c, _ in cmds)
-    for cmd, desc in cmds:
-        print(f"    {C_CYAN}{cmd:<{width}}{C_RESET}  {C_DIM}{desc}{C_RESET}")
-    print()
+    width = max(len(c) for _, cmds in groups for c, _ in cmds)
+    for group_name, cmds in groups:
+        print(f"  {C_BOLD}{group_name}{C_RESET}")
+        for cmd, desc in cmds:
+            print(f"    {C_CYAN}{cmd:<{width}}{C_RESET}  {C_DIM}{desc}{C_RESET}")
+        print()
 
 
 def _get_venv_python() -> Optional[str]:
@@ -857,6 +1167,364 @@ def cmd_update():
     print(f"\n  {C_GREEN}{C_BOLD}Update complete.{C_RESET}")
 
 
+# ---------------------------------------------------------------------------
+# Doctor
+# ---------------------------------------------------------------------------
+
+def _doctor_pass(msg: str):
+    print(f"  {C_GREEN}✓{C_RESET}  {msg}")
+
+def _doctor_fail(msg: str, hint: str = ""):
+    print(f"  {C_RED}✗{C_RESET}  {msg}")
+    if hint:
+        print(f"      {C_DIM}→ {hint}{C_RESET}")
+
+def _doctor_warn(msg: str, hint: str = ""):
+    print(f"  {C_YELLOW}⚠{C_RESET}  {msg}")
+    if hint:
+        print(f"      {C_DIM}→ {hint}{C_RESET}")
+
+def _doctor_info(msg: str):
+    print(f"  {C_DIM}›{C_RESET}  {msg}")
+
+def _doctor_fixing(msg: str):
+    print(f"      {C_CYAN}→ {msg}{C_RESET}")
+
+
+def _get_macos_major() -> Optional[int]:
+    """Return the major macOS version number, or None."""
+    try:
+        result = subprocess.run(["sw_vers", "-productVersion"], capture_output=True, text=True)
+        return int(result.stdout.strip().split(".")[0])
+    except Exception:
+        return None
+
+
+def cmd_doctor(args: list):
+    """Check system health and optionally fix issues."""
+    fix = "--fix" in args
+    core_ok = True
+    project_root = Path(__file__).resolve().parents[2]
+    python = _get_venv_python()
+
+    print()
+    print(f"  {C_BOLD}Core{C_RESET}")
+    print()
+
+    # 1. Python version
+    v = sys.version_info
+    if v >= (3, 11):
+        _doctor_pass(f"Python {v.major}.{v.minor}.{v.micro}")
+    else:
+        _doctor_fail(f"Python {v.major}.{v.minor}.{v.micro}", "Python 3.11+ required")
+        core_ok = False
+
+    # 2. Virtual environment
+    venv_dir = project_root / ".venv"
+    if venv_dir.is_dir():
+        _doctor_pass("Virtual environment")
+    else:
+        _doctor_fail("Virtual environment not found", f"Run: python3 -m venv {venv_dir}")
+        core_ok = False
+
+    # 3. Core Python packages
+    missing_pkgs = []
+    for pkg in ["sounddevice", "numpy", "pynput", "qwen3_asr_mlx", "kokoro_mlx",
+                "requests", "soundfile", "misaki"]:
+        try:
+            __import__(pkg)
+        except ImportError:
+            missing_pkgs.append(pkg)
+    if not missing_pkgs:
+        _doctor_pass("Core Python packages")
+    else:
+        hint = "Run: wh doctor --fix" if not fix else ""
+        _doctor_fail(f"Missing packages: {', '.join(missing_pkgs)}", hint)
+        if fix:
+            macos_major = _get_macos_major()
+            extras = "[apple-intelligence]" if macos_major and macos_major >= 26 else ""
+            install_path = str(project_root) + extras
+            _doctor_fixing(f"pip install -e {install_path}")
+            result = subprocess.run(
+                [python, "-m", "pip", "install", "-e", install_path],
+                capture_output=True,
+            )
+            if result.returncode == 0:
+                _doctor_pass("Packages installed")
+            else:
+                _doctor_fail("pip install failed")
+                core_ok = False
+        else:
+            core_ok = False
+
+    # 4. espeak-ng
+    espeak_found = shutil.which("espeak-ng") is not None
+    if not espeak_found:
+        # Check via brew even if not on PATH
+        try:
+            result = subprocess.run(["brew", "list", "espeak-ng"], capture_output=True)
+            espeak_found = result.returncode == 0
+        except Exception:
+            pass
+    if espeak_found:
+        _doctor_pass("espeak-ng")
+    else:
+        hint = "Run: brew install espeak-ng" if not fix else ""
+        _doctor_fail("espeak-ng not installed", hint)
+        if fix:
+            _doctor_fixing("brew install espeak-ng")
+            result = subprocess.run(["brew", "install", "espeak-ng"], capture_output=True)
+            if result.returncode == 0:
+                _doctor_pass("espeak-ng installed")
+            else:
+                _doctor_fail("brew install espeak-ng failed")
+                core_ok = False
+        else:
+            core_ok = False
+
+    # 5. spaCy model
+    spacy_ok = False
+    try:
+        result = subprocess.run(
+            [python, "-c", "import spacy; spacy.load('en_core_web_sm')"],
+            capture_output=True, timeout=15,
+        )
+        spacy_ok = result.returncode == 0
+    except Exception:
+        pass
+    if spacy_ok:
+        _doctor_pass("spaCy model (en_core_web_sm)")
+    else:
+        hint = "Run: python -m spacy download en_core_web_sm" if not fix else ""
+        _doctor_fail("spaCy model en_core_web_sm not found", hint)
+        if fix:
+            _doctor_fixing("python -m spacy download en_core_web_sm")
+            result = subprocess.run(
+                [python, "-m", "spacy", "download", "en_core_web_sm"],
+                capture_output=True,
+            )
+            if result.returncode == 0:
+                _doctor_pass("spaCy model installed")
+            else:
+                _doctor_fail("spaCy model download failed")
+                core_ok = False
+        else:
+            core_ok = False
+
+    # 6. Qwen3-ASR model
+    qwen_model_dir = MODEL_DIR / "models--mlx-community--Qwen3-ASR-1.7B-bf16"
+    if qwen_model_dir.is_dir():
+        _doctor_pass("Qwen3-ASR model")
+    else:
+        hint = "Run: wh doctor --fix" if not fix else ""
+        _doctor_fail("Qwen3-ASR model not found", hint)
+        if fix:
+            _doctor_fixing("Downloading Qwen3-ASR model...")
+            MODEL_DIR.mkdir(parents=True, exist_ok=True)
+            model_env = os.environ.copy()
+            model_env["HF_HUB_CACHE"] = str(MODEL_DIR)
+            model_env["HF_HUB_DISABLE_TELEMETRY"] = "1"
+            model_env["HF_HUB_OFFLINE"] = "0"
+            result = subprocess.run(
+                [python, "-c",
+                 "from qwen3_asr_mlx import Qwen3ASR; "
+                 "Qwen3ASR.from_pretrained('mlx-community/Qwen3-ASR-1.7B-bf16')"],
+                env=model_env, capture_output=True, timeout=300,
+            )
+            if result.returncode == 0:
+                _doctor_pass("Qwen3-ASR model downloaded")
+            else:
+                _doctor_fail("Qwen3-ASR model download failed")
+                core_ok = False
+        else:
+            core_ok = False
+
+    # 7. Kokoro TTS model
+    kokoro_model_dir = MODEL_DIR / "models--mlx-community--Kokoro-82M-bf16"
+    if kokoro_model_dir.is_dir():
+        _doctor_pass("Kokoro TTS model")
+    else:
+        hint = "Run: wh doctor --fix" if not fix else ""
+        _doctor_fail("Kokoro TTS model not found", hint)
+        if fix:
+            _doctor_fixing("Downloading Kokoro TTS model...")
+            MODEL_DIR.mkdir(parents=True, exist_ok=True)
+            model_env = os.environ.copy()
+            model_env["HF_HUB_CACHE"] = str(MODEL_DIR)
+            model_env["HF_HUB_DISABLE_TELEMETRY"] = "1"
+            model_env["HF_HUB_OFFLINE"] = "0"
+            result = subprocess.run(
+                [python, "-c",
+                 "from kokoro_mlx import KokoroTTS; "
+                 "KokoroTTS.from_pretrained('mlx-community/Kokoro-82M-bf16')"],
+                env=model_env, capture_output=True, timeout=300,
+            )
+            if result.returncode == 0:
+                _doctor_pass("Kokoro TTS model downloaded")
+            else:
+                _doctor_fail("Kokoro TTS model download failed")
+                core_ok = False
+        else:
+            core_ok = False
+
+    # 8. Config file
+    config_path = _get_config_path()
+    if config_path.exists():
+        _doctor_pass("Config file")
+    else:
+        hint = "Run: wh doctor --fix" if not fix else ""
+        _doctor_fail("Config file not found", hint)
+        if fix:
+            _doctor_fixing("Creating default config...")
+            try:
+                from whisper_voice.config import CONFIG_DIR, DEFAULT_CONFIG
+                CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+                config_path.write_text(DEFAULT_CONFIG, encoding="utf-8")
+                _doctor_pass("Config file created")
+            except Exception as e:
+                _doctor_fail(f"Failed: {e}")
+                core_ok = False
+        else:
+            core_ok = False
+
+    # 9. Swift UI binary
+    ui_app = Path.home() / ".whisper" / "LocalWhisperUI.app"
+    if ui_app.is_dir():
+        _doctor_pass("LocalWhisperUI.app")
+    else:
+        _doctor_warn("LocalWhisperUI.app not found", "Service will run headless without it")
+        if fix:
+            _doctor_fixing("Building Swift UI...")
+            cmd_build()
+            if ui_app.is_dir():
+                _doctor_pass("LocalWhisperUI.app built")
+            else:
+                _doctor_warn("Swift UI build failed (service works without it)")
+
+    # 10. LaunchAgent
+    if LAUNCHAGENT_PLIST.exists():
+        result = subprocess.run(
+            ["launchctl", "list", LAUNCHAGENT_LABEL],
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            _doctor_pass("LaunchAgent installed and loaded")
+        else:
+            hint = f"Run: launchctl load {LAUNCHAGENT_PLIST}" if not fix else ""
+            _doctor_warn("LaunchAgent plist exists but not loaded", hint)
+            if fix:
+                _doctor_fixing("launchctl load")
+                subprocess.run(["launchctl", "load", str(LAUNCHAGENT_PLIST)], capture_output=True)
+                _doctor_pass("LaunchAgent loaded")
+    else:
+        _doctor_fail("LaunchAgent not installed", "Run ./setup.sh to install")
+        core_ok = False
+
+    # 11. Accessibility permission
+    try:
+        from whisper_voice.utils import check_accessibility_trusted
+        if check_accessibility_trusted():
+            _doctor_pass("Accessibility permission")
+        else:
+            _doctor_fail("Accessibility permission not granted",
+                         "System Settings → Privacy & Security → Accessibility")
+            core_ok = False
+    except Exception:
+        _doctor_warn("Could not check Accessibility permission")
+
+    # 12. Microphone permission
+    try:
+        from whisper_voice.utils import check_microphone_permission
+        mic_ok, _ = check_microphone_permission()
+        if mic_ok:
+            _doctor_pass("Microphone permission")
+        else:
+            _doctor_fail("Microphone permission not granted",
+                         "System Settings → Privacy & Security → Microphone")
+            core_ok = False
+    except Exception:
+        _doctor_warn("Could not check Microphone permission")
+
+    # 13. Service status
+    running, pid = _is_running()
+    if running:
+        pid_str = str(pid) if pid else "unknown"
+        _doctor_pass(f"Service running (pid {pid_str})")
+    else:
+        hint = "Run: wh start" if not fix else ""
+        _doctor_fail("Service not running", hint)
+        if fix:
+            _doctor_fixing("Starting service...")
+            cmd_restart()
+            time.sleep(2)
+            running, pid = _is_running()
+            if running:
+                _doctor_pass(f"Service started (pid {pid})")
+            else:
+                _doctor_fail("Service failed to start")
+                core_ok = False
+        else:
+            core_ok = False
+
+    # --- Optional ---
+    print()
+    print(f"  {C_BOLD}Optional{C_RESET}")
+    print()
+
+    # 14. Ollama
+    if shutil.which("ollama"):
+        try:
+            import requests
+            requests.get("http://localhost:11434/", timeout=2)
+            _doctor_info("Ollama installed, server running")
+        except Exception:
+            _doctor_info("Ollama installed, server not running")
+    else:
+        _doctor_info("Ollama not installed")
+
+    # 15. LM Studio
+    if shutil.which("lms"):
+        try:
+            import requests
+            requests.get("http://localhost:1234/", timeout=2)
+            _doctor_info("LM Studio installed, server running")
+        except Exception:
+            _doctor_info("LM Studio installed, server not running")
+    else:
+        _doctor_info("LM Studio not installed")
+
+    # 16. Apple Intelligence
+    try:
+        import apple_fm_sdk as fm
+        try:
+            if fm.SystemLanguageModel().is_available():
+                _doctor_info("Apple Intelligence available")
+            else:
+                _doctor_info("Apple Intelligence SDK installed, model not available")
+        except Exception:
+            _doctor_info("Apple Intelligence SDK installed")
+    except ImportError:
+        _doctor_info("Apple Intelligence SDK not installed (optional, macOS 26+)")
+
+    # 17. WhisperKit
+    if shutil.which("whisperkit-cli"):
+        _doctor_info("WhisperKit CLI installed")
+    else:
+        _doctor_info("WhisperKit CLI not installed (optional)")
+
+    # Summary
+    print()
+    if core_ok:
+        print(f"  {C_GREEN}{C_BOLD}All core checks passed.{C_RESET}")
+    else:
+        print(f"  {C_RED}{C_BOLD}Some core checks failed.{C_RESET}")
+        if not fix:
+            print(f"  {C_DIM}Run: wh doctor --fix{C_RESET}")
+    print()
+
+    sys.exit(0 if core_ok else 1)
+
+
 def cmd_default():
     """Default: status + help."""
     running, pid = _is_running()
@@ -905,14 +1573,24 @@ def cli_main():
         cmd_restart()
     elif cmd == "build":
         cmd_build()
+    elif cmd == "whisper":
+        cmd_whisper(rest)
+    elif cmd == "listen":
+        cmd_listen(rest)
+    elif cmd == "transcribe":
+        cmd_transcribe(rest)
     elif cmd == "backend":
         cmd_backend(rest)
     elif cmd == "engine":
         cmd_engine(rest)
+    elif cmd == "replace":
+        cmd_replace(rest)
     elif cmd == "config":
         cmd_config(rest)
     elif cmd == "update":
         cmd_update()
+    elif cmd == "doctor":
+        cmd_doctor(rest)
     elif cmd == "uninstall":
         cmd_uninstall()
     elif cmd == "log":

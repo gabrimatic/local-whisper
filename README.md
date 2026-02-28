@@ -5,7 +5,7 @@
 [![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-required-blue.svg)]()
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)]()
 
-**Local voice transcription, grammar correction, and text-to-speech for macOS.**
+**Local voice transcription, grammar correction, text replacements, and text-to-speech for macOS.**
 
 Double-tap a key, speak, tap to stop. Polished text lands in your clipboard. No cloud, no internet, no tracking. Transcription runs entirely on-device via Qwen3-ASR (MLX) by default.
 
@@ -90,6 +90,7 @@ ollama serve
 - **Real-time duration** display while recording
 - **Floating overlay** showing status (recording, processing, copied) with macOS 26 Liquid Glass design
 - **Automatic grammar correction** that removes filler words and fixes punctuation
+- **Text replacements** for custom spoken→correct mappings (e.g., "gonna" → "going to"), applied after grammar correction
 - **Clipboard integration** for immediate paste, with optional auto-paste directly at the cursor (preserves your clipboard)
 - **Settings window** with full GUI for all config options
 - **Auto-backup** of every recording and transcription
@@ -97,6 +98,7 @@ ollama serve
 - **Vocabulary prompt presets** for technical or dictation use cases (WhisperKit engine)
 - **Retry function** if transcription fails
 - **Text to Speech**: select text in any app and press ⌥T; Kokoro reads it aloud with fast, on-device synthesis via Kokoro-82M. Press ⌥T again or Esc to stop at any time.
+- **CLI access to TTS and transcription**: `wh whisper`, `wh listen`, and `wh transcribe` expose speech synthesis, microphone recording, and file transcription for scripts and automation
 
 ### Keyboard Shortcuts
 
@@ -140,9 +142,24 @@ wh engine           # Show current transcription engine + list available
 wh engine whisperkit  # Switch transcription engine
 wh backend          # Show current grammar backend + list available
 wh backend ollama   # Switch grammar backend
+wh replace          # Show text replacement rules
+wh replace add "gonna" "going to"  # Add a replacement rule
+wh replace remove "gonna"          # Remove a replacement rule
+wh replace on       # Enable replacements
+wh replace off      # Disable replacements
+wh whisper "text"   # Speak text aloud via Kokoro TTS
+wh whisper --voice af_bella "text"  # Speak with a specific voice preset
+echo "hello" | wh whisper           # Pipe text from stdin
+wh listen           # Record from microphone until silence, output transcription
+wh listen 30        # Record up to 30 seconds
+wh listen --raw     # Skip grammar correction, raw transcription
+wh transcribe recording.wav         # Transcribe an audio file
+wh transcribe --raw audio.wav       # Raw transcription, no grammar
 wh config           # Show key config values
 wh config edit      # Open config in editor
 wh config path      # Print path to config file
+wh doctor           # Check system health (deps, models, permissions, service)
+wh doctor --fix     # Auto-repair missing packages, models, and config
 wh log              # Tail service log
 wh version          # Show version
 wh uninstall        # Completely remove Local Whisper
@@ -158,6 +175,7 @@ wh uninstall        # Completely remove Local Whisper
 |------|-------------|
 | Status | Current state (Ready, Recording, etc.) |
 | Grammar: [Backend] | Active backend; submenu to switch in-place |
+| Replacements | Toggle on/off; shows rule count |
 | Retry Last | Re-transcribe the last recording |
 | Copy Last | Copy last transcription again |
 | Transcriptions | Submenu showing last 100 transcriptions; click any entry to copy |
@@ -173,7 +191,7 @@ wh uninstall        # Completely remove Local Whisper
 
 | Tab | What you configure |
 |-----|-------------------|
-| General | Recording, transcription engine, grammar backend, keyboard shortcuts, interface, and history settings |
+| General | Recording, transcription engine, grammar backend, replacements, keyboard shortcuts, interface, and history settings |
 | Advanced | Audio processing, transcription params, backend config, and storage |
 | About | Version, author, credits |
 
@@ -254,6 +272,14 @@ max_chars = 0
 max_tokens = 0
 timeout = 0
 
+[replacements]
+enabled = false
+
+[replacements.rules]
+# spoken form = "correct form"
+# "gonna" = "going to"
+# "wanna" = "want to"
+
 [audio]
 sample_rate = 16000
 min_duration = 0
@@ -317,9 +343,10 @@ Python runs as a headless background service. Swift owns all UI.
 
 ```
 Python (LaunchAgent, headless)
-  ├── Recording, transcription, grammar, clipboard, hotkeys
+  ├── Recording, transcription, grammar, replacements, clipboard, hotkeys
   ├── Text-to-Speech (Kokoro-82M via kokoro-mlx, in-process)
-  └── IPC server at ~/.whisper/ipc.sock
+  ├── IPC server at ~/.whisper/ipc.sock (Swift UI communication)
+  └── Command server at ~/.whisper/cmd.sock (CLI commands)
 
 Swift (subprocess, all UI)
   ├── Menu bar with engine/grammar submenus and transcription history
@@ -352,6 +379,12 @@ Swift (subprocess, all UI)
 │  On-device SDK       │  localhost LLM │  OpenAI-compatible │
 │                                                           │
 │  Removes filler words, fixes grammar and punctuation      │
+└──────────────────────────┬────────────────────────────────┘
+                           ▼
+┌───────────────────────────────────────────────────────────┐
+│  Text Replacements                                        │
+│  Case-insensitive, word-boundary-aware regex matching     │
+│  User-defined spoken → correct form mappings              │
 └──────────────────────────┬────────────────────────────────┘
                            ▼
 ┌───────────────────────────────────────────────────────────┐
@@ -539,7 +572,8 @@ local-whisper/
 └── src/whisper_voice/
     ├── app.py              # Headless app, hotkey handling, IPC integration
     ├── cli.py              # CLI controller (wh)
-    ├── ipc_server.py       # Unix socket IPC server
+    ├── ipc_server.py       # Unix socket IPC server (Swift UI)
+    ├── cmd_server.py       # Unix socket command server (CLI)
     ├── audio.py            # Audio recording + pre-buffer
     ├── audio_processor.py  # VAD, noise reduction, normalization
     ├── backup.py           # File backup
@@ -571,6 +605,7 @@ Data stored in `~/.whisper/`:
 ~/.whisper/
 ├── config.toml             # Settings
 ├── ipc.sock                # Unix socket for Python/Swift IPC
+├── cmd.sock                # Unix socket for CLI commands
 ├── LocalWhisperUI.app      # Swift UI app (built by setup.sh / wh build)
 ├── last_recording.wav      # Audio file
 ├── last_raw.txt            # Before grammar fix

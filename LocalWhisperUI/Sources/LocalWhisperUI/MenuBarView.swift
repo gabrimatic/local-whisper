@@ -25,6 +25,14 @@ struct MenuBarView: View {
             Text("Disabled").tag("")
         }
 
+        Toggle(replacementsMenuTitle, isOn: Binding(
+            get: { appState.config.replacements.enabled },
+            set: { newValue in
+                appState.config.replacements.enabled = newValue
+                appState.ipcClient?.sendConfigUpdate(section: "replacements", key: "enabled", value: newValue)
+            }
+        ))
+
         Divider()
 
         Button("Retry Last") {
@@ -155,6 +163,12 @@ struct MenuBarView: View {
         case "lm_studio": return "Grammar: LM Studio"
         default: return "Grammar"
         }
+    }
+
+    private var replacementsMenuTitle: String {
+        let count = appState.config.replacements.rules.count
+        if count == 0 { return "Replacements" }
+        return "Replacements (\(count) rule\(count == 1 ? "" : "s"))"
     }
 
     private var accessibilityStatusLabel: String {

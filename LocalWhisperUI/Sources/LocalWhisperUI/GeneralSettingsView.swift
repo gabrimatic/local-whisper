@@ -262,6 +262,21 @@ struct GeneralSettingsView: View {
                     }
                 }
 
+                Section("Replacements") {
+                    Toggle("Enable text replacements", isOn: Binding(
+                        get: { appState.config.replacements.enabled },
+                        set: { newValue in
+                            appState.config.replacements.enabled = newValue
+                            appState.ipcClient?.sendConfigUpdate(section: "replacements", key: "enabled", value: newValue)
+                        }
+                    ))
+                    .accessibilityHint("When enabled, matching words and phrases are automatically replaced after transcription")
+
+                    if appState.config.replacements.enabled {
+                        ReplacementRulesView()
+                    }
+                }
+
                 Section("History") {
                     Stepper(
                         "Keep \(appState.config.backup.historyLimit) entries",
@@ -287,6 +302,76 @@ struct GeneralSettingsView: View {
                 }
             }
             .formStyle(.grouped)
+        }
+    }
+}
+
+// MARK: - Replacement rules editor
+
+private struct ReplacementRulesView: View {
+    @Environment(AppState.self) private var appState
+    @State private var newSpoken = ""
+    @State private var newReplacement = ""
+
+    private var sortedRules: [(key: String, value: String)] {
+        appState.config.replacements.rules.sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
+    }
+
+    var body: some View {
+        ForEach(sortedRules, id: \.key) { rule in
+            HStack {
+                Text(rule.key)
+                    .foregroundStyle(.secondary)
+                Image(systemName: "arrow.right")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Text(rule.value)
+                Spacer()
+                Button {
+                    appState.config.replacements.rules.removeValue(forKey: rule.key)
+                    appState.ipcClient?.sendReplacementRemove(spoken: rule.key)
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .foregroundStyle(.red)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove replacement for \(rule.key)")
+            }
+        }
+
+        HStack(spacing: 8) {
+            TextField("Spoken form", text: $newSpoken)
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 160)
+            Image(systemName: "arrow.right")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            TextField("Replacement", text: $newReplacement)
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 160)
+            Button {
+                let spoken = newSpoken.trimmingCharacters(in: .whitespaces)
+                let replacement = newReplacement.trimmingCharacters(in: .whitespaces)
+                guard !spoken.isEmpty, !replacement.isEmpty else { return }
+                appState.config.replacements.rules[spoken] = replacement
+                appState.ipcClient?.sendReplacementAdd(spoken: spoken, replacement: replacement)
+                newSpoken = ""
+                newReplacement = ""
+            } label: {
+                Image(systemName: "plus.circle.fill")
+                    .foregroundStyle(.green)
+            }
+            .buttonStyle(.plain)
+            .disabled(newSpoken.trimmingCharacters(in: .whitespaces).isEmpty || newReplacement.trimmingCharacters(in: .whitespaces).isEmpty)
+            .accessibilityLabel("Add replacement rule")
+        }
+
+        HStack {
+            Image(systemName: "info.circle")
+                .foregroundStyle(.secondary)
+            Text("Replacements are applied after transcription and grammar correction. Matching is case-insensitive.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 }

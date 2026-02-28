@@ -78,7 +78,7 @@ class TTSProcessor:
 
             log(f"TTS: speaking {len(text)} chars", "INFO")
 
-            provider = self._get_provider()
+            provider = self.get_provider()
             if provider is None:
                 self._show_status("TTS unavailable", is_error=True)
                 return
@@ -125,7 +125,7 @@ class TTSProcessor:
             if self._status_callback:
                 self._status_callback("idle", "")
 
-    def _get_provider(self):
+    def get_provider(self):
         """Return the cached TTS provider, recreating it if the provider changed."""
         from .config import get_config
         cfg = get_config()

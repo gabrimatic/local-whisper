@@ -148,4 +148,12 @@ final class IPCClient: @unchecked Sendable {
     func sendConfigUpdate<T: Encodable>(section: String, key: String, value: T) {
         send(ConfigUpdateMessage(section: section, key: key, value: AnyEncodable(value)))
     }
+
+    func sendReplacementAdd(spoken: String, replacement: String) {
+        send(ReplacementAddMessage(spoken: spoken, replacement: replacement))
+    }
+
+    func sendReplacementRemove(spoken: String) {
+        send(ReplacementRemoveMessage(spoken: spoken))
+    }
 }

@@ -204,6 +204,11 @@ struct KokoroTTSConfig: Codable, Sendable {
     var voice: String
 }
 
+struct ReplacementsConfig: Codable, Sendable {
+    var enabled: Bool
+    var rules: [String: String]
+}
+
 struct AppConfig: Codable, Sendable {
     var hotkey: HotkeyConfig
     var transcription: TranscriptionConfig
@@ -219,9 +224,10 @@ struct AppConfig: Codable, Sendable {
     var shortcuts: ShortcutsConfig
     var tts: TTSConfig
     var kokoroTts: KokoroTTSConfig
+    var replacements: ReplacementsConfig
 
     enum CodingKeys: String, CodingKey {
-        case hotkey, transcription, whisper, grammar, ollama, audio, ui, backup, shortcuts, tts
+        case hotkey, transcription, whisper, grammar, ollama, audio, ui, backup, shortcuts, tts, replacements
         case qwen3Asr = "qwen3_asr"
         case appleIntelligence = "apple_intelligence"
         case lmStudio = "lm_studio"
@@ -280,7 +286,8 @@ struct AppConfig: Codable, Sendable {
                 promptEngineer: "ctrl+shift+p"
             ),
             tts: TTSConfig(enabled: true, provider: "kokoro", speakShortcut: "alt+t"),
-            kokoroTts: KokoroTTSConfig(model: "mlx-community/Kokoro-82M-bf16", voice: "af_sky")
+            kokoroTts: KokoroTTSConfig(model: "mlx-community/Kokoro-82M-bf16", voice: "af_sky"),
+            replacements: ReplacementsConfig(enabled: false, rules: [:])
         )
     }
 }
@@ -375,6 +382,17 @@ struct EngineSwitchMessage: Encodable, Sendable {
 struct BackendSwitchMessage: Encodable, Sendable {
     var type = "backend_switch"
     var backend: String
+}
+
+struct ReplacementAddMessage: Encodable, Sendable {
+    var type = "replacement_add"
+    var spoken: String
+    var replacement: String
+}
+
+struct ReplacementRemoveMessage: Encodable, Sendable {
+    var type = "replacement_remove"
+    var spoken: String
 }
 
 struct ConfigUpdateMessage: Encodable, Sendable {
