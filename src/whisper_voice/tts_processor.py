@@ -9,7 +9,6 @@ Triggered by the speak shortcut (default Option+T). Pressing again stops playbac
 import subprocess
 import threading
 import time
-import uuid
 from typing import Callable, Optional
 
 from ApplicationServices import (
@@ -41,6 +40,7 @@ class TTSProcessor:
     def __init__(self, status_callback: Optional[Callable] = None):
         self._status_callback = status_callback
         self._provider = None
+        self._provider_id: str = ""
         self._lock = threading.Lock()
         self._speaking = False
         self._stop_event = threading.Event()
@@ -94,16 +94,14 @@ class TTSProcessor:
                 if self._status_callback:
                     self._status_callback("speaking", "Speaking...")
 
-            # Read fresh config for per-call settings (speaker, language, instruct)
+            # Read fresh config for per-call settings
             from .config import get_config
             cfg = get_config()
-            provider.refresh(cfg.qwen3_tts.model)
+            provider.refresh(cfg.kokoro_tts.model)
             provider.speak(
                 text,
                 self._stop_event,
-                speaker=cfg.qwen3_tts.speaker,
-                language=cfg.qwen3_tts.language,
-                instruct=cfg.qwen3_tts.instruct,
+                speaker=cfg.kokoro_tts.voice,
                 on_playback_start=_on_playback_start,
             )
 
@@ -128,20 +126,27 @@ class TTSProcessor:
                 self._status_callback("idle", "")
 
     def _get_provider(self):
-        """Return the cached TTS provider, creating it on first call."""
+        """Return the cached TTS provider, recreating it if the provider changed."""
+        from .config import get_config
+        cfg = get_config()
+        provider_id = cfg.tts.provider
+
         with self._lock:
-            if self._provider is not None:
+            if self._provider is not None and self._provider_id == provider_id:
                 return self._provider
 
         try:
-            from .config import get_config
             from .tts import create_tts_provider
-            cfg = get_config()
-            provider = create_tts_provider(cfg.tts.provider)
-            provider.refresh(cfg.qwen3_tts.model)
+            provider = create_tts_provider(provider_id)
             provider.start()
             with self._lock:
+                if self._provider is not None:
+                    try:
+                        self._provider.close()
+                    except Exception:
+                        pass
                 self._provider = provider
+                self._provider_id = provider_id
             return provider
         except Exception as e:
             log(f"TTS provider init failed: {e}", "ERR")
@@ -178,10 +183,8 @@ class TTSProcessor:
             return None
 
     def _get_selected_text_clipboard(self) -> Optional[str]:
-        """Clipboard-based fallback using UUID marker detection."""
-        marker = f"__tts_marker_{uuid.uuid4()}__"
+        """Clipboard-based fallback: send Cmd+C and read the result."""
         try:
-            subprocess.run(['pbcopy'], input=marker.encode(), timeout=CLIPBOARD_TIMEOUT)
             time.sleep(0.3)
             subprocess.run([
                 'osascript', '-e',
@@ -191,10 +194,8 @@ class TTSProcessor:
             result = subprocess.run(
                 ['pbpaste'], capture_output=True, text=True, timeout=CLIPBOARD_TIMEOUT
             )
-            content = result.stdout
-            if not content or content == marker:
-                return None
-            return content.strip() if content.strip() else None
+            content = result.stdout.strip()
+            return content if content else None
         except Exception as e:
             log(f"TTS clipboard error: {type(e).__name__}: {e}", "INFO")
             return None
