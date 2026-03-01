@@ -2,8 +2,8 @@
 # Copyright (c) 2025-2026 Soroush Yousefpour
 """Kokoro TTS provider via kokoro-mlx (Apple Silicon, fully offline)."""
 
+import queue
 import threading
-import time
 from typing import Callable, Optional
 
 import numpy as np
@@ -13,7 +13,7 @@ from ..utils import log
 from .base import TTSProvider
 
 _MAX_CHARS = 2000
-_SAMPLE_RATE = 24000
+_SAMPLE_RATE = 48000
 
 
 class KokoroTTSProvider(TTSProvider):
@@ -116,41 +116,69 @@ def _synthesize_and_play(
     stop_event: threading.Event,
     on_playback_start: Optional[Callable] = None,
 ) -> None:
-    try:
-        sample_rate = getattr(model, "SAMPLE_RATE", _SAMPLE_RATE)
-        first = True
+    audio_q: queue.Queue[np.ndarray | None] = queue.Queue()
+    first_chunk_ready = threading.Event()
+    finished = threading.Event()
 
-        for audio in model.generate_stream(text, voice=voice):
-            if stop_event.is_set():
-                sd.stop()
-                return
-
-            audio = np.asarray(audio, dtype=np.float32)
-            if audio.ndim > 1:
-                audio = audio.flatten()
-            if len(audio) == 0:
-                continue
-
-            if first and on_playback_start is not None:
-                try:
-                    on_playback_start()
-                except Exception:
-                    pass
-                first = False
-
-            sd.play(audio, samplerate=sample_rate)
-            duration = len(audio) / sample_rate
-            deadline = time.monotonic() + duration + 0.15
-            while time.monotonic() < deadline:
+    def _produce() -> None:
+        try:
+            for audio in model.generate_stream(text, voice=voice, sample_rate=_SAMPLE_RATE):
                 if stop_event.is_set():
-                    sd.stop()
                     return
-                time.sleep(0.04)
-            sd.wait()
+                audio = np.asarray(audio, dtype=np.float32)
+                if audio.ndim > 1:
+                    audio = audio.flatten()
+                if len(audio) > 0:
+                    audio_q.put(audio)
+                    first_chunk_ready.set()
+        except Exception as e:
+            log(f"Kokoro synthesis error: {e}", "ERR")
+        finally:
+            audio_q.put(None)
+            first_chunk_ready.set()
 
+    producer = threading.Thread(target=_produce, daemon=True)
+    producer.start()
+
+    # Wait for at least one chunk before opening the audio stream.
+    first_chunk_ready.wait()
+    if stop_event.is_set() or audio_q.empty():
+        producer.join(timeout=2.0)
+        return
+
+    playback_started = False
+    write_size = _SAMPLE_RATE // 10  # 100ms pieces
+
+    try:
+        with sd.OutputStream(samplerate=_SAMPLE_RATE, channels=1, dtype="float32") as stream:
+            while not finished.is_set():
+                if stop_event.is_set():
+                    break
+                try:
+                    chunk = audio_q.get(timeout=0.05)
+                except queue.Empty:
+                    continue
+                if chunk is None:
+                    finished.set()
+                    break
+
+                if not playback_started:
+                    playback_started = True
+                    if on_playback_start is not None:
+                        try:
+                            on_playback_start()
+                        except Exception:
+                            pass
+
+                for i in range(0, len(chunk), write_size):
+                    if stop_event.is_set():
+                        break
+                    piece = chunk[i : i + write_size]
+                    stream.write(piece.reshape(-1, 1))
     except Exception as e:
-        log(f"Kokoro synthesis error: {e}", "ERR")
-        sd.stop()
+        log(f"Kokoro playback error: {e}", "ERR")
+
+    producer.join(timeout=2.0)
 
 
 def _split_text(text: str, max_chars: int) -> list[str]:
