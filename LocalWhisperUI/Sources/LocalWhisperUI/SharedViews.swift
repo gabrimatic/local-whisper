@@ -59,6 +59,27 @@ struct DeferredIntTextField: View {
     }
 }
 
+// TextEditor variant for multi-line deferred input (e.g. WhisperKit custom prompt).
+struct DeferredTextEditor: View {
+    let onCommit: (String) -> Void
+
+    @State private var localValue: String
+    @FocusState private var isFocused: Bool
+
+    init(initialValue: String, onCommit: @escaping (String) -> Void) {
+        self.onCommit = onCommit
+        _localValue = State(initialValue: initialValue)
+    }
+
+    var body: some View {
+        TextEditor(text: $localValue)
+            .focused($isFocused)
+            .onChange(of: isFocused) { _, focused in
+                if !focused { onCommit(localValue) }
+            }
+    }
+}
+
 struct RestartNote: View {
     @Environment(AppState.self) private var appState
     var message: String = "Requires service restart to take effect."

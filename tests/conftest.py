@@ -10,7 +10,6 @@ from unittest.mock import patch
 
 # Stubs for macOS framework modules that aren't available in test environments
 FRAMEWORK_STUBS = {
-    "rumps": None,
     "sounddevice": None,
     "AppKit": None,
     "Foundation": None,

@@ -565,20 +565,41 @@ local-whisper/
 │       ├── OverlayWindowController.swift
 │       ├── OverlayView.swift        # Floating pill overlay
 │       ├── GeneralSettingsView.swift
-│       ├── AdvancedSettingsView.swift
+│       ├── AdvancedSettingsView.swift       # struct shell + @State + body
+│       ├── AdvancedSettingsView+Audio.swift
+│       ├── AdvancedSettingsView+Transcription.swift
+│       ├── AdvancedSettingsView+Grammar.swift
+│       ├── AdvancedSettingsView+IO.swift
 │       ├── SettingsView.swift
 │       ├── SharedViews.swift
 │       ├── AboutView.swift
 │       └── Constants.swift
 └── src/whisper_voice/
-    ├── app.py              # Headless service, state machine, IPC
-    ├── cli.py              # CLI controller (wh)
+    ├── app.py              # App class + service_main (imports mixins)
+    ├── app_ipc.py          # IPCMixin: IPC send/receive
+    ├── app_recording.py    # RecordingMixin: keyboard + recording lifecycle
+    ├── app_pipeline.py     # PipelineMixin: transcription pipeline
+    ├── app_commands.py     # CommandsMixin: CLI command handlers
+    ├── app_switching.py    # SwitchingMixin: engine/backend switching
+    ├── cli/                # CLI package (wh)
+    │   ├── constants.py    # Colors, path constants
+    │   ├── lifecycle.py    # start/stop/status
+    │   ├── build.py        # Swift UI build, restart
+    │   ├── settings.py     # engine/backend/replace commands
+    │   ├── editor.py       # Interactive config TUI
+    │   ├── client.py       # whisper/listen/transcribe socket client
+    │   ├── doctor.py       # wh doctor + wh update
+    │   └── main.py         # help, version, cli_main dispatcher
+    ├── config/             # Config package
+    │   ├── schema.py       # Dataclasses + DEFAULT_CONFIG
+    │   ├── loader.py       # load_config, get_config, singleton
+    │   ├── toml_helpers.py # _find/_replace_in_section, _serialize_toml_value
+    │   └── mutations.py    # add/remove_replacement, update_config_field
     ├── ipc_server.py       # IPC server (Swift UI)
     ├── cmd_server.py       # Command server (CLI)
     ├── audio.py            # Recording and pre-buffer
     ├── audio_processor.py  # VAD, noise reduction, normalization
     ├── backup.py           # History persistence
-    ├── config.py           # Config management
     ├── grammar.py          # Grammar backend factory
     ├── transcriber.py      # Engine routing
     ├── utils.py            # Helpers

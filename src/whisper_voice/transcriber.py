@@ -34,9 +34,9 @@ class Transcriber:
     Wraps the configured engine and provides a consistent API.
     """
 
-    def __init__(self):
-        config = get_config()
-        engine_id = config.transcription.engine
+    def __init__(self, engine_id: str = None):
+        if engine_id is None:
+            engine_id = get_config().transcription.engine
         try:
             self._engine: TranscriptionEngine = create_engine(engine_id)
             log(f"Transcription engine: {self._engine.name}", "INFO")

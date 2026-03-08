@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3.1] - 2026-03-08
+
+### Fixed
+
+- Microphone permission check now retries up to three times after startup, handling the race condition where macOS TCC has not yet propagated the permission granted during setup.
+- Microphone permission error message now correctly instructs users to enable Python, not the terminal app.
+- `wh doctor --fix` now correctly installs the Apple Intelligence SDK on macOS 15 and later, not only on macOS 26+.
+
+---
+
 ## [1.3.0] - 2026-02-27
 
 ### Added

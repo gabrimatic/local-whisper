@@ -6,12 +6,8 @@ Unit tests for config.py.
 All tests use temporary directories and never touch ~/.whisper/.
 """
 
-import importlib
 import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import patch
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -27,21 +23,23 @@ def _load_config_from(tmp_path: Path, toml_content: str | None = None):
     if toml_content is not None:
         cfg_file.write_text(toml_content, encoding="utf-8")
 
-    # Remove cached module so constants are re-evaluated with fresh paths
+    # Remove cached modules so they re-import fresh
     for mod in list(sys.modules.keys()):
         if "whisper_voice" in mod:
             del sys.modules[mod]
 
-    with patch("whisper_voice.config.CONFIG_DIR", tmp_path), \
-         patch("whisper_voice.config.CONFIG_FILE", cfg_file):
-        from whisper_voice import config as cfg_mod
-        # Also patch the module-level references that load_config uses
-        cfg_mod.CONFIG_DIR = tmp_path
-        cfg_mod.CONFIG_FILE = cfg_file
-        # Reset global singleton so load_config runs fresh
-        cfg_mod._config = None
-        result = cfg_mod.load_config()
-        return result, cfg_mod
+    import whisper_voice.config.loader as loader_mod
+    import whisper_voice.config.schema as schema_mod
+    from whisper_voice import config as cfg_mod
+
+    # Patch the canonical source; both loader and mutations read through schema module
+    schema_mod.CONFIG_DIR = tmp_path
+    schema_mod.CONFIG_FILE = cfg_file
+    # Reset singleton so load_config runs fresh
+    loader_mod._config = None
+
+    result = loader_mod.load_config()
+    return result, cfg_mod
 
 
 # ---------------------------------------------------------------------------
@@ -178,29 +176,26 @@ class TestValidation:
 
 class TestUpdateConfigField:
     def test_update_string_field(self, tmp_path):
-        from whisper_voice import config as cfg_mod
         toml = "[qwen3_asr]\nmodel = \"mlx-community/Qwen3-ASR-1.7B-bf16\"\nlanguage = \"auto\"\ntimeout = 0\nprefill_step_size = 4096\n"
         cfg_file = tmp_path / "config.toml"
         cfg_file.write_text(toml, encoding="utf-8")
 
-        # Reload module with patched paths
         for mod in list(sys.modules.keys()):
             if "whisper_voice" in mod:
                 del sys.modules[mod]
 
-        with patch("whisper_voice.config.CONFIG_DIR", tmp_path), \
-             patch("whisper_voice.config.CONFIG_FILE", cfg_file):
-            from whisper_voice import config as cfg_mod
-            cfg_mod.CONFIG_DIR = tmp_path
-            cfg_mod.CONFIG_FILE = cfg_file
-            cfg_mod._config = None
+        import whisper_voice.config.loader as loader_mod
+        import whisper_voice.config.schema as schema_mod
+        from whisper_voice import config as cfg_mod
+        schema_mod.CONFIG_DIR = tmp_path
+        schema_mod.CONFIG_FILE = cfg_file
+        loader_mod._config = None
 
-            cfg_mod.update_config_field("qwen3_asr", "language", "en")
-            written = cfg_file.read_text(encoding="utf-8")
-            assert 'language = "en"' in written
+        cfg_mod.update_config_field("qwen3_asr", "language", "en")
+        written = cfg_file.read_text(encoding="utf-8")
+        assert 'language = "en"' in written
 
     def test_update_bool_field(self, tmp_path):
-        from whisper_voice import config as cfg_mod
         toml = "[grammar]\nbackend = \"apple_intelligence\"\nenabled = false\n"
         cfg_file = tmp_path / "config.toml"
         cfg_file.write_text(toml, encoding="utf-8")
@@ -209,17 +204,17 @@ class TestUpdateConfigField:
             if "whisper_voice" in mod:
                 del sys.modules[mod]
 
-        with patch("whisper_voice.config.CONFIG_DIR", tmp_path), \
-             patch("whisper_voice.config.CONFIG_FILE", cfg_file):
-            from whisper_voice import config as cfg_mod
-            cfg_mod.CONFIG_DIR = tmp_path
-            cfg_mod.CONFIG_FILE = cfg_file
-            cfg_mod._config = None
-            cfg_mod.load_config()  # prime singleton
+        import whisper_voice.config.loader as loader_mod
+        import whisper_voice.config.schema as schema_mod
+        from whisper_voice import config as cfg_mod
+        schema_mod.CONFIG_DIR = tmp_path
+        schema_mod.CONFIG_FILE = cfg_file
+        loader_mod._config = None
+        loader_mod.load_config()  # prime singleton
 
-            cfg_mod.update_config_field("grammar", "enabled", True)
-            written = cfg_file.read_text(encoding="utf-8")
-            assert "enabled = true" in written
+        cfg_mod.update_config_field("grammar", "enabled", True)
+        written = cfg_file.read_text(encoding="utf-8")
+        assert "enabled = true" in written
 
     def test_update_int_field(self, tmp_path):
         toml = "[qwen3_asr]\nmodel = \"m\"\nlanguage = \"auto\"\ntimeout = 0\nprefill_step_size = 4096\n"
@@ -230,17 +225,17 @@ class TestUpdateConfigField:
             if "whisper_voice" in mod:
                 del sys.modules[mod]
 
-        with patch("whisper_voice.config.CONFIG_DIR", tmp_path), \
-             patch("whisper_voice.config.CONFIG_FILE", cfg_file):
-            from whisper_voice import config as cfg_mod
-            cfg_mod.CONFIG_DIR = tmp_path
-            cfg_mod.CONFIG_FILE = cfg_file
-            cfg_mod._config = None
-            cfg_mod.load_config()
+        import whisper_voice.config.loader as loader_mod
+        import whisper_voice.config.schema as schema_mod
+        from whisper_voice import config as cfg_mod
+        schema_mod.CONFIG_DIR = tmp_path
+        schema_mod.CONFIG_FILE = cfg_file
+        loader_mod._config = None
+        loader_mod.load_config()
 
-            cfg_mod.update_config_field("qwen3_asr", "prefill_step_size", 8192)
-            written = cfg_file.read_text(encoding="utf-8")
-            assert "prefill_step_size = 8192" in written
+        cfg_mod.update_config_field("qwen3_asr", "prefill_step_size", 8192)
+        written = cfg_file.read_text(encoding="utf-8")
+        assert "prefill_step_size = 8192" in written
 
 
 # ---------------------------------------------------------------------------
