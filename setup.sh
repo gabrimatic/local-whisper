@@ -18,105 +18,125 @@ NC='\033[0m' # No Color
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-print_header() {
-    echo ""
-    echo -e "${BOLD}╭────────────────────────────────────────╮${NC}"
-    echo -e "${BOLD}│${NC}  ${CYAN}Local Whisper${NC} · Setup               ${BOLD}│${NC}"
-    echo -e "${BOLD}│${NC}  ${DIM}Transcription · Grammar · TTS${NC}        ${BOLD}│${NC}"
-    echo -e "${BOLD}╰────────────────────────────────────────╯${NC}"
-    echo ""
-}
-
-log_step() {
-    echo -e "${CYAN}▶${NC} $1"
-}
-
-log_ok() {
-    echo -e "  ${GREEN}✓${NC} $1"
-}
-
-log_warn() {
-    echo -e "  ${YELLOW}⚠${NC} $1"
-}
-
-log_error() {
-    echo -e "  ${RED}✗${NC} $1"
-}
-
-log_info() {
-    echo -e "  ${DIM}›${NC} $1"
-}
+log_step() { echo -e "\n${CYAN}▶${NC} $1"; }
+log_ok()   { echo -e "  ${GREEN}✓${NC} $1"; }
+log_warn() { echo -e "  ${YELLOW}⚠${NC} $1"; }
+log_info() { echo -e "  ${DIM}›${NC} $1"; }
 
 fail() {
     echo ""
-    log_error "$1"
-    echo ""
-    echo -e "${RED}Setup failed.${NC} Please fix the issue above and run this script again."
-    echo ""
+    echo -e "  ${RED}✗${NC} $1"
+    echo -e "\n${RED}Setup failed.${NC} Fix the issue above and run this script again.\n"
     exit 1
 }
 
+write_plist() {
+    cat > "$PLIST_PATH" <<PLIST_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.local-whisper</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$VENV_DIR/bin/wh</string>
+        <string>_run</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HF_HUB_CACHE</key>
+        <string>$HOME/.whisper/models</string>
+        <key>HF_HUB_OFFLINE</key>
+        <string>1</string>
+        <key>HF_HUB_DISABLE_TELEMETRY</key>
+        <string>1</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <${1}/>
+    <key>KeepAlive</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>$LOG_PATH</string>
+    <key>StandardErrorPath</key>
+    <string>$LOG_PATH</string>
+</dict>
+</plist>
+PLIST_EOF
+}
+
+check_ax() {
+    "$VENV_DIR/bin/python3" -c "
+from whisper_voice.utils import check_accessibility_trusted
+print('yes' if check_accessibility_trusted() else 'no')
+" 2>/dev/null
+}
+
+check_mic() {
+    "$VENV_DIR/bin/python3" -c "
+from whisper_voice.utils import check_microphone_permission
+ok, _ = check_microphone_permission()
+print('yes' if ok else 'no')
+" 2>/dev/null
+}
+
 # ============================================================================
-# Pre-flight Checks
+# Header
 # ============================================================================
 
-print_header
+echo ""
+echo -e "${BOLD}╭────────────────────────────────────────╮${NC}"
+echo -e "${BOLD}│${NC}  ${CYAN}Local Whisper${NC} · Setup               ${BOLD}│${NC}"
+echo -e "${BOLD}│${NC}  ${DIM}Transcription · Grammar · TTS${NC}        ${BOLD}│${NC}"
+echo -e "${BOLD}╰────────────────────────────────────────╯${NC}"
 
-# Check macOS
+# ============================================================================
+# System requirements
+# ============================================================================
+
 log_step "Checking system requirements..."
 
 if [[ "$OSTYPE" != "darwin"* ]]; then
-    fail "This app only works on macOS. Detected: $OSTYPE"
+    fail "macOS required. Detected: $OSTYPE"
 fi
-log_ok "macOS detected"
 
-# Check architecture
 ARCH=$(uname -m)
-if [[ "$ARCH" == "arm64" ]]; then
-    log_ok "Apple Silicon (M1/M2/M3/M4) detected"
-elif [[ "$ARCH" == "x86_64" ]]; then
-    fail "Intel Mac detected. Local Whisper requires Apple Silicon (M1 or later)."
-else
-    fail "Unknown architecture: $ARCH"
+if [[ "$ARCH" != "arm64" ]]; then
+    fail "Apple Silicon required. Detected: $ARCH"
 fi
 
-# Check macOS version (need macOS 26+ for Apple Intelligence Foundation Models)
 MACOS_VERSION=$(sw_vers -productVersion)
 MACOS_MAJOR=$(echo "$MACOS_VERSION" | cut -d'.' -f1)
 if [[ "$MACOS_MAJOR" -lt 26 ]]; then
-    log_warn "macOS $MACOS_VERSION detected"
-    log_warn "Apple Intelligence Foundation Models require macOS 26 (Tahoe) or later"
-    log_warn "Grammar correction will not work until you upgrade"
+    log_ok "macOS $MACOS_VERSION (Apple Intelligence requires macOS 26+)"
 else
-    log_ok "macOS $MACOS_VERSION (supports Apple Intelligence)"
+    log_ok "macOS $MACOS_VERSION"
 fi
 
 # ============================================================================
 # Homebrew
 # ============================================================================
 
-echo ""
 log_step "Checking Homebrew..."
 
 if ! command -v brew &> /dev/null; then
-    log_warn "Homebrew not found. Installing..."
+    log_info "Installing Homebrew..."
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || \
-        fail "Failed to install Homebrew. Visit https://brew.sh for manual installation."
-
-    # Add brew to PATH for this session
+        fail "Homebrew install failed. Visit https://brew.sh"
     eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 log_ok "Homebrew ready"
 
 # ============================================================================
-# Python 3
+# Python
 # ============================================================================
 
-echo ""
-log_step "Checking Python 3..."
+log_step "Checking Python..."
 
 if ! command -v python3 &> /dev/null; then
-    log_warn "Python 3 not found. Installing via Homebrew..."
+    log_info "Installing Python 3 via Homebrew..."
     brew install python3 || fail "Failed to install Python 3"
 fi
 
@@ -130,49 +150,35 @@ fi
 log_ok "Python $PYTHON_VERSION"
 
 # ============================================================================
-# Virtual Environment
+# Virtual environment + package install
 # ============================================================================
 
-echo ""
-log_step "Setting up Python virtual environment..."
+log_step "Installing local-whisper..."
 
 VENV_DIR="$SCRIPT_DIR/.venv"
 
 if [[ ! -d "$VENV_DIR" ]]; then
     python3 -m venv "$VENV_DIR" || fail "Failed to create virtual environment"
-    log_ok "Created virtual environment"
-else
-    log_ok "Virtual environment exists"
 fi
 
-# Activate venv
 source "$VENV_DIR/bin/activate" || fail "Failed to activate virtual environment"
-log_ok "Activated virtual environment"
-
-# ============================================================================
-# Install Package (editable mode)
-# ============================================================================
-
-echo ""
-log_step "Installing local-whisper package..."
 
 pip install --upgrade pip -q || fail "Failed to upgrade pip"
 if [[ "$MACOS_MAJOR" -ge 26 ]]; then
-    pip install -e "$SCRIPT_DIR[apple-intelligence]" || fail "Failed to install package"
-    log_ok "Package installed (editable mode, with Apple Intelligence)"
+    pip install -e "$SCRIPT_DIR[apple-intelligence]" -q || fail "Failed to install package"
+    log_ok "Package installed (with Apple Intelligence)"
 else
-    pip install -e "$SCRIPT_DIR" || fail "Failed to install package"
-    log_ok "Package installed (editable mode)"
-    log_warn "Apple Intelligence SDK not available (requires macOS 26+ and Xcode 26+)"
+    pip install -e "$SCRIPT_DIR" -q || fail "Failed to install package"
+    log_ok "Package installed"
 fi
 
 # ============================================================================
-# Write default configuration
+# Configuration
 # ============================================================================
 
-echo ""
-log_step "Writing default configuration..."
+log_step "Configuring..."
 mkdir -p "$HOME/.whisper"
+
 "$VENV_DIR/bin/python" -c "
 import re
 from whisper_voice.config import DEFAULT_CONFIG
@@ -182,198 +188,135 @@ config_path = Path.home() / '.whisper' / 'config.toml'
 
 if not config_path.exists():
     config_path.write_text(DEFAULT_CONFIG, encoding='utf-8')
-    print('Config written (fresh install)')
+    print('created')
 else:
-    # Parse section names present in existing config and in the default
     existing = config_path.read_text(encoding='utf-8')
     existing_sections = set(re.findall(r'^\[([^\]]+)\]', existing, re.MULTILINE))
-
-    # Extract each section block from DEFAULT_CONFIG
     default_blocks = re.split(r'(?=^\[[^\]]+\])', DEFAULT_CONFIG, flags=re.MULTILINE)
     appended = []
     for block in default_blocks:
         m = re.match(r'^\[([^\]]+)\]', block)
         if m and m.group(1) not in existing_sections:
             appended.append(block.rstrip())
-
     if appended:
-        names = [re.match(r'^\[([^\]]+)\]', b).group(1) for b in appended]
         with config_path.open('a', encoding='utf-8') as f:
             f.write('\n')
             f.write('\n'.join(appended))
             f.write('\n')
-        print('Added missing sections:', names)
+        print('updated')
     else:
-        print('Config already up to date')
-" && log_ok "Config updated at ~/.whisper/config.toml" || log_warn "Could not update config"
+        print('current')
+" 2>/dev/null && log_ok "Config at ~/.whisper/config.toml" || log_warn "Could not write config"
 
 MODEL_DIR="$HOME/.whisper/models"
 mkdir -p "$MODEL_DIR"
 
 # ============================================================================
-# Pre-download and warm up Qwen3-ASR model (default transcription engine)
+# Models
 # ============================================================================
 
-echo ""
-log_step "Pre-downloading Qwen3-ASR model..."
-log_info "Downloads and caches the speech model to ~/.whisper/models/."
-log_info "This only happens once."
+log_step "Downloading models (one-time)..."
 
+# Qwen3-ASR (transcription)
 if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
 from qwen3_asr_mlx import Qwen3ASR
 Qwen3ASR.from_pretrained('mlx-community/Qwen3-ASR-1.7B-bf16')
 " 2>/dev/null; then
-    log_ok "Qwen3-ASR model downloaded"
+    log_ok "Qwen3-ASR model"
 else
-    log_warn "Qwen3-ASR model download failed - first use may download automatically"
+    log_warn "Qwen3-ASR download failed (will retry on first use)"
 fi
 
-echo ""
-log_step "Warming up Qwen3-ASR model..."
-log_info "Compiling the MLX compute graph so first transcription is fast."
-log_info "This may take 60-120 seconds. Only happens once."
-
+# Warm up Qwen3-ASR
+log_info "Warming up Qwen3-ASR (compiling MLX graph, 60-120s, one-time)..."
 if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
-import numpy as np
 from qwen3_asr_mlx import Qwen3ASR
 model = Qwen3ASR.from_pretrained('mlx-community/Qwen3-ASR-1.7B-bf16')
 model.warm_up()
 " 2>/dev/null; then
-    log_ok "Qwen3-ASR model warmed up and ready"
+    log_ok "Qwen3-ASR warmed up"
 else
-    log_warn "Model warm-up failed - first transcription may be slower"
+    log_warn "Warm-up failed (first transcription may be slower)"
 fi
 
-# ============================================================================
-# Kokoro TTS setup (default TTS engine, English, fully offline after setup)
-# ============================================================================
-
-log_step "Setting up Kokoro TTS dependencies..."
-
-# espeak-ng is required by misaki (the G2P phonemizer used by Kokoro)
-if brew list espeak-ng &>/dev/null 2>&1; then
-    log_ok "espeak-ng already installed"
-else
-    log_info "Installing espeak-ng (phonemizer for Kokoro)..."
-    if brew install espeak-ng -q; then
-        log_ok "espeak-ng installed"
-    else
-        log_warn "espeak-ng install failed — Kokoro TTS may not work correctly"
-    fi
+# Kokoro TTS dependencies
+if ! brew list espeak-ng &>/dev/null 2>&1; then
+    brew install espeak-ng -q 2>/dev/null || log_warn "espeak-ng install failed (TTS may not work)"
 fi
+"$VENV_DIR/bin/python3" -m spacy download en_core_web_sm -q 2>/dev/null || log_warn "spacy model download failed (TTS may not work)"
 
-# Download the spacy English model used by misaki for G2P phonemization
-log_info "Downloading spacy English language model (en_core_web_sm)..."
-if "$VENV_DIR/bin/python3" -m spacy download en_core_web_sm -q 2>/dev/null; then
-    log_ok "spacy en_core_web_sm ready"
-else
-    log_warn "spacy model download failed — Kokoro TTS may not work correctly"
-fi
-
-log_step "Pre-downloading Kokoro TTS model and voices..."
-log_info "Downloads mlx-community/Kokoro-82M-bf16 + voice packs to ~/.whisper/models/ (~400MB, one time)."
-
+# Kokoro TTS model
 if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
 from kokoro_mlx import KokoroTTS
 KokoroTTS.from_pretrained('mlx-community/Kokoro-82M-bf16')
 " 2>/dev/null; then
-    log_ok "Kokoro model and voices downloaded"
+    log_ok "Kokoro TTS model"
 else
-    log_warn "Kokoro model download failed — first use will download automatically"
+    log_warn "Kokoro download failed (will retry on first use)"
 fi
 
 # ============================================================================
-# WhisperKit CLI (alternative transcription engine)
-# WhisperKit is not installed by default. If you want to use it, install
-# manually: brew install whisperkit-cli
-# Then switch engines via: wh engine whisperkit
+# Optional backends (Ollama / LM Studio)
 # ============================================================================
-
-# ============================================================================
-# Ollama Model Setup (if Ollama is installed)
-# ============================================================================
-
-echo ""
-log_step "Checking Ollama..."
 
 OLLAMA_MODEL="gemma3:4b-it-qat"
-
-if command -v ollama &> /dev/null; then
-    log_ok "Ollama installed"
-
-    # Check if model is already downloaded
-    if ollama list 2>/dev/null | grep -q "$OLLAMA_MODEL"; then
-        log_ok "Model $OLLAMA_MODEL already downloaded"
-    else
-        log_info "Downloading grammar model: $OLLAMA_MODEL"
-        log_info "This may take a few minutes..."
-        if ollama pull "$OLLAMA_MODEL" 2>&1 | grep -E "pulling|success|already"; then
-            log_ok "Model $OLLAMA_MODEL ready"
-        else
-            log_warn "Failed to download model (you can do this later with: ollama pull $OLLAMA_MODEL)"
-        fi
-    fi
-else
-    log_info "Ollama not installed (optional - download from https://ollama.com)"
-fi
-
-# ============================================================================
-# LM Studio Model Setup (if LM Studio CLI is installed)
-# ============================================================================
-
-echo ""
-log_step "Checking LM Studio..."
-
 LMSTUDIO_MODEL="google/gemma-3-4b"
 
-if command -v lms &> /dev/null; then
-    log_ok "LM Studio CLI installed"
-
-    # Check if model is already downloaded
-    if lms ls 2>/dev/null | grep -q "gemma-3-4b"; then
-        log_ok "Model $LMSTUDIO_MODEL already downloaded"
+if command -v ollama &> /dev/null; then
+    log_step "Setting up Ollama..."
+    if ollama list 2>/dev/null | grep -q "$OLLAMA_MODEL"; then
+        log_ok "Model $OLLAMA_MODEL ready"
     else
-        log_info "Downloading grammar model: $LMSTUDIO_MODEL"
-        log_info "This may take a few minutes..."
+        log_info "Downloading $OLLAMA_MODEL..."
+        if ollama pull "$OLLAMA_MODEL" >/dev/null 2>&1; then
+            log_ok "Model $OLLAMA_MODEL ready"
+        else
+            log_warn "Download failed (run later: ollama pull $OLLAMA_MODEL)"
+        fi
+    fi
+fi
+
+if command -v lms &> /dev/null; then
+    log_step "Setting up LM Studio..."
+    if lms ls 2>/dev/null | grep -q "gemma-3-4b"; then
+        log_ok "Model $LMSTUDIO_MODEL ready"
+    else
+        log_info "Downloading $LMSTUDIO_MODEL..."
         if lms get "$LMSTUDIO_MODEL" -y --quiet 2>/dev/null; then
             log_ok "Model $LMSTUDIO_MODEL ready"
         else
-            log_warn "Failed to download model (you can do this later in LM Studio)"
+            log_warn "Download failed (download later in LM Studio)"
         fi
     fi
-else
-    log_info "LM Studio not installed (optional - download from https://lmstudio.ai)"
 fi
 
 # ============================================================================
-# Build LocalWhisperUI (Swift menu bar app)
+# Build Swift UI
 # ============================================================================
 
-echo ""
-log_step "Building LocalWhisperUI..."
-log_info "This is a one-time build. The app is launched automatically by the service."
+log_step "Building UI..."
 
 SWIFT_UI_DIR="$SCRIPT_DIR/LocalWhisperUI"
 SWIFT_UI_DEST="$HOME/.whisper/LocalWhisperUI.app"
 
 if [[ -d "$SWIFT_UI_DIR" ]]; then
     if ! command -v swift &> /dev/null; then
-        log_warn "Swift not found — skipping UI build"
-        log_info "The service will run headless until you rebuild with: wh build"
+        log_warn "Swift not found. Service will run headless (rebuild later: wh build)"
     else
         cd "$SWIFT_UI_DIR"
 
-        swift build -c release 2>&1
-        SWIFT_BIN="$SWIFT_UI_DIR/.build/release/LocalWhisperUI"
-        if [[ -f "$SWIFT_BIN" ]]; then
-            # Assemble the .app bundle
-            APP_MACOS="$SWIFT_UI_DEST/Contents/MacOS"
-            APP_RES="$SWIFT_UI_DEST/Contents/Resources"
-            mkdir -p "$APP_MACOS" "$APP_RES"
+        SWIFT_BUILD_LOG=$(mktemp)
+        if swift build -c release >"$SWIFT_BUILD_LOG" 2>&1; then
+            rm -f "$SWIFT_BUILD_LOG"
+            SWIFT_BIN="$SWIFT_UI_DIR/.build/release/LocalWhisperUI"
+            if [[ -f "$SWIFT_BIN" ]]; then
+                rm -rf "$SWIFT_UI_DEST"
+                APP_MACOS="$SWIFT_UI_DEST/Contents/MacOS"
+                APP_RES="$SWIFT_UI_DEST/Contents/Resources"
+                mkdir -p "$APP_MACOS" "$APP_RES"
+                cp "$SWIFT_BIN" "$APP_MACOS/LocalWhisperUI"
 
-            cp "$SWIFT_BIN" "$APP_MACOS/LocalWhisperUI"
-
-            cat > "$SWIFT_UI_DEST/Contents/Info.plist" <<'PLIST'
+                cat > "$SWIFT_UI_DEST/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -402,155 +345,156 @@ if [[ -d "$SWIFT_UI_DIR" ]]; then
 </plist>
 PLIST
 
-            # Copy app icon into bundle resources
-            cp "$SCRIPT_DIR/src/whisper_voice/assets/LocalWhisper.icns" "$SWIFT_UI_DEST/Contents/Resources/AppIcon.icns"
-
-            log_ok "LocalWhisperUI built and installed at $SWIFT_UI_DEST"
+                cp "$SCRIPT_DIR/src/whisper_voice/assets/LocalWhisper.icns" "$SWIFT_UI_DEST/Contents/Resources/AppIcon.icns"
+                log_ok "LocalWhisperUI built"
+            else
+                log_warn "Build produced no binary. Service will run headless."
+            fi
         else
-            log_warn "LocalWhisperUI build failed — service will run headless"
-            log_warn "Requires macOS 26+ SDK and Xcode 26+"
+            log_warn "Swift build failed (requires macOS 26+ SDK). Service will run headless."
+            log_info "Build log: $SWIFT_BUILD_LOG"
         fi
 
         cd "$SCRIPT_DIR"
     fi
 else
-    log_warn "LocalWhisperUI source not found at $SWIFT_UI_DIR — skipping"
+    log_warn "LocalWhisperUI source not found. Service will run headless."
 fi
 
 # ============================================================================
-# Install as LaunchAgent
+# LaunchAgent
 # ============================================================================
 
-echo ""
-log_step "Installing as LaunchAgent..."
+log_step "Installing service..."
 
-# Legacy cleanup: remove old Login Item and old LaunchAgent if present
+# Legacy cleanup
 osascript -e 'tell application "System Events" to delete (login items whose name is "Local Whisper")' 2>/dev/null || true
 if [[ -f "$HOME/Library/LaunchAgents/info.gabrimatic.local-whisper.plist" ]]; then
     launchctl unload "$HOME/Library/LaunchAgents/info.gabrimatic.local-whisper.plist" 2>/dev/null || true
     rm -f "$HOME/Library/LaunchAgents/info.gabrimatic.local-whisper.plist"
-    log_ok "Removed legacy LaunchAgent"
 fi
 
-# Kill any existing instance
+# Stop any running instance
+if [[ -f "$HOME/Library/LaunchAgents/com.local-whisper.plist" ]]; then
+    launchctl unload "$HOME/Library/LaunchAgents/com.local-whisper.plist" 2>/dev/null || true
+fi
 pkill -f "wh _run" 2>/dev/null || true
 pkill -f "whisper_voice" 2>/dev/null || true
 pkill -x "Local Whisper" 2>/dev/null || true
-rm -f "$HOME/.whisper/service.lock"
+pkill -x "LocalWhisperUI" 2>/dev/null || true
 sleep 1
 
-WH_BIN="$VENV_DIR/bin/wh"
+# Clean stale runtime files
+rm -f "$HOME/.whisper/service.lock" "$HOME/.whisper/ipc.sock" "$HOME/.whisper/cmd.sock"
 
-# Verify wh binary was created by pip install
+WH_BIN="$VENV_DIR/bin/wh"
 if [[ ! -f "$WH_BIN" ]]; then
-    fail "wh binary not found at $WH_BIN - package install may have failed"
+    fail "wh binary not found at $WH_BIN"
 fi
 
-# Write LaunchAgent plist
 PLIST_PATH="$HOME/Library/LaunchAgents/com.local-whisper.plist"
 LOG_PATH="$HOME/.whisper/service.log"
-mkdir -p "$HOME/Library/LaunchAgents"
-mkdir -p "$HOME/.whisper"
+mkdir -p "$HOME/Library/LaunchAgents" "$HOME/.whisper"
 
-cat > "$PLIST_PATH" <<PLIST_EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.local-whisper</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>$VENV_DIR/bin/wh</string>
-        <string>_run</string>
-    </array>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-        <key>HF_HUB_CACHE</key>
-        <string>$HOME/.whisper/models</string>
-        <key>HF_HUB_OFFLINE</key>
-        <string>1</string>
-        <key>HF_HUB_DISABLE_TELEMETRY</key>
-        <string>1</string>
-    </dict>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <false/>
-    <key>StandardOutPath</key>
-    <string>$LOG_PATH</string>
-    <key>StandardErrorPath</key>
-    <string>$LOG_PATH</string>
-</dict>
-</plist>
-PLIST_EOF
+log_ok "Service prepared"
 
-log_ok "LaunchAgent plist written"
+# ============================================================================
+# Permissions
+# ============================================================================
+# Both permissions are requested from the venv Python binary (the same one the
+# LaunchAgent runs). macOS TCC grants apply per-binary path, so granting here
+# means the service inherits the same access.
+#
+# The permission dialogs will show "Python" as the app name. That's expected.
 
-# Unload stale entry if any, then load fresh
-launchctl unload "$PLIST_PATH" 2>/dev/null || true
-if launchctl load "$PLIST_PATH" 2>/dev/null; then
-    log_ok "LaunchAgent loaded (auto-start at login enabled)"
-else
-    log_warn "LaunchAgent load had a warning - continuing"
-fi
+log_step "Checking permissions..."
+log_info "macOS will show \"Python\" in permission dialogs. That is the correct app."
 
-# Start the service now
-launchctl start com.local-whisper 2>/dev/null || true
-sleep 2
-
-# Show status
-if pgrep -f "wh _run" > /dev/null 2>&1; then
-    _SVC_PID=$(pgrep -f "wh _run" | head -1)
-    log_ok "Service started (pid $_SVC_PID)"
-else
-    log_info "Service starting in background"
-fi
-
-# Request Accessibility permission.
-# We call AXIsProcessTrustedWithOptions from the venv Python - the same executable
-# the LaunchAgent uses. Granting here grants it for the service too.
-echo ""
-log_step "Requesting Accessibility permission..."
-AX_ALREADY_GRANTED=$("$VENV_DIR/bin/python3" -c "
+# Request Accessibility (opens System Settings if not granted)
+AX_OK=$("$VENV_DIR/bin/python3" -c "
 from whisper_voice.utils import check_accessibility_trusted, request_accessibility_permission
 if check_accessibility_trusted():
     print('yes')
 else:
     request_accessibility_permission()
     print('no')
-" 2>/dev/null)
+" 2>/dev/null) || AX_OK="no"
 
-if [ "$AX_ALREADY_GRANTED" = "yes" ]; then
-    log_ok "Already granted"
-else
-    log_warn "System Settings opened - grant Accessibility to Python/wh"
-    log_info "System Settings → Privacy & Security → Accessibility → enable the entry"
-    echo ""
-    read -r -p "  Press Enter once you have granted access... "
-    echo ""
-    # Re-verify
-    AX_NOW=$("$VENV_DIR/bin/python3" -c "
-from whisper_voice.utils import check_accessibility_trusted
-print('yes' if check_accessibility_trusted() else 'no')
-" 2>/dev/null)
-    if [ "$AX_NOW" = "yes" ]; then
-        log_info "Restarting service with new Accessibility permission..."
-        "$WH_BIN" restart 2>/dev/null || true
-        sleep 2
-        log_ok "Service restarted with Accessibility"
-    else
-        log_warn "Accessibility not detected - hotkey may not work"
-        log_info "Run 'wh restart' after granting Accessibility in System Settings"
-    fi
+if [ "$AX_OK" = "yes" ]; then
+    log_ok "Accessibility"
 fi
 
-# Add wh alias to shell config if not already present
-WH_ALIAS="alias wh='$VENV_DIR/bin/wh'"
+# Request Microphone (shows system dialog if not determined, may block up to 30s)
+log_info "If a microphone dialog appears, click Allow."
+MIC_OK=$(check_mic) || MIC_OK="no"
 
-# Always ensure .zshrc exists (macOS default shell is zsh)
+if [ "$MIC_OK" = "yes" ]; then
+    log_ok "Microphone"
+fi
+
+# If either is missing, enter verification loop
+if [ "$AX_OK" != "yes" ] || [ "$MIC_OK" != "yes" ]; then
+    echo ""
+    [ "$AX_OK" != "yes" ] && log_warn "Accessibility: not yet granted"
+    [ "$MIC_OK" != "yes" ] && log_warn "Microphone: not yet granted"
+    echo ""
+    log_info "Grant the permissions above in System Settings, then press Enter."
+    log_info "Look for \"Python\" in the permission lists."
+    [ "$AX_OK" != "yes" ] && log_info "  → Privacy & Security → Accessibility"
+    [ "$MIC_OK" != "yes" ] && log_info "  → Privacy & Security → Microphone"
+
+    ATTEMPT=0
+    while [ $ATTEMPT -lt 3 ]; do
+        echo ""
+        read -r -p "  Press Enter to verify... "
+
+        AX_OK=$(check_ax) || AX_OK="no"
+        MIC_OK=$(check_mic) || MIC_OK="no"
+
+        if [ "$AX_OK" = "yes" ] && [ "$MIC_OK" = "yes" ]; then
+            break
+        fi
+
+        ATTEMPT=$((ATTEMPT + 1))
+
+        [ "$AX_OK" != "yes" ] && log_warn "Accessibility: still not granted"
+        [ "$MIC_OK" != "yes" ] && log_warn "Microphone: still not granted"
+
+        if [ $ATTEMPT -ge 3 ]; then
+            echo ""
+            log_warn "Continuing without full permissions. The service may not work."
+            log_info "Grant permissions later, then run: wh restart"
+        fi
+    done
+fi
+
+PERMISSIONS_OK=false
+if [ "$AX_OK" = "yes" ] && [ "$MIC_OK" = "yes" ]; then
+    PERMISSIONS_OK=true
+    log_ok "All permissions granted"
+fi
+
+# ============================================================================
+# Start the service
+# ============================================================================
+
+log_step "Starting service..."
+
+# Rewrite plist with RunAtLoad=true for login auto-start
+write_plist "true"
+launchctl load "$PLIST_PATH" 2>/dev/null || true
+launchctl start com.local-whisper 2>/dev/null || true
+sleep 2
+
+if pgrep -f "wh _run" > /dev/null 2>&1; then
+    _SVC_PID=$(pgrep -f "wh _run" | head -1)
+    log_ok "Service running (pid $_SVC_PID)"
+else
+    log_warn "Service not yet running. Check: wh log"
+fi
+
+# Shell alias
+WH_ALIAS="alias wh='$VENV_DIR/bin/wh'"
 touch "$HOME/.zshrc"
 
 for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
@@ -558,15 +502,13 @@ for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
         echo "" >> "$RC"
         echo "# Local Whisper CLI" >> "$RC"
         echo "$WH_ALIAS" >> "$RC"
-        log_ok "Added wh alias to $RC"
     fi
 done
 
-# Fish shell hint
 if command -v fish &>/dev/null && [[ -d "$HOME/.config/fish" ]]; then
     FISH_CONFIG="$HOME/.config/fish/config.fish"
     if ! grep -q "alias wh=" "$FISH_CONFIG" 2>/dev/null; then
-        log_info "Fish detected - add manually: alias wh='$VENV_DIR/bin/wh'"
+        log_info "Fish: add manually: alias wh='$VENV_DIR/bin/wh'"
     fi
 fi
 
@@ -575,49 +517,16 @@ fi
 # ============================================================================
 
 echo ""
-echo -e "${GREEN}${BOLD}╭────────────────────────────────────────╮${NC}"
-echo -e "${GREEN}${BOLD}│${NC}  ${GREEN}✓ Setup complete!${NC}                     ${GREEN}${BOLD}│${NC}"
-echo -e "${GREEN}${BOLD}╰────────────────────────────────────────╯${NC}"
+if [ "$PERMISSIONS_OK" = "true" ]; then
+    echo -e "${GREEN}${BOLD}  ✓ Setup complete!${NC}"
+else
+    echo -e "${YELLOW}${BOLD}  ⚠ Setup complete (permissions pending)${NC}"
+    echo -e "  ${DIM}Grant missing permissions in System Settings, then: ${NC}${BOLD}wh restart${NC}"
+fi
 echo ""
-echo -e "${BOLD}Transcription Engine:${NC}"
+echo -e "  ${BOLD}Usage:${NC} Double-tap ${YELLOW}Right Option (⌥)${NC} → speak → tap to stop"
+echo -e "  ${BOLD}TTS:${NC}   Select text → ${YELLOW}⌥T${NC} to hear it aloud"
+echo -e "  ${BOLD}CLI:${NC}   ${DIM}wh${NC} (manage service)  ${DIM}wh whisper \"text\"${NC} (speak)"
 echo ""
-echo -e "  ${CYAN}Qwen3-ASR${NC} (default):"
-echo -e "     - On-device, Apple Silicon (MLX)"
-echo -e "     - Model cached at ${DIM}~/.whisper/models/${NC}"
-echo ""
-echo -e "  ${CYAN}WhisperKit${NC} (alternative):"
-echo -e "     - CoreML, Apple Silicon"
-echo -e "     - Switch via ${DIM}wh engine${NC} or Settings"
-echo ""
-echo -e "${BOLD}Grammar Backends:${NC}"
-echo ""
-echo -e "  ${CYAN}Apple Intelligence${NC} (recommended):"
-echo -e "     - macOS 26 (Tahoe) or later, Apple Silicon"
-echo -e "     - Enable in System Settings → Apple Intelligence & Siri"
-echo -e "     - Uses Apple's Foundation Models SDK (installed with pip)"
-echo ""
-echo -e "  ${CYAN}Ollama${NC} (alternative):"
-echo -e "     - Download from ${DIM}https://ollama.com${NC}"
-echo -e "     - Model auto-downloaded if Ollama was installed"
-echo -e "     - Run: ${DIM}ollama serve${NC}"
-echo ""
-echo -e "  ${CYAN}LM Studio${NC} (alternative):"
-echo -e "     - Download from ${DIM}https://lmstudio.ai${NC}"
-echo -e "     - Model auto-downloaded if LM Studio CLI was installed"
-echo -e "     - ${YELLOW}Developer → Start Server${NC} (required!)"
-echo -e "     ${DIM}Note: Loading a model does NOT auto-start the server${NC}"
-echo ""
-echo -e "${BOLD}Text-to-Speech:${NC}"
-echo ""
-echo -e "  ${CYAN}Kokoro${NC} (multiple voices):"
-echo -e "     - On-device, Apple Silicon (MLX)"
-echo -e "     - Select text → press ${YELLOW}⌥T${NC} → hear it aloud"
-echo -e "     - CLI: ${DIM}wh whisper \"text\"${NC}"
-echo ""
-echo -e "${BOLD}You're ready:${NC}"
-echo ""
-echo -e "  Double-tap ${YELLOW}Right Option (⌥)${NC} → speak → tap to stop → text copied to clipboard"
-echo ""
-echo -e "  ${DIM}Service starts automatically at login.${NC}"
-echo -e "  ${DIM}Run 'wh' in a new terminal to manage the service.${NC}"
+echo -e "  ${DIM}Starts automatically at login. Run 'wh' in a new terminal.${NC}"
 echo ""

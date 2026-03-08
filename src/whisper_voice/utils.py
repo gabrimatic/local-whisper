@@ -204,7 +204,7 @@ def check_microphone_permission() -> tuple[bool, str]:
             return False, (
                 "Microphone access denied. "
                 "Go to System Settings > Privacy & Security > Microphone "
-                "and enable your terminal app, then restart."
+                "and enable Python, then restart."
             )
 
         # 0 = notDetermined - request access

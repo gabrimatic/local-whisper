@@ -1771,14 +1771,22 @@ def service_main():
         log("Accessibility permission required - System Settings opened", "WARN")
         log("Grant access to this process, then run: wh restart", "WARN")
 
-    # Check microphone permission
+    # Check microphone permission with retries to handle the race where
+    # setup.sh just granted it and macOS TCC hasn't propagated yet
     mic_ok, mic_msg = check_microphone_permission()
     if not mic_ok:
-        print()
-        print(f"  {C_BOLD}{C_YELLOW}Microphone Permission Required{C_RESET}")
-        print()
-        print(f"  {mic_msg}")
-        print()
+        for attempt in range(3):
+            delay = (attempt + 1) * 3  # 3s, 6s, 9s
+            log(f"Microphone not yet granted, retrying in {delay}s... ({attempt + 1}/3)", "WARN")
+            time.sleep(delay)
+            mic_ok, mic_msg = check_microphone_permission()
+            if mic_ok:
+                break
+
+    if not mic_ok:
+        log(f"Microphone permission denied: {mic_msg}", "ERR")
+        log("Grant access: System Settings → Privacy & Security → Microphone → Python", "ERR")
+        log("Then run: wh restart", "ERR")
         sys.exit(1)
 
     key_name = config.hotkey.key.upper().replace("_", " ")

@@ -1,261 +1,269 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025-2026 Soroush Yousefpour
-#!/usr/bin/env python3
 """
-End-to-end test for Local Whisper flow.
+Integration tests for the Local Whisper pipeline.
 
-Tests: Audio file → WhisperKit transcription → Grammar correction
+Tests the real transcription and grammar correction flow using live services.
+Skipped automatically when the required services are not running.
 
-Usage:
-    cd local-whisper
-    python tests/test_flow.py
+Run explicitly:
+    pytest tests/test_flow.py -v
+    pytest -m integration -v
 
-Requirements:
-    - WhisperKit server running (localhost:50060)
-    - Grammar backend available (Apple Intelligence or Ollama)
+These tests use the configured engine (Qwen3-ASR or WhisperKit) and grammar
+backend (Apple Intelligence, Ollama, or LM Studio) from ~/.whisper/config.toml.
 """
 
-import sys
+import difflib
 from pathlib import Path
 
-# Paths
-TESTS_DIR = Path(__file__).parent
-PROJECT_DIR = TESTS_DIR.parent
-FIXTURES_DIR = TESTS_DIR / "fixtures"
+import pytest
 
-# Add src to path for imports
-sys.path.insert(0, str(PROJECT_DIR / "src"))
-
-from whisper_voice.config import get_config
-from whisper_voice.transcriber import Transcriber
-from whisper_voice.grammar import Grammar
-from whisper_voice.utils import is_hallucination, strip_hallucination_lines, log
-
-# Test fixtures
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 TEST_AUDIO = FIXTURES_DIR / "test_audio.wav"
 EXPECTED_RAW = FIXTURES_DIR / "expected_raw.txt"
 EXPECTED_FIXED = FIXTURES_DIR / "expected_fixed.txt"
 
-# Expected content patterns (flexible to handle different number formats)
-EXPECTED_PATTERNS = ["test", "bottle", "desk"]
+# Words that must appear in a correct transcription of the test audio
+EXPECTED_KEYWORDS = ["test", "bottle", "desk"]
+
+# Minimum acceptable similarity ratio (0.0 to 1.0) for fuzzy comparison
+MIN_SIMILARITY = 0.75
 
 
-def test_full_flow():
-    """Test complete flow: audio → transcription → grammar correction."""
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-    print("\n" + "=" * 60)
-    print("  LOCAL WHISPER - END-TO-END TEST")
-    print("=" * 60 + "\n")
+def _similarity(a: str, b: str) -> float:
+    """Sequence similarity ratio between two strings (order-aware, 0.0-1.0)."""
+    return difflib.SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
 
-    config = get_config()
-    errors = []
 
-    # -------------------------------------------------------------------------
-    # Step 0: Validate test audio exists
-    # -------------------------------------------------------------------------
-    log("Checking test fixtures...", "INFO")
-    if not TEST_AUDIO.exists():
-        log(f"Test audio not found: {TEST_AUDIO}", "ERR")
-        return False
-    if not EXPECTED_RAW.exists():
-        log(f"Expected raw not found: {EXPECTED_RAW}", "ERR")
-        return False
-    if not EXPECTED_FIXED.exists():
-        log(f"Expected fixed not found: {EXPECTED_FIXED}", "ERR")
-        return False
-
-    file_size = TEST_AUDIO.stat().st_size
-    expected_raw_text = EXPECTED_RAW.read_text().strip()
-    expected_fixed_text = EXPECTED_FIXED.read_text().strip()
-    log(f"Test audio: {file_size:,} bytes", "OK")
-    log(f"Expected raw: {len(expected_raw_text)} chars", "OK")
-    log(f"Expected fixed: {len(expected_fixed_text)} chars", "OK")
-
-    # -------------------------------------------------------------------------
-    # Step 1: Check WhisperKit server
-    # -------------------------------------------------------------------------
-    log("Checking WhisperKit server...", "INFO")
-    whisper = Transcriber()
-
-    if not whisper.running():
-        log("WhisperKit not running at localhost:50060", "ERR")
-        log("Start with: whisperkit-cli serve --model whisper-large-v3-v20240930", "WARN")
-        errors.append("WhisperKit not running")
-    else:
-        log("WhisperKit server ready", "OK")
-
-    # -------------------------------------------------------------------------
-    # Step 2: Check grammar backend availability
-    # -------------------------------------------------------------------------
-    grammar = Grammar()
-    log(f"Checking {grammar.name} availability...", "INFO")
-
-    if not grammar.running():
-        log(f"{grammar.name} not available", "ERR")
-        if config.grammar.backend == "apple_intelligence":
-            log("Requirements: macOS 26+, Apple Silicon, Apple Intelligence enabled", "WARN")
-        else:
-            log("Start with: ollama serve", "WARN")
-        errors.append(f"{grammar.name} not available")
-    else:
-        log(f"{grammar.name} ready", "OK")
-
-    # Bail early if services not available
-    if errors:
-        log(f"Cannot continue - {len(errors)} service(s) unavailable", "ERR")
-        return False
-
-    # -------------------------------------------------------------------------
-    # Step 3: Transcribe audio
-    # -------------------------------------------------------------------------
-    log("Transcribing audio with WhisperKit...", "INFO")
-    raw_text, err = whisper.transcribe(TEST_AUDIO)
-
-    if err:
-        log(f"Transcription failed: {err}", "ERR")
-        errors.append(f"Transcription error: {err}")
-    elif not raw_text:
-        log("Transcription returned empty", "ERR")
-        errors.append("Empty transcription")
-    else:
-        log(f"Raw transcription: {raw_text}", "OK")
-
-        # Validate not hallucination
-        cleaned, stripped = strip_hallucination_lines(raw_text)
-        if stripped:
-            log("Hallucination lines stripped", "WARN")
-            raw_text = cleaned
-
-        if is_hallucination(raw_text):
-            log("Transcription detected as hallucination", "ERR")
-            errors.append("Hallucination detected")
-        else:
-            log("Hallucination check passed", "OK")
-
-    if errors:
-        log(f"Transcription failed with {len(errors)} error(s)", "ERR")
-        return False
-
-    # -------------------------------------------------------------------------
-    # Step 4: Grammar correction
-    # -------------------------------------------------------------------------
-    log(f"Applying grammar correction with {grammar.name}...", "INFO")
-    fixed_text, g_err = grammar.fix(raw_text)
-
-    if g_err:
-        log(f"Grammar correction failed: {g_err}", "ERR")
-        errors.append(f"Grammar error: {g_err}")
-    elif not fixed_text:
-        log("Grammar correction returned empty", "ERR")
-        errors.append("Empty grammar result")
-    else:
-        log(f"Fixed transcription: {fixed_text}", "OK")
-
-    if errors:
-        log(f"Grammar correction failed with {len(errors)} error(s)", "ERR")
-        return False
-
-    # -------------------------------------------------------------------------
-    # Step 5: Validate transcription matches expected
-    # -------------------------------------------------------------------------
-    log("Validating transcription...", "INFO")
-
-    # Check raw transcription matches expected
-    if raw_text.strip() == expected_raw_text:
-        log("Raw transcription matches expected exactly", "OK")
-    else:
-        # Check if it's similar enough (WhisperKit can vary slightly)
-        raw_words = set(raw_text.lower().split())
-        expected_words = set(expected_raw_text.lower().split())
-        overlap = len(raw_words & expected_words) / max(len(expected_words), 1)
-        if overlap >= 0.9:
-            log(f"Raw transcription ~{overlap*100:.0f}% similar to expected", "OK")
-        else:
-            log(f"Raw transcription differs significantly ({overlap*100:.0f}% match)", "WARN")
-            log(f"  Expected: {expected_raw_text[:60]}...", "INFO")
-            log(f"  Got:      {raw_text[:60]}...", "INFO")
-
-    # Check expected patterns are present
-    missing_patterns = []
-    for pattern in EXPECTED_PATTERNS:
-        if pattern.lower() not in raw_text.lower():
-            missing_patterns.append(pattern)
-
-    if missing_patterns:
-        log(f"Missing expected patterns in raw: {missing_patterns}", "ERR")
-        errors.append(f"Missing patterns: {missing_patterns}")
-    else:
-        log(f"All expected patterns found: {EXPECTED_PATTERNS}", "OK")
-
-    # -------------------------------------------------------------------------
-    # Step 6: Validate grammar correction
-    # -------------------------------------------------------------------------
-    log("Validating grammar correction...", "INFO")
-
-    # Check text is different (grammar was applied)
-    if raw_text.strip() == fixed_text.strip():
-        log("Grammar made no changes (raw == fixed)", "WARN")
-    else:
-        log("Grammar correction modified the text", "OK")
-
-    # Check fixed output matches expected
-    if fixed_text.strip() == expected_fixed_text:
-        log("Fixed text matches expected exactly", "OK")
-    else:
-        # Check similarity
-        fixed_words = set(fixed_text.lower().split())
-        expected_fixed_words = set(expected_fixed_text.lower().split())
-        overlap = len(fixed_words & expected_fixed_words) / max(len(expected_fixed_words), 1)
-        if overlap >= 0.9:
-            log(f"Fixed text ~{overlap*100:.0f}% similar to expected", "OK")
-        else:
-            log(f"Fixed text differs significantly ({overlap*100:.0f}% match)", "WARN")
-            log(f"  Expected: {expected_fixed_text[:60]}...", "INFO")
-            log(f"  Got:      {fixed_text[:60]}...", "INFO")
-
-    # Check reasonable length
-    if len(fixed_text) < 10:
-        log(f"Output too short ({len(fixed_text)} chars)", "ERR")
-        errors.append("Output too short")
-    else:
-        log(f"Output length: {len(fixed_text)} chars", "OK")
-
-    # Check grammar actually improved something (punctuation, etc.)
-    raw_punct = sum(1 for c in raw_text if c in '.,;:!?')
-    fixed_punct = sum(1 for c in fixed_text if c in '.,;:!?')
-    if fixed_punct >= raw_punct:
-        log(f"Punctuation preserved/improved ({raw_punct} → {fixed_punct})", "OK")
-    else:
-        log(f"Punctuation reduced ({raw_punct} → {fixed_punct})", "WARN")
-
-    # -------------------------------------------------------------------------
-    # Cleanup
-    # -------------------------------------------------------------------------
+def _try_import_transcriber():
+    """Try to import and create a Transcriber. Returns (transcriber, error_msg)."""
     try:
-        grammar.close()
-        whisper.close()
+        from whisper_voice.transcriber import Transcriber
+        t = Transcriber()
+        return t, None
+    except Exception as e:
+        return None, str(e)
+
+
+def _try_import_grammar():
+    """Try to import and create a Grammar instance. Returns (grammar, error_msg)."""
+    try:
+        from whisper_voice.grammar import Grammar
+        g = Grammar()
+        return g, None
+    except Exception as e:
+        return None, str(e)
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def transcriber():
+    """Provide a live Transcriber, skip if the engine isn't available."""
+    t, err = _try_import_transcriber()
+    if t is None:
+        pytest.skip(f"Transcriber unavailable: {err}")
+
+    if not t.start():
+        pytest.skip(f"{t.name} engine failed to start")
+
+    yield t
+
+    try:
+        t.close()
     except Exception:
         pass
 
-    # -------------------------------------------------------------------------
-    # Results
-    # -------------------------------------------------------------------------
-    print("\n" + "-" * 60)
-    if errors:
-        log(f"TEST FAILED - {len(errors)} error(s)", "ERR")
-        for e in errors:
-            log(f"  • {e}", "ERR")
-        print("-" * 60 + "\n")
-        return False
-    else:
-        log("TEST PASSED - Full flow completed successfully", "OK")
-        print("-" * 60)
-        print(f"\n  Raw:   {raw_text[:70]}{'...' if len(raw_text) > 70 else ''}")
-        print(f"  Fixed: {fixed_text[:70]}{'...' if len(fixed_text) > 70 else ''}")
-        print("-" * 60 + "\n")
-        return True
+
+@pytest.fixture(scope="module")
+def grammar():
+    """Provide a live Grammar backend, skip if unavailable."""
+    g, err = _try_import_grammar()
+    if g is None:
+        pytest.skip(f"Grammar unavailable: {err}")
+
+    if not g.running():
+        pytest.skip(f"{g.name} backend not running")
+
+    yield g
+
+    try:
+        g.close()
+    except Exception:
+        pass
 
 
-if __name__ == "__main__":
-    success = test_full_flow()
-    sys.exit(0 if success else 1)
+@pytest.fixture(scope="module")
+def expected_raw() -> str:
+    if not EXPECTED_RAW.exists():
+        pytest.skip(f"Fixture missing: {EXPECTED_RAW}")
+    return EXPECTED_RAW.read_text().strip()
+
+
+@pytest.fixture(scope="module")
+def expected_fixed() -> str:
+    if not EXPECTED_FIXED.exists():
+        pytest.skip(f"Fixture missing: {EXPECTED_FIXED}")
+    return EXPECTED_FIXED.read_text().strip()
+
+
+# ---------------------------------------------------------------------------
+# Fixtures validation
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+class TestFixtures:
+    """Verify test fixtures are present and well-formed."""
+
+    def test_audio_file_exists(self):
+        assert TEST_AUDIO.exists(), f"Missing: {TEST_AUDIO}"
+
+    def test_audio_file_not_empty(self):
+        assert TEST_AUDIO.stat().st_size > 1000, "Test audio too small"
+
+    def test_expected_raw_not_empty(self, expected_raw):
+        assert len(expected_raw) > 10
+
+    def test_expected_fixed_not_empty(self, expected_fixed):
+        assert len(expected_fixed) > 10
+
+
+# ---------------------------------------------------------------------------
+# Transcription tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+class TestTranscription:
+    """Test the transcription engine with real audio."""
+
+    def test_transcription_succeeds(self, transcriber):
+        text, err = transcriber.transcribe(TEST_AUDIO)
+        assert err is None, f"Transcription failed: {err}"
+        assert text is not None
+        assert len(text.strip()) > 0, "Transcription returned empty text"
+
+    def test_transcription_not_hallucination(self, transcriber):
+        from whisper_voice.utils import is_hallucination, strip_hallucination_lines
+
+        text, _ = transcriber.transcribe(TEST_AUDIO)
+        assert text is not None
+
+        cleaned, had_hallucinations = strip_hallucination_lines(text)
+        assert not is_hallucination(cleaned), f"Hallucination detected: {cleaned!r}"
+
+    def test_transcription_contains_keywords(self, transcriber):
+        text, _ = transcriber.transcribe(TEST_AUDIO)
+        assert text is not None
+        text_lower = text.lower()
+
+        missing = [kw for kw in EXPECTED_KEYWORDS if kw not in text_lower]
+        assert not missing, f"Missing keywords in transcription: {missing}. Got: {text!r}"
+
+    def test_transcription_matches_expected(self, transcriber, expected_raw):
+        text, _ = transcriber.transcribe(TEST_AUDIO)
+        assert text is not None
+
+        ratio = _similarity(text, expected_raw)
+        assert ratio >= MIN_SIMILARITY, (
+            f"Transcription similarity too low: {ratio:.0%} (need {MIN_SIMILARITY:.0%})\n"
+            f"  Expected: {expected_raw[:80]}...\n"
+            f"  Got:      {text[:80]}..."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Grammar correction tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+class TestGrammar:
+    """Test grammar correction with known input."""
+
+    def test_grammar_fix_succeeds(self, grammar, expected_raw):
+        fixed, err = grammar.fix(expected_raw)
+        assert err is None, f"Grammar correction failed: {err}"
+        assert fixed is not None
+        assert len(fixed.strip()) > 0, "Grammar returned empty text"
+
+    def test_grammar_preserves_meaning(self, grammar, expected_raw):
+        """Grammar should not drastically change the content."""
+        fixed, _ = grammar.fix(expected_raw)
+        assert fixed is not None
+
+        ratio = _similarity(fixed, expected_raw)
+        assert ratio >= 0.6, (
+            f"Grammar changed text too much: {ratio:.0%} similarity\n"
+            f"  Input:  {expected_raw[:80]}...\n"
+            f"  Output: {fixed[:80]}..."
+        )
+
+    def test_grammar_output_matches_expected(self, grammar, expected_raw, expected_fixed):
+        fixed, _ = grammar.fix(expected_raw)
+        assert fixed is not None
+
+        ratio = _similarity(fixed, expected_fixed)
+        assert ratio >= MIN_SIMILARITY, (
+            f"Grammar output similarity too low: {ratio:.0%} (need {MIN_SIMILARITY:.0%})\n"
+            f"  Expected: {expected_fixed[:80]}...\n"
+            f"  Got:      {fixed[:80]}..."
+        )
+
+    def test_grammar_output_reasonable_length(self, grammar, expected_raw):
+        fixed, _ = grammar.fix(expected_raw)
+        assert fixed is not None
+
+        input_len = len(expected_raw)
+        output_len = len(fixed.strip())
+        # Output should be within 50%-200% of input length
+        assert output_len >= input_len * 0.5, f"Output too short: {output_len} vs input {input_len}"
+        assert output_len <= input_len * 2.0, f"Output too long: {output_len} vs input {input_len}"
+
+
+# ---------------------------------------------------------------------------
+# Full pipeline test
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+class TestFullPipeline:
+    """End-to-end: audio file -> transcription -> grammar correction."""
+
+    def test_pipeline_produces_corrected_text(self, transcriber, grammar):
+        # Step 1: Transcribe
+        raw_text, t_err = transcriber.transcribe(TEST_AUDIO)
+        assert t_err is None, f"Transcription failed: {t_err}"
+        assert raw_text and len(raw_text.strip()) > 0
+
+        # Step 2: Grammar correct
+        fixed_text, g_err = grammar.fix(raw_text)
+        assert g_err is None, f"Grammar failed: {g_err}"
+        assert fixed_text and len(fixed_text.strip()) > 0
+
+    def test_pipeline_output_contains_keywords(self, transcriber, grammar):
+        raw_text, _ = transcriber.transcribe(TEST_AUDIO)
+        assert raw_text is not None
+        fixed_text, _ = grammar.fix(raw_text)
+        assert fixed_text is not None
+
+        text_lower = fixed_text.lower()
+        missing = [kw for kw in EXPECTED_KEYWORDS if kw not in text_lower]
+        assert not missing, f"Missing keywords after full pipeline: {missing}. Got: {fixed_text!r}"
+
+    def test_pipeline_output_matches_expected(self, transcriber, grammar, expected_fixed):
+        raw_text, _ = transcriber.transcribe(TEST_AUDIO)
+        assert raw_text is not None
+        fixed_text, _ = grammar.fix(raw_text)
+        assert fixed_text is not None
+
+        ratio = _similarity(fixed_text, expected_fixed)
+        assert ratio >= MIN_SIMILARITY, (
+            f"Pipeline output similarity too low: {ratio:.0%}\n"
+            f"  Expected: {expected_fixed[:80]}...\n"
+            f"  Got:      {fixed_text[:80]}..."
+        )
