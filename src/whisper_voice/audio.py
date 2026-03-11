@@ -142,7 +142,10 @@ class Recorder:
                 self._stream = None
             with self._chunks_lock:
                 if self._chunks:
-                    return np.concatenate(self._chunks)
+                    audio = np.concatenate(self._chunks)
+                    self._chunks = []
+                    return audio
+                self._chunks = []
                 return np.array([], dtype=np.float32)
 
     def _callback(self, data, frames, time_info, status):

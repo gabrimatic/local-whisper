@@ -72,8 +72,8 @@ class AudioProcessor:
                 segments=[],
             )
 
-        audio = audio.astype(np.float32)
-        raw_audio = audio.copy()  # preserve original for backup
+        audio = np.asarray(audio, dtype=np.float32)
+        raw_audio = audio
         input_duration = len(audio) / sample_rate
         log(f"Audio pipeline: input {input_duration:.2f}s", "INFO")
         segments = []
@@ -314,7 +314,7 @@ class AudioProcessor:
         audio_out = self._istft(stft_filtered, window, len(audio))
 
         log(f"Audio pipeline: noise reduction applied (floor ratio: {noise_floor_rms / signal_rms:.3f})", "INFO")
-        return audio_out.astype(np.float32)
+        return audio_out
 
     def _reduce_noise_chunked(self, audio: np.ndarray, segments: list, sample_rate: int) -> np.ndarray:
         """Chunked noise reduction for long recordings (>3 min).
@@ -379,7 +379,7 @@ class AudioProcessor:
             pos += chunk_samples  # advance by chunk_samples (not including overlap)
 
         log(f"Audio pipeline: chunked noise reduction complete ({chunk_idx} chunks)", "INFO")
-        return output.astype(np.float32)
+        return output
 
     def _stft(self, audio: np.ndarray, window: np.ndarray) -> np.ndarray:
         """Compute Short-Time Fourier Transform (vectorized)."""
@@ -497,7 +497,7 @@ class AudioProcessor:
         if peak > _CLIP_THRESHOLD:
             audio = audio * np.float32(_CLIP_THRESHOLD / peak)
         gain_db = 20.0 * np.log10(gain)
-        return audio.astype(np.float32), gain_db
+        return audio, gain_db
 
     # ------------------------------------------------------------------
     # Long audio segmentation helpers
@@ -547,7 +547,7 @@ class AudioProcessor:
         # Merge tiny tails into previous
         chunks = self._merge_tiny_tails(chunks, min_samples)
 
-        return [c.astype(np.float32) for c in chunks if len(c) > 0]
+        return [np.asarray(c, dtype=np.float32) for c in chunks if len(c) > 0]
 
     def _would_fit(self, split_points: list, total_length: int, max_samples: int) -> bool:
         """Check if splitting at given points keeps all chunks under max_samples."""

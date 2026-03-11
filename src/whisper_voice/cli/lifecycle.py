@@ -99,6 +99,25 @@ def _read_config_backend() -> Optional[str]:
     return None
 
 
+def _read_config_backend_status() -> Optional[str]:
+    """Read the grammar backend for status output, respecting the enabled flag."""
+    config_file = _get_config_path()
+    if not config_file.exists():
+        return None
+    try:
+        content = config_file.read_text()
+        enabled = _find_in_section(content, "grammar", "enabled")
+        if enabled == "false":
+            return "disabled"
+        backend = _find_in_section(content, "grammar", "backend")
+        if backend == "none":
+            return "disabled"
+        return backend
+    except Exception:
+        pass
+    return None
+
+
 def _write_config_backend(new_backend: str) -> bool:
     """Write a new backend value to config.toml. Returns True on success."""
     config_file = _get_config_path()
@@ -200,7 +219,7 @@ def _list_engines() -> dict:
 def cmd_status():
     """Show service status."""
     running, pid = _is_running()
-    backend = _read_config_backend() or "unknown"
+    backend = _read_config_backend_status() or "unknown"
     engine = _read_config_engine() or "unknown"
     config_path = _get_config_path()
 

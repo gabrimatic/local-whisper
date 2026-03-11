@@ -32,7 +32,7 @@ from .lifecycle import (
     _cleanup_lock,
     _get_config_path,
     _is_running,
-    _read_config_backend,
+    _read_config_backend_status,
     _read_config_engine,
     cmd_start,
     cmd_status,
@@ -247,7 +247,7 @@ def cmd_uninstall():
 def cmd_default():
     """Default: status + help."""
     running, pid = _is_running()
-    backend = _read_config_backend() or "unknown"
+    backend = _read_config_backend_status() or "unknown"
     engine = _read_config_engine() or "unknown"
     config_path = _get_config_path()
 
