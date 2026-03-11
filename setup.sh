@@ -256,41 +256,6 @@ else
 fi
 
 # ============================================================================
-# Optional backends (Ollama / LM Studio)
-# ============================================================================
-
-OLLAMA_MODEL="gemma3:4b-it-qat"
-LMSTUDIO_MODEL="google/gemma-3-4b"
-
-if command -v ollama &> /dev/null; then
-    log_step "Setting up Ollama..."
-    if ollama list 2>/dev/null | grep -q "$OLLAMA_MODEL"; then
-        log_ok "Model $OLLAMA_MODEL ready"
-    else
-        log_info "Downloading $OLLAMA_MODEL..."
-        if ollama pull "$OLLAMA_MODEL" >/dev/null 2>&1; then
-            log_ok "Model $OLLAMA_MODEL ready"
-        else
-            log_warn "Download failed (run later: ollama pull $OLLAMA_MODEL)"
-        fi
-    fi
-fi
-
-if command -v lms &> /dev/null; then
-    log_step "Setting up LM Studio..."
-    if lms ls 2>/dev/null | grep -q "gemma-3-4b"; then
-        log_ok "Model $LMSTUDIO_MODEL ready"
-    else
-        log_info "Downloading $LMSTUDIO_MODEL..."
-        if lms get "$LMSTUDIO_MODEL" -y --quiet 2>/dev/null; then
-            log_ok "Model $LMSTUDIO_MODEL ready"
-        else
-            log_warn "Download failed (download later in LM Studio)"
-        fi
-    fi
-fi
-
-# ============================================================================
 # Build Swift UI
 # ============================================================================
 

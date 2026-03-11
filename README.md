@@ -26,7 +26,7 @@ cd local-whisper
 ./setup.sh
 ```
 
-One command. Installs deps, downloads models, builds the UI, sets up auto-start, creates the `wh` alias.
+One command. Installs deps, downloads core local models, builds the UI, sets up auto-start, creates the `wh` alias.
 
 | Action | Key |
 |--------|-----|
@@ -504,7 +504,7 @@ Loading a model does **not** start the server.
 <details>
 <summary><strong>Slow first transcription</strong></summary>
 
-`setup.sh` pre-downloads and warms models. Skip setup and the first transcription pulls them. After that, loaded from disk.
+`setup.sh` pre-downloads and warms the built-in local models used by transcription and TTS. It does not pull Ollama or LM Studio models for you. Skip setup and the first transcription loads them on demand. After that, loaded from disk.
 
 </details>
 

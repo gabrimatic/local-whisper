@@ -8,6 +8,7 @@ of audio natively without chunking.
 """
 
 import concurrent.futures
+import gc
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -123,6 +124,8 @@ class Qwen3ASREngine(TranscriptionEngine):
             return None, "Empty transcription"
         except Exception as e:
             return None, str(e)
+        finally:
+            self._clear_runtime_cache()
 
     def close(self) -> None:
         if self._model is not None:
@@ -131,4 +134,14 @@ class Qwen3ASREngine(TranscriptionEngine):
             except Exception:
                 pass
         self._model = None
+        self._clear_runtime_cache()
         log("Qwen3-ASR model unloaded", "INFO")
+
+    def _clear_runtime_cache(self) -> None:
+        gc.collect()
+        try:
+            import mlx.core as mx
+
+            mx.clear_cache()
+        except Exception:
+            pass

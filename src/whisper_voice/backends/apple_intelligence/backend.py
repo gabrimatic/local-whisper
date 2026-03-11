@@ -8,6 +8,7 @@ Uses Apple's Foundation Models Python SDK for on-device text generation.
 
 import asyncio
 import concurrent.futures
+import gc
 import threading
 from typing import Optional, Tuple
 
@@ -33,11 +34,10 @@ class AppleIntelligenceBackend(GrammarBackend):
     """
 
     def __init__(self):
-        self._session: Optional[object] = None
-        self._last_system_prompt: Optional[str] = None
+        self._model: Optional[object] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
-        self._session_lock = threading.Lock()
+        self._model_lock = threading.Lock()
 
     @property
     def name(self) -> str:
@@ -45,13 +45,20 @@ class AppleIntelligenceBackend(GrammarBackend):
 
     def close(self) -> None:
         """Clean up session and stop the background event loop."""
-        with self._session_lock:
-            self._session = None
-            self._last_system_prompt = None
+        with self._model_lock:
+            self._model = None
         if self._loop is not None and not self._loop.is_closed():
             self._loop.call_soon_threadsafe(self._loop.stop)
+        if self._loop_thread is not None and self._loop_thread.is_alive():
+            self._loop_thread.join(timeout=2.0)
+        if self._loop is not None and not self._loop.is_closed():
+            try:
+                self._loop.close()
+            except RuntimeError:
+                pass
         self._loop = None
         self._loop_thread = None
+        gc.collect()
 
     def running(self) -> bool:
         """Check if Apple Intelligence is available on this device."""
@@ -170,21 +177,24 @@ class AppleIntelligenceBackend(GrammarBackend):
         return future.result(timeout=timeout)
 
     async def _generate(self, system_prompt: str, user_prompt: str) -> str:
-        """Create or reuse a session and call respond()."""
-        with self._session_lock:
-            if self._session is None or self._last_system_prompt != system_prompt:
-                model = fm.SystemLanguageModel(
+        """Create a fresh session per request so transcript history does not grow forever."""
+        with self._model_lock:
+            if self._model is None:
+                self._model = fm.SystemLanguageModel(
                     use_case=fm.SystemLanguageModelUseCase.GENERAL,
                     guardrails=fm.SystemLanguageModelGuardrails.PERMISSIVE_CONTENT_TRANSFORMATIONS,
                 )
-                self._session = fm.LanguageModelSession(
-                    instructions=system_prompt,
-                    model=model,
-                )
-                self._last_system_prompt = system_prompt
-            session = self._session
+            model = self._model
 
-        return await session.respond(user_prompt)
+        session = fm.LanguageModelSession(
+            instructions=system_prompt,
+            model=model,
+        )
+        try:
+            return await session.respond(user_prompt)
+        finally:
+            session = None
+            gc.collect()
 
     # ─────────────────────────────────────────────────────────────────
     # Error classification

@@ -37,58 +37,45 @@ def _replace_in_section(content: str, section: str, key: str, new_value: str) ->
     new_value must already be serialized to its TOML string representation
     (e.g. '"quoted"' for strings, 'true'/'false' for bools, '42' for ints).
 
-    If the key doesn't exist in the section, it is appended under the header.
+    If the key appears multiple times in the section, the first occurrence is updated
+    and later duplicates are removed. If the key doesn't exist in the section, it is
+    appended under the header.
     """
     lines = content.splitlines(keepends=True)
-    in_section = False
     section_header_idx = None
+    replaced = False
+    result: list[str] = []
+    in_section = False
+    key_pattern = re.compile(rf'^(\s*{re.escape(key)}\s*=\s*).*$')
+
     for i, line in enumerate(lines):
         stripped = line.strip()
         if stripped.startswith("[") and stripped.endswith("]"):
             in_section = stripped == f"[{section}]"
             if in_section:
-                section_header_idx = i
+                section_header_idx = len(result)
+            result.append(line)
             continue
-        if in_section:
-            repl = r'\g<1>' + new_value
-            # Match quoted string value
-            new_line = re.sub(
-                rf'({key}\s*=\s*)"[^"]*"',
-                repl,
-                line
-            )
-            if new_line != line:
-                lines[i] = new_line
-                return "".join(lines)
-            # Match unquoted boolean
-            new_line = re.sub(
-                rf'({key}\s*=\s*)(true|false)',
-                repl,
-                line
-            )
-            if new_line != line:
-                lines[i] = new_line
-                return "".join(lines)
-            # Match unquoted numeric (integer or float)
-            new_line = re.sub(
-                rf'({key}\s*=\s*)[-+]?[0-9]*\.?[0-9]+',
-                repl,
-                line
-            )
-            if new_line != line:
-                lines[i] = new_line
-                return "".join(lines)
+        if in_section and stripped and not stripped.startswith("#"):
+            match = key_pattern.match(line)
+            if match:
+                if not replaced:
+                    result.append(f"{match.group(1)}{new_value}\n")
+                    replaced = True
+                continue
+        result.append(line)
 
     # Key not found in section - append it after the section header
+    if replaced:
+        return "".join(result)
     if section_header_idx is not None:
-        new_line = f"{key} = {new_value}\n"
-        lines.insert(section_header_idx + 1, new_line)
-        return "".join(lines)
+        result.insert(section_header_idx + 1, f"{key} = {new_value}\n")
+        return "".join(result)
 
     # Section not found at all - append a new section at the end of the file
-    lines.append(f"\n[{section}]\n")
-    lines.append(f"{key} = {new_value}\n")
-    return "".join(lines)
+    result.append(f"\n[{section}]\n")
+    result.append(f"{key} = {new_value}\n")
+    return "".join(result)
 
 
 def _serialize_toml_value(value) -> str:

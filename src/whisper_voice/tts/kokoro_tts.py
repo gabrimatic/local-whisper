@@ -2,6 +2,7 @@
 # Copyright (c) 2025-2026 Soroush Yousefpour
 """Kokoro TTS provider via kokoro-mlx (Apple Silicon, fully offline)."""
 
+import gc
 import queue
 import threading
 from typing import Callable, Optional
@@ -29,6 +30,7 @@ class KokoroTTSProvider(TTSProvider):
         self._model_id: str = ""
         self._model = None
         self._lock = threading.Lock()
+        self._speak_lock = threading.Lock()
 
     @property
     def name(self) -> str:
@@ -42,10 +44,14 @@ class KokoroTTSProvider(TTSProvider):
 
     def refresh(self, model_id: str) -> None:
         """Unload model if model_id changed so it is reloaded on next speak()."""
+        released = False
         with self._lock:
             if model_id != self._model_id:
-                self._model = None
+                self._release_model_locked()
                 self._model_id = model_id
+                released = True
+        if released:
+            _clear_runtime_cache()
 
     def _load_model(self, model_id: str) -> bool:
         """Load model lazily (thread-safe). Returns True on success."""
@@ -58,6 +64,8 @@ class KokoroTTSProvider(TTSProvider):
             from kokoro_mlx import KokoroTTS
             model = KokoroTTS.from_pretrained(model_id)
             with self._lock:
+                if self._model is not None and self._model_id != model_id:
+                    self._release_model_locked()
                 self._model = model
                 self._model_id = model_id
             log("Kokoro model loaded", "OK")
@@ -88,21 +96,46 @@ class KokoroTTSProvider(TTSProvider):
         with self._lock:
             model = self._model
 
-        chunks = _split_text(text, _MAX_CHARS)
-        first_chunk = True
-        for chunk in chunks:
-            if stop_event.is_set():
-                return
-            _synthesize_and_play(
-                model, chunk, speaker, stop_event,
-                on_playback_start=on_playback_start if first_chunk else None,
-            )
-            first_chunk = False
+        with self._speak_lock:
+            try:
+                chunks = _split_text(text, _MAX_CHARS)
+                first_chunk = True
+                for chunk in chunks:
+                    if stop_event.is_set():
+                        return
+                    _synthesize_and_play(
+                        model, chunk, speaker, stop_event,
+                        on_playback_start=on_playback_start if first_chunk else None,
+                    )
+                    first_chunk = False
+            finally:
+                _clear_runtime_cache()
 
     def close(self) -> None:
         sd.stop()
         with self._lock:
-            self._model = None
+            self._release_model_locked()
+            self._model_id = ""
+        _clear_runtime_cache()
+
+    def _release_model_locked(self) -> None:
+        if self._model is None:
+            return
+        try:
+            self._model.close()
+        except Exception:
+            pass
+        self._model = None
+
+
+def _clear_runtime_cache() -> None:
+    gc.collect()
+    try:
+        import mlx.core as mx
+
+        mx.clear_cache()
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
