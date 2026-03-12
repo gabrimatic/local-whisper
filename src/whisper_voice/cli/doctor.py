@@ -11,8 +11,17 @@ from pathlib import Path
 from typing import Optional
 
 from .constants import (
-    C_BOLD, C_CYAN, C_DIM, C_GREEN, C_RED, C_RESET, C_YELLOW,
-    INSTALL_BREW, INSTALL_SOURCE, MODEL_DIR, get_install_method,
+    C_BOLD,
+    C_CYAN,
+    C_DIM,
+    C_GREEN,
+    C_RED,
+    C_RESET,
+    C_YELLOW,
+    INSTALL_BREW,
+    INSTALL_SOURCE,
+    MODEL_DIR,
+    get_install_method,
 )
 from .lifecycle import _get_config_path, _is_running
 
@@ -263,8 +272,8 @@ def cmd_doctor(args: list):
             core_ok = False
 
     # 9. Swift UI binary
-    from .constants import LAUNCHAGENT_PLIST
     from .build import _homebrew_ui_binary
+    from .constants import LAUNCHAGENT_PLIST
     ui_app = Path.home() / ".whisper" / "LocalWhisperUI.app"
     ui_found = ui_app.is_dir() or (install_method == INSTALL_BREW and _homebrew_ui_binary().exists())
     if ui_found:
