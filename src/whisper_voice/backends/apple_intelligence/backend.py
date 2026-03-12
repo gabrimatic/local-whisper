@@ -63,7 +63,12 @@ class AppleIntelligenceBackend(GrammarBackend):
     def running(self) -> bool:
         """Check if Apple Intelligence is available on this device."""
         if not _SDK_AVAILABLE:
-            log("apple-fm-sdk not installed. Run: pip install -e .", "ERR")
+            from ...cli.constants import INSTALL_BREW, get_install_method
+            if get_install_method() == INSTALL_BREW:
+                hint = "brew reinstall local-whisper"
+            else:
+                hint = "pip install -e '.[apple-intelligence]'"
+            log(f"apple-fm-sdk not installed. Run: {hint}", "ERR")
             return False
 
         try:

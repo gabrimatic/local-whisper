@@ -8,7 +8,7 @@ import sys
 import time
 from pathlib import Path
 
-from .constants import C_DIM, C_GREEN, C_RED, C_RESET, C_YELLOW
+from .constants import C_DIM, C_GREEN, C_RED, C_RESET, C_YELLOW, INSTALL_BREW, get_install_method
 from .lifecycle import _is_running, cmd_start, cmd_stop
 
 
@@ -106,8 +106,24 @@ def _build_local_whisper_ui(swift: str) -> bool:
     return True
 
 
+def _homebrew_ui_binary() -> Path:
+    """Return the expected path of the LocalWhisperUI binary in a Homebrew Cellar install."""
+    return Path(sys.prefix).parent / "LocalWhisperUI.app" / "Contents" / "MacOS" / "LocalWhisperUI"
+
+
 def cmd_build():
     """Build the LocalWhisperUI Swift package."""
+    if get_install_method() == INSTALL_BREW:
+        # Homebrew builds the Swift UI during formula install
+        cellar_bin = _homebrew_ui_binary()
+        home_bin = _local_whisper_ui_binary()
+        if cellar_bin.exists() or home_bin.exists():
+            print(f"{C_GREEN}LocalWhisperUI already installed{C_RESET} (Homebrew)")
+        else:
+            print(f"{C_YELLOW}LocalWhisperUI not available.{C_RESET}")
+            print(f"  {C_DIM}Reinstall with: brew reinstall local-whisper{C_RESET}")
+        return
+
     swift = shutil.which("swift")
     if not swift:
         print(f"{C_RED}swift not found - install Xcode or Xcode Command Line Tools{C_RESET}", file=sys.stderr)
@@ -119,20 +135,23 @@ def cmd_build():
 
 def cmd_restart(rebuild: bool = False):
     """Stop then start, optionally rebuilding LocalWhisperUI first."""
-    needs_ui_rebuild = rebuild or _local_whisper_ui_sources_newer_than_binary()
+    is_brew = get_install_method() == INSTALL_BREW
 
-    swift = None
-    if needs_ui_rebuild:
-        swift = shutil.which("swift")
-        if not swift:
-            print(f"{C_RED}swift not found - install Xcode or Xcode Command Line Tools{C_RESET}", file=sys.stderr)
-            sys.exit(1)
+    if not is_brew:
+        needs_ui_rebuild = rebuild or _local_whisper_ui_sources_newer_than_binary()
 
-    if needs_ui_rebuild:
-        if not rebuild:
-            print(f"{C_YELLOW}LocalWhisperUI sources changed - rebuilding...{C_RESET}")
-        if not _build_local_whisper_ui(swift):
-            sys.exit(1)
+        swift = None
+        if needs_ui_rebuild:
+            swift = shutil.which("swift")
+            if not swift:
+                print(f"{C_RED}swift not found - install Xcode or Xcode Command Line Tools{C_RESET}", file=sys.stderr)
+                sys.exit(1)
+
+        if needs_ui_rebuild:
+            if not rebuild:
+                print(f"{C_YELLOW}LocalWhisperUI sources changed - rebuilding...{C_RESET}")
+            if not _build_local_whisper_ui(swift):
+                sys.exit(1)
 
     cmd_stop()
     # Wait for lock to actually release (up to 3s)

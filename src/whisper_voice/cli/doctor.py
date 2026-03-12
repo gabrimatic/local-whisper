@@ -10,7 +10,10 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from .constants import C_BOLD, C_CYAN, C_DIM, C_GREEN, C_RED, C_RESET, C_YELLOW, MODEL_DIR
+from .constants import (
+    C_BOLD, C_CYAN, C_DIM, C_GREEN, C_RED, C_RESET, C_YELLOW,
+    INSTALL_BREW, INSTALL_SOURCE, MODEL_DIR, get_install_method,
+)
 from .lifecycle import _get_config_path, _is_running
 
 
@@ -44,16 +47,21 @@ def _get_macos_major() -> Optional[int]:
 
 
 def _get_venv_python() -> Optional[str]:
-    """Return the venv python path."""
-    # This file is at src/whisper_voice/cli/doctor.py
-    # parents: [0]=cli/, [1]=whisper_voice/, [2]=src/, [3]=project root
-    project_root = Path(__file__).resolve().parents[3]
-    for candidate in [
-        project_root / ".venv" / "bin" / "python",
-        project_root / "venv" / "bin" / "python",
-    ]:
-        if candidate.exists():
-            return str(candidate)
+    """Return the python interpreter for this installation."""
+    if get_install_method() == INSTALL_BREW:
+        return sys.executable
+
+    # Source install: look for project venv
+    try:
+        project_root = Path(__file__).resolve().parents[3]
+        for candidate in [
+            project_root / ".venv" / "bin" / "python",
+            project_root / "venv" / "bin" / "python",
+        ]:
+            if candidate.exists():
+                return str(candidate)
+    except (IndexError, OSError):
+        pass
     return sys.executable
 
 
@@ -61,9 +69,7 @@ def cmd_doctor(args: list):
     """Check system health and optionally fix issues."""
     fix = "--fix" in args
     core_ok = True
-    # This file is at src/whisper_voice/cli/doctor.py
-    # parents: [0]=cli/, [1]=whisper_voice/, [2]=src/, [3]=project root
-    project_root = Path(__file__).resolve().parents[3]
+    install_method = get_install_method()
     python = _get_venv_python()
 
     print()
@@ -78,13 +84,17 @@ def cmd_doctor(args: list):
         _doctor_fail(f"Python {v.major}.{v.minor}.{v.micro}", "Python 3.11+ required")
         core_ok = False
 
-    # 2. Virtual environment
-    venv_dir = project_root / ".venv"
-    if venv_dir.is_dir():
-        _doctor_pass("Virtual environment")
-    else:
-        _doctor_fail("Virtual environment not found", f"Run: python3 -m venv {venv_dir}")
-        core_ok = False
+    # 2. Virtual environment (source installs only)
+    if install_method == INSTALL_SOURCE:
+        project_root = Path(__file__).resolve().parents[3]
+        venv_dir = project_root / ".venv"
+        if venv_dir.is_dir():
+            _doctor_pass("Virtual environment")
+        else:
+            _doctor_fail("Virtual environment not found", f"Run: python3 -m venv {venv_dir}")
+            core_ok = False
+    elif install_method == INSTALL_BREW:
+        _doctor_pass("Homebrew installation")
 
     # 3. Core Python packages
     missing_pkgs = []
@@ -97,9 +107,15 @@ def cmd_doctor(args: list):
     if not missing_pkgs:
         _doctor_pass("Core Python packages")
     else:
-        hint = "Run: wh doctor --fix" if not fix else ""
+        if install_method == INSTALL_BREW:
+            hint = "Run: brew reinstall local-whisper"
+        elif not fix:
+            hint = "Run: wh doctor --fix"
+        else:
+            hint = ""
         _doctor_fail(f"Missing packages: {', '.join(missing_pkgs)}", hint)
-        if fix:
+        if fix and install_method == INSTALL_SOURCE:
+            project_root = Path(__file__).resolve().parents[3]
             macos_major = _get_macos_major()
             extras = "[apple-intelligence]" if macos_major and macos_major >= 15 else ""
             install_path = str(project_root) + extras
@@ -113,7 +129,7 @@ def cmd_doctor(args: list):
             else:
                 _doctor_fail("pip install failed")
                 core_ok = False
-        else:
+        elif install_method != INSTALL_BREW:
             core_ok = False
 
     # 4. espeak-ng
@@ -248,8 +264,10 @@ def cmd_doctor(args: list):
 
     # 9. Swift UI binary
     from .constants import LAUNCHAGENT_PLIST
+    from .build import _homebrew_ui_binary
     ui_app = Path.home() / ".whisper" / "LocalWhisperUI.app"
-    if ui_app.is_dir():
+    ui_found = ui_app.is_dir() or (install_method == INSTALL_BREW and _homebrew_ui_binary().exists())
+    if ui_found:
         _doctor_pass("LocalWhisperUI.app")
     else:
         _doctor_warn("LocalWhisperUI.app not found", "Service will run headless without it")
@@ -257,13 +275,19 @@ def cmd_doctor(args: list):
             _doctor_fixing("Building Swift UI...")
             from .build import cmd_build
             cmd_build()
-            if ui_app.is_dir():
+            if ui_app.is_dir() or _homebrew_ui_binary().exists():
                 _doctor_pass("LocalWhisperUI.app built")
             else:
                 _doctor_warn("Swift UI build failed (service works without it)")
 
-    # 10. LaunchAgent
-    if LAUNCHAGENT_PLIST.exists():
+    # 10. LaunchAgent / Homebrew service
+    if install_method == INSTALL_BREW:
+        brew_plist = Path.home() / "Library" / "LaunchAgents" / "homebrew.mxcl.local-whisper.plist"
+        if brew_plist.exists():
+            _doctor_pass("Homebrew service plist installed")
+        else:
+            _doctor_warn("Homebrew service not installed", "Run: brew services start local-whisper")
+    elif LAUNCHAGENT_PLIST.exists():
         result = subprocess.run(
             ["launchctl", "list", "com.local-whisper"],
             capture_output=True,
@@ -389,8 +413,24 @@ def cmd_doctor(args: list):
 
 def cmd_update():
     """Pull latest code, update dependencies, check model, rebuild Swift, and restart."""
-    # This file is at src/whisper_voice/cli/doctor.py
-    # parents: [0]=cli/, [1]=whisper_voice/, [2]=src/, [3]=project root
+    install_method = get_install_method()
+
+    if install_method == INSTALL_BREW:
+        print(f"\n  {C_BOLD}Updating via Homebrew...{C_RESET}")
+        result = subprocess.run(["brew", "upgrade", "local-whisper"])
+        if result.returncode != 0:
+            print(f"{C_YELLOW}  brew upgrade returned non-zero (may already be up to date){C_RESET}")
+        else:
+            print(f"  {C_GREEN}Done{C_RESET}")
+
+        # Still check models (brew upgrade doesn't download them)
+        _update_models()
+
+        print(f"\n  {C_BOLD}Restarting service...{C_RESET}")
+        subprocess.run(["brew", "services", "restart", "local-whisper"])
+        print(f"\n  {C_GREEN}{C_BOLD}Update complete.{C_RESET}")
+        return
+
     project_root = Path(__file__).resolve().parents[3]
     python = _get_venv_python()
 
@@ -418,8 +458,35 @@ def cmd_update():
     else:
         print(f"  {C_GREEN}Done{C_RESET}")
 
-    # Step 3: check for model updates (HF_HUB_OFFLINE=0 so HF can be reached)
+    # Step 3: check for model updates
     print(f"\n  {C_BOLD}3/5  Checking models...{C_RESET}")
+    _update_models()
+
+    # Step 4: rebuild LocalWhisperUI if sources newer than binary
+    print(f"\n  {C_BOLD}4/5  Rebuilding LocalWhisperUI if needed...{C_RESET}")
+    from .build import _build_local_whisper_ui, _local_whisper_ui_sources_newer_than_binary
+    swift = shutil.which("swift")
+    needs_ui_rebuild = _local_whisper_ui_sources_newer_than_binary()
+
+    if not swift and needs_ui_rebuild:
+        print(f"  {C_YELLOW}swift not found - skipping LocalWhisperUI rebuild{C_RESET}")
+    else:
+        if needs_ui_rebuild and swift:
+            if not _build_local_whisper_ui(swift):
+                print(f"  {C_RED}LocalWhisperUI build failed{C_RESET}", file=sys.stderr)
+        elif not needs_ui_rebuild:
+            print(f"  {C_DIM}LocalWhisperUI up to date{C_RESET}")
+
+    # Step 5: restart the service
+    print(f"\n  {C_BOLD}5/5  Restarting service...{C_RESET}")
+    from .build import cmd_restart
+    cmd_restart()
+    print(f"\n  {C_GREEN}{C_BOLD}Update complete.{C_RESET}")
+
+
+def _update_models():
+    """Check and download model updates."""
+    python = _get_venv_python()
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     model_env = os.environ.copy()
     model_env["HF_HUB_OFFLINE"] = "0"
@@ -448,24 +515,3 @@ def cmd_update():
     )
     if result.returncode != 0:
         print(f"{C_YELLOW}  Kokoro TTS model check failed - skipping{C_RESET}")
-
-    # Step 4: rebuild LocalWhisperUI if sources newer than binary
-    print(f"\n  {C_BOLD}4/5  Rebuilding LocalWhisperUI if needed...{C_RESET}")
-    from .build import _build_local_whisper_ui, _local_whisper_ui_sources_newer_than_binary
-    swift = shutil.which("swift")
-    needs_ui_rebuild = _local_whisper_ui_sources_newer_than_binary()
-
-    if not swift and needs_ui_rebuild:
-        print(f"  {C_YELLOW}swift not found - skipping LocalWhisperUI rebuild{C_RESET}")
-    else:
-        if needs_ui_rebuild and swift:
-            if not _build_local_whisper_ui(swift):
-                print(f"  {C_RED}LocalWhisperUI build failed{C_RESET}", file=sys.stderr)
-        elif not needs_ui_rebuild:
-            print(f"  {C_DIM}LocalWhisperUI up to date{C_RESET}")
-
-    # Step 5: restart the service
-    print(f"\n  {C_BOLD}5/5  Restarting service...{C_RESET}")
-    from .build import cmd_restart
-    cmd_restart()
-    print(f"\n  {C_GREEN}{C_BOLD}Update complete.{C_RESET}")

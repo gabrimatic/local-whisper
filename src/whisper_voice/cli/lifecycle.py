@@ -18,9 +18,11 @@ from .constants import (
     C_RED,
     C_RESET,
     C_YELLOW,
+    INSTALL_BREW,
     LAUNCHAGENT_LABEL,
     LAUNCHAGENT_PLIST,
     LOCK_FILE,
+    get_install_method,
 )
 
 # Import TOML helpers from config (avoids duplication)
@@ -242,6 +244,22 @@ def cmd_start():
         print(f"{C_YELLOW}Already running (pid {pid_str}){C_RESET}")
         return
 
+    is_brew = get_install_method() == INSTALL_BREW
+
+    # Homebrew: prefer brew services which manages its own plist
+    if is_brew:
+        brew_plist = Path.home() / "Library" / "LaunchAgents" / "homebrew.mxcl.local-whisper.plist"
+        if brew_plist.exists():
+            result = subprocess.run(["brew", "services", "start", "local-whisper"], capture_output=True)
+            if result.returncode == 0:
+                print(f"{C_GREEN}Started{C_RESET} (via brew services)")
+            else:
+                print(f"{C_RED}Failed to start via brew services{C_RESET}", file=sys.stderr)
+                stderr = result.stderr.decode().strip() if result.stderr else ""
+                if stderr:
+                    print(f"  {C_DIM}{stderr}{C_RESET}", file=sys.stderr)
+            return
+
     if LAUNCHAGENT_PLIST.exists():
         result = subprocess.run(["launchctl", "start", LAUNCHAGENT_LABEL], capture_output=True)
         if result.returncode == 0:
@@ -272,6 +290,10 @@ def cmd_stop():
     if not running:
         print(f"{C_DIM}Not running{C_RESET}")
         return
+
+    # If Homebrew, also tell brew services to stop (prevents auto-restart)
+    if get_install_method() == INSTALL_BREW:
+        subprocess.run(["brew", "services", "stop", "local-whisper"], capture_output=True)
 
     if pid is None:
         print(f"{C_YELLOW}Running but PID not found - check Activity Monitor{C_RESET}", file=sys.stderr)

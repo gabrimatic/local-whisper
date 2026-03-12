@@ -21,10 +21,12 @@ from .constants import (
     C_RED,
     C_RESET,
     C_YELLOW,
+    INSTALL_BREW,
     LAUNCHAGENT_LABEL,
     LAUNCHAGENT_PLIST,
     LOG_FILE,
     MODEL_DIR,
+    get_install_method,
 )
 from .doctor import cmd_doctor, cmd_update
 from .editor import cmd_config
@@ -63,8 +65,8 @@ def _print_help():
             ("wh config [edit|path]", "Interactive config editor, open in $EDITOR, or print path"),
         ]),
         ("Maintenance", [
-            ("wh version",         "Show version"),
-            ("wh update",          "Pull, update deps, rebuild, restart"),
+            ("wh version",         "Show version and install method"),
+            ("wh update",          "Update code, deps, models, and restart"),
             ("wh doctor [--fix]",  "Check system health, auto-repair"),
             ("wh build",           "Rebuild Swift UI"),
             ("wh uninstall",       "Completely remove Local Whisper"),
@@ -79,10 +81,11 @@ def _print_help():
 
 
 def cmd_version():
-    """Show version."""
+    """Show version and install method."""
     try:
         from whisper_voice import __version__
-        print(f"Local Whisper {__version__}")
+        method = get_install_method()
+        print(f"Local Whisper {__version__} ({method})")
     except Exception:
         print("Local Whisper (version unknown)")
 
@@ -103,6 +106,12 @@ def cmd_log():
 
 def cmd_install():
     """Write LaunchAgent plist and load it."""
+    if get_install_method() == INSTALL_BREW:
+        print(f"  {C_CYAN}Homebrew installation detected.{C_RESET}")
+        print(f"  Use {C_BOLD}brew services start local-whisper{C_RESET} to start the service.")
+        print(f"  Use {C_BOLD}brew services stop local-whisper{C_RESET} to stop it.")
+        return
+
     wh_path = str(Path(sys.argv[0]).resolve())
     log_path = str(LOG_FILE)
     LAUNCHAGENT_PLIST.parent.mkdir(parents=True, exist_ok=True)
@@ -184,6 +193,24 @@ def cmd_install():
 
 def cmd_uninstall():
     """Completely remove Local Whisper: stop service, LaunchAgent, config, logs, zshrc alias."""
+    is_brew = get_install_method() == INSTALL_BREW
+
+    if is_brew:
+        print(f"  {C_BOLD}Uninstalling Local Whisper (Homebrew)...{C_RESET}")
+        print()
+        subprocess.run(["brew", "services", "stop", "local-whisper"], capture_output=True)
+        print(f"  {C_GREEN}✓{C_RESET}  Service stopped")
+
+        whisper_dir = Path.home() / ".whisper"
+        if whisper_dir.exists():
+            shutil.rmtree(whisper_dir)
+            print(f"  {C_GREEN}✓{C_RESET}  Removed ~/.whisper (config, models, logs)")
+
+        print()
+        print(f"  Now run: {C_BOLD}brew uninstall local-whisper{C_RESET}")
+        print(f"  {C_DIM}Optionally: brew untap gabrimatic/local-whisper{C_RESET}")
+        return
+
     print(f"  {C_BOLD}Uninstalling Local Whisper...{C_RESET}")
     print()
 
