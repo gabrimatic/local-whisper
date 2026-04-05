@@ -170,6 +170,10 @@ normalize_audio = true
 # Note: enabling this keeps the microphone active between recordings.
 pre_buffer = 0.0
 
+[service]
+# Minutes of inactivity before unloading ML models from RAM (0 = never unload)
+idle_unload_minutes = 20
+
 [ui]
 # Show floating overlay window during recording
 show_overlay = true
@@ -336,6 +340,12 @@ class AudioConfig:
 
 
 @dataclass
+class ServiceConfig:
+    """Service-level lifecycle settings."""
+    idle_unload_minutes: int = 20
+
+
+@dataclass
 class UIConfig:
     show_overlay: bool = True
     overlay_opacity: float = 0.92
@@ -396,6 +406,7 @@ class Config:
     apple_intelligence: AppleIntelligenceConfig = field(default_factory=AppleIntelligenceConfig)
     lm_studio: LMStudioConfig = field(default_factory=LMStudioConfig)
     audio: AudioConfig = field(default_factory=AudioConfig)
+    service: ServiceConfig = field(default_factory=ServiceConfig)
     ui: UIConfig = field(default_factory=UIConfig)
     backup: BackupConfig = field(default_factory=BackupConfig)
     shortcuts: ShortcutsConfig = field(default_factory=ShortcutsConfig)

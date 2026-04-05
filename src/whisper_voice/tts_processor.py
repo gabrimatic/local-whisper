@@ -211,6 +211,11 @@ class TTSProcessor:
         except Exception as e:
             log(f"TTS status error: {e}", "WARN")
 
+    def unload_model(self) -> None:
+        """Release TTS model from RAM."""
+        if self._provider and hasattr(self._provider, 'unload'):
+            self._provider.unload()
+
     def close(self):
         """Stop speaking and release resources."""
         self._stop_event.set()

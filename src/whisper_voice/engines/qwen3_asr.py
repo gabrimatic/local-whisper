@@ -127,6 +127,17 @@ class Qwen3ASREngine(TranscriptionEngine):
         finally:
             self._clear_runtime_cache()
 
+    def unload(self) -> None:
+        """Release model from RAM without destroying the engine."""
+        if self._model is not None:
+            try:
+                self._model.close()
+            except Exception:
+                pass
+            self._model = None
+            self._clear_runtime_cache()
+            log("Qwen3-ASR model unloaded (idle)", "INFO")
+
     def close(self) -> None:
         if self._model is not None:
             try:

@@ -36,6 +36,7 @@ class CommandsMixin:
 
     def _cmd_whisper(self, request: dict, send: callable, stop_event: threading.Event):
         """Speak text aloud via TTS."""
+        self._touch_model_activity()
         text = request.get("text", "").strip()
         if not text:
             send({"type": "error", "message": "No text provided"})
@@ -70,6 +71,7 @@ class CommandsMixin:
 
     def _cmd_listen(self, request: dict, send: callable, stop_event: threading.Event):
         """Record from microphone, transcribe, and return text."""
+        self._touch_model_activity()
         with self._state_lock:
             if self._busy or self.recorder.recording:
                 send({"type": "error", "message": "Service is busy"})
@@ -158,6 +160,7 @@ class CommandsMixin:
 
     def _cmd_transcribe(self, request: dict, send: callable, stop_event: threading.Event):
         """Transcribe an audio file."""
+        self._touch_model_activity()
         file_path = request.get("path", "").strip()
         if not file_path:
             send({"type": "error", "message": "No file path provided"})

@@ -31,6 +31,7 @@ class PipelineMixin:
 
     def _process(self, audio):
         """Process recorded audio: transcribe, fix grammar, copy to clipboard."""
+        self._touch_model_activity()
         self._current_status = "Processing..."
         self._send_state_update()
         try:

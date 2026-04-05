@@ -66,6 +66,18 @@ class Transcriber:
         """
         return self._engine.transcribe(path)
 
+    def unload(self) -> None:
+        """Release engine model from RAM. Call start() to reload."""
+        if hasattr(self._engine, 'unload'):
+            self._engine.unload()
+
+    def ensure_loaded(self) -> bool:
+        """Reload engine if it was unloaded. Returns True if ready."""
+        if self._engine.running():
+            return True
+        log("Reloading transcription engine...", "INFO")
+        return self._engine.start()
+
     def close(self) -> None:
         """Release all engine resources."""
         self._engine.close()

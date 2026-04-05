@@ -138,6 +138,11 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
         self._stop_event = threading.Event()
         self._cleaned_up = False
 
+        # Idle model unload timer
+        self._last_model_use: float = time.time()
+        self._idle_timer: Optional[threading.Timer] = None
+        self._models_loaded: bool = True
+
         # IPC server
         self.ipc = IPCServer()
         self.ipc.set_on_connect(self._on_swift_connect)
@@ -244,12 +249,60 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
             log("Accessibility permission required - System Settings opened", "WARN")
             log("Enable this process in Accessibility, then run: wh restart", "WARN")
 
+        # Start idle unload timer
+        self._schedule_idle_unload()
+
         # Start keyboard listener
         self._start_keyboard_listener()
 
     def _exit_app(self):
         """Exit the application from any thread."""
         threading.Timer(0.5, self._cleanup).start()
+
+    # ------------------------------------------------------------------
+    # Idle model management
+    # ------------------------------------------------------------------
+
+    def _touch_model_activity(self):
+        """Mark models as recently used. Reloads if needed, resets idle timer."""
+        self._last_model_use = time.time()
+        if not self._models_loaded:
+            self._reload_models()
+        self._schedule_idle_unload()
+
+    def _schedule_idle_unload(self):
+        """(Re)schedule the idle unload timer."""
+        if self._idle_timer:
+            self._idle_timer.cancel()
+        minutes = self.config.service.idle_unload_minutes
+        if minutes <= 0:
+            return
+        self._idle_timer = threading.Timer(minutes * 60, self._idle_unload)
+        self._idle_timer.daemon = True
+        self._idle_timer.start()
+
+    def _idle_unload(self):
+        """Unload models after idle timeout."""
+        if self._busy or self.recorder.recording:
+            self._schedule_idle_unload()
+            return
+        log(f"Idle for {int((time.time() - self._last_model_use) / 60)}min — unloading models", "INFO")
+        self.transcriber.unload()
+        if self._tts_processor:
+            self._tts_processor.unload_model()
+        self._models_loaded = False
+
+    def _reload_models(self):
+        """Reload models that were unloaded due to idle timeout."""
+        log("Reloading models...", "INFO")
+        self._send_state_update("processing", status_text="Reloading models...")
+        if not self.transcriber.ensure_loaded():
+            log("Failed to reload transcription engine", "ERR")
+            self._send_state_error("Failed to reload engine")
+            return
+        self._models_loaded = True
+        self._send_state_update()
+        log("Models reloaded", "OK")
 
     # ------------------------------------------------------------------
     # Swift UI subprocess
@@ -426,6 +479,10 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
         if self._max_timer:
             self._max_timer.cancel()
             self._max_timer = None
+
+        if self._idle_timer:
+            self._idle_timer.cancel()
+            self._idle_timer = None
 
         # Stop recording if active
         if self.recorder.recording:

@@ -261,16 +261,22 @@ def cmd_start():
             return
 
     if LAUNCHAGENT_PLIST.exists():
-        result = subprocess.run(["launchctl", "start", LAUNCHAGENT_LABEL], capture_output=True)
+        # Ensure the agent is loaded (idempotent if already loaded)
+        subprocess.run(
+            ["launchctl", "load", str(LAUNCHAGENT_PLIST)],
+            capture_output=True,
+        )
+        uid = os.getuid()
+        # kickstart -k reliably starts the agent whether loaded-but-stopped or freshly loaded
+        result = subprocess.run(
+            ["launchctl", "kickstart", f"gui/{uid}/{LAUNCHAGENT_LABEL}"],
+            capture_output=True,
+        )
         if result.returncode == 0:
             print(f"{C_GREEN}Started{C_RESET} (via LaunchAgent)")
         else:
-            # launchctl start can fail if already loaded but stopped; try kickstart
-            uid = os.getuid()
-            subprocess.Popen(
-                ["launchctl", "kickstart", f"gui/{uid}/{LAUNCHAGENT_LABEL}"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
+            # Fallback: try launchctl start
+            subprocess.run(["launchctl", "start", LAUNCHAGENT_LABEL], capture_output=True)
             print(f"{C_GREEN}Started{C_RESET} (via LaunchAgent)")
     else:
         # No LaunchAgent installed - spawn directly

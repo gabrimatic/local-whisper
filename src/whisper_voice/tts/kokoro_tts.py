@@ -111,6 +111,13 @@ class KokoroTTSProvider(TTSProvider):
             finally:
                 _clear_runtime_cache()
 
+    def unload(self) -> None:
+        """Release model from RAM. Will lazy-reload on next speak()."""
+        with self._lock:
+            self._release_model_locked()
+        _clear_runtime_cache()
+        log("Kokoro model unloaded (idle)", "INFO")
+
     def close(self) -> None:
         sd.stop()
         with self._lock:
