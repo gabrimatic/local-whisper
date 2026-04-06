@@ -22,10 +22,8 @@ from .constants import (
     C_RESET,
     C_YELLOW,
     INSTALL_BREW,
-    LAUNCHAGENT_LABEL,
     LAUNCHAGENT_PLIST,
     LOG_FILE,
-    MODEL_DIR,
     get_install_method,
 )
 from .doctor import cmd_doctor, cmd_update
@@ -65,6 +63,7 @@ def _print_help():
             ("wh config [edit|path]", "Interactive config editor, open in $EDITOR, or print path"),
         ]),
         ("Maintenance", [
+            ("wh install",         "Run full setup (deps, models, service)"),
             ("wh version",         "Show version and install method"),
             ("wh update",          "Update code, deps, models, and restart"),
             ("wh doctor [--fix]",  "Check system health, auto-repair"),
@@ -105,90 +104,16 @@ def cmd_log():
 
 
 def cmd_install():
-    """Write LaunchAgent plist and load it."""
-    if get_install_method() == INSTALL_BREW:
-        print(f"  {C_CYAN}Homebrew installation detected.{C_RESET}")
-        print(f"  Use {C_BOLD}brew services start local-whisper{C_RESET} to start the service.")
-        print(f"  Use {C_BOLD}brew services stop local-whisper{C_RESET} to stop it.")
-        return
+    """Run the full setup script (deps, venv, models, service, permissions)."""
+    project_root = Path(__file__).resolve().parents[3]
+    setup_script = project_root / "setup.sh"
 
-    wh_path = str(Path(sys.argv[0]).resolve())
-    log_path = str(LOG_FILE)
-    LAUNCHAGENT_PLIST.parent.mkdir(parents=True, exist_ok=True)
-    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    if not setup_script.exists():
+        print(f"{C_RED}setup.sh not found at {project_root}{C_RESET}")
+        print(f"{C_DIM}Are you running from a git checkout?{C_RESET}")
+        sys.exit(1)
 
-    # Include Homebrew and common tool paths since launchd has a minimal PATH
-    path_value = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-
-    plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>{LAUNCHAGENT_LABEL}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{wh_path}</string>
-        <string>_run</string>
-    </array>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>{path_value}</string>
-        <key>HF_HUB_CACHE</key>
-        <string>{MODEL_DIR}</string>
-        <key>HF_HUB_OFFLINE</key>
-        <string>1</string>
-        <key>HF_HUB_DISABLE_TELEMETRY</key>
-        <string>1</string>
-    </dict>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <false/>
-    <key>StandardOutPath</key>
-    <string>{log_path}</string>
-    <key>StandardErrorPath</key>
-    <string>{log_path}</string>
-</dict>
-</plist>
-"""
-    LAUNCHAGENT_PLIST.write_text(plist_content)
-    print(f"{C_GREEN}Installed:{C_RESET} {LAUNCHAGENT_PLIST}")
-
-    # Unload stale entry if any
-    subprocess.run(["launchctl", "unload", str(LAUNCHAGENT_PLIST)], capture_output=True)
-
-    # Stop any running instance first
-    running, pid = _is_running()
-    if running and pid:
-        try:
-            os.kill(pid, signal.SIGTERM)
-            time.sleep(1)
-        except ProcessLookupError:
-            pass
-        _cleanup_lock()
-
-    result = subprocess.run(
-        ["launchctl", "load", str(LAUNCHAGENT_PLIST)],
-        capture_output=True, text=True,
-    )
-    if result.returncode == 0:
-        print(f"{C_GREEN}LaunchAgent loaded{C_RESET} - service will start at login automatically")
-        print(f"{C_GREEN}Starting now...{C_RESET}")
-        time.sleep(1)
-        running, pid = _is_running()
-        if running:
-            print(f"{C_GREEN}Running{C_RESET} (pid {pid})")
-        else:
-            print(f"{C_DIM}Service starting in background{C_RESET}")
-    else:
-        print(f"{C_YELLOW}LaunchAgent load warning: {result.stderr.strip()}{C_RESET}")
-        print(f"{C_DIM}Try: launchctl load {LAUNCHAGENT_PLIST}{C_RESET}")
-
-    print()
-    print(f"{C_DIM}Accessibility permission will be requested automatically on first run.{C_RESET}")
+    os.execvp("bash", ["bash", str(setup_script)])
 
 
 def cmd_uninstall():
@@ -337,6 +262,8 @@ def cli_main():
         cmd_update()
     elif cmd == "doctor":
         cmd_doctor(rest)
+    elif cmd == "install":
+        cmd_install()
     elif cmd == "uninstall":
         cmd_uninstall()
     elif cmd == "log":

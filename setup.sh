@@ -135,19 +135,28 @@ log_ok "Homebrew ready"
 
 log_step "Checking Python..."
 
-if ! command -v python3 &> /dev/null; then
-    log_info "Installing Python 3 via Homebrew..."
-    brew install python3 || fail "Failed to install Python 3"
-fi
+# Find a compatible Python (3.11 or 3.12). Misaki (Kokoro TTS dep) requires <3.13.
+PYTHON_BIN=""
+for candidate in python3.12 python3.11 python3; do
+    if command -v "$candidate" &> /dev/null; then
+        _VER=$("$candidate" --version 2>&1 | cut -d' ' -f2)
+        _MAJ=$(echo "$_VER" | cut -d'.' -f1)
+        _MIN=$(echo "$_VER" | cut -d'.' -f2)
+        if [[ "$_MAJ" -eq 3 && "$_MIN" -ge 11 && "$_MIN" -lt 13 ]]; then
+            PYTHON_BIN=$(command -v "$candidate")
+            PYTHON_VERSION="$_VER"
+            break
+        fi
+    fi
+done
 
-PYTHON_VERSION=$(python3 --version 2>&1 | cut -d' ' -f2)
-PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d'.' -f1)
-PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d'.' -f2)
-
-if [[ "$PYTHON_MAJOR" -lt 3 ]] || [[ "$PYTHON_MAJOR" -eq 3 && "$PYTHON_MINOR" -lt 11 ]]; then
-    fail "Python 3.11+ required. Found: $PYTHON_VERSION"
+if [[ -z "$PYTHON_BIN" ]]; then
+    log_info "No compatible Python found. Installing python@3.12 via Homebrew..."
+    brew install python@3.12 || fail "Failed to install Python 3.12"
+    PYTHON_BIN="$(brew --prefix python@3.12)/bin/python3.12"
+    PYTHON_VERSION=$("$PYTHON_BIN" --version 2>&1 | cut -d' ' -f2)
 fi
-log_ok "Python $PYTHON_VERSION"
+log_ok "Python $PYTHON_VERSION ($PYTHON_BIN)"
 
 # ============================================================================
 # Virtual environment + package install
@@ -157,8 +166,18 @@ log_step "Installing local-whisper..."
 
 VENV_DIR="$SCRIPT_DIR/.venv"
 
+# Recreate venv if it exists but uses an incompatible Python
+if [[ -d "$VENV_DIR" ]]; then
+    VENV_PY_VER=$("$VENV_DIR/bin/python3" --version 2>&1 | cut -d' ' -f2 || echo "0.0.0")
+    VENV_PY_MIN=$(echo "$VENV_PY_VER" | cut -d'.' -f2)
+    if [[ "$VENV_PY_MIN" -lt 11 || "$VENV_PY_MIN" -ge 13 ]]; then
+        log_info "Recreating venv (was Python $VENV_PY_VER, need 3.11-3.12)..."
+        rm -rf "$VENV_DIR"
+    fi
+fi
+
 if [[ ! -d "$VENV_DIR" ]]; then
-    python3 -m venv "$VENV_DIR" || fail "Failed to create virtual environment"
+    "$PYTHON_BIN" -m venv "$VENV_DIR" || fail "Failed to create virtual environment"
 fi
 
 source "$VENV_DIR/bin/activate" || fail "Failed to activate virtual environment"
