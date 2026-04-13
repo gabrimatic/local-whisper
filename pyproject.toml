@@ -33,7 +33,7 @@ dependencies = [
     "pyobjc-framework-Quartz>=8.0",
     "qwen3-asr-mlx>=0.1.0",
     "kokoro-mlx>=0.1.0",
-    "soundfile>=0.12.0",
+    "soundfile>=0.13.1",
     "misaki[en]>=0.9.4",
 ]
 
