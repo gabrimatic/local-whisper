@@ -11,7 +11,6 @@ The helpers below mirror the real payload shapes emitted by the service in
 
 import json
 
-
 # ---------------------------------------------------------------------------
 # Helpers: message constructors that mirror the real Python→Swift payloads.
 # ---------------------------------------------------------------------------

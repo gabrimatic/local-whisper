@@ -5,10 +5,9 @@ Unit tests for memory-conscious audio handling.
 """
 
 from types import SimpleNamespace
-
-import numpy as np
 from unittest.mock import Mock, patch
 
+import numpy as np
 from conftest import import_with_stubs
 
 

@@ -12,7 +12,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Module import helpers (avoid pulling in AppKit/sounddevice/mlx at import time)
 # ---------------------------------------------------------------------------

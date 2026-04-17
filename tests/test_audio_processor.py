@@ -13,7 +13,6 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Minimal config stubs (no disk access, no hardware)
 # ---------------------------------------------------------------------------

@@ -26,7 +26,6 @@ from typing import Dict, Optional, Tuple
 
 from .config import get_config
 
-
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
@@ -68,8 +67,11 @@ DEFAULT_COMMANDS: Dict[str, str] = {
 
 
 # Commands whose replacement should attach to the preceding word with no
-# intervening whitespace (punctuation). Everything else leaves spaces alone.
-_TIGHT_PUNCTUATION = {".", ",", "?", "!", ":", ";", "...", ")"}
+# intervening whitespace (sentence terminators, closing brackets).
+_RIGHT_ATTACHING = {".", ",", "?", "!", ":", ";", "...", ")"}
+# Commands whose replacement should attach to the following word with no
+# intervening whitespace (opening brackets).
+_LEFT_ATTACHING = {"("}
 
 
 # ---------------------------------------------------------------------------
@@ -119,9 +121,12 @@ def _apply(text: str, commands: Dict[str, str]) -> str:
 
 def _substitute_one(text: str, phrase: str, replacement: str) -> str:
     pattern = r"\b" + re.escape(phrase) + r"\b"
-    if replacement in _TIGHT_PUNCTUATION:
+    if replacement in _RIGHT_ATTACHING:
         # Eat the space(s) before the phrase so "hello period" -> "hello."
         return re.sub(r"\s*" + pattern, replacement, text, flags=re.IGNORECASE)
+    if replacement in _LEFT_ATTACHING:
+        # Eat the space(s) after the phrase so "open paren hello" -> "(hello"
+        return re.sub(pattern + r"\s*", replacement, text, flags=re.IGNORECASE)
     return re.sub(pattern, replacement, text, flags=re.IGNORECASE)
 
 

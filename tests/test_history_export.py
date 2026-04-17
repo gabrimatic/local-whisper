@@ -13,7 +13,6 @@ from types import SimpleNamespace
 
 import pytest
 
-
 # Import once at module scope so numpy's C extension is only loaded once.
 from whisper_voice import history_export as he
 from whisper_voice import stats as st

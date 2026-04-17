@@ -6,10 +6,8 @@ These tests exercise ``_import_replacements`` directly rather than spawning
 the full CLI so they stay fast and deterministic.
 """
 
-from unittest.mock import patch
 
 import pytest
-
 
 from whisper_voice.cli import settings as cli_settings
 

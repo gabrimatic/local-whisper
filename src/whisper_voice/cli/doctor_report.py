@@ -22,7 +22,6 @@ from .constants import (
     C_CYAN,
     C_DIM,
     C_GREEN,
-    C_RED,
     C_RESET,
     LOG_FILE,
     get_install_method,

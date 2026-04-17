@@ -17,6 +17,7 @@ import threading
 import time
 from unittest.mock import patch
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # Import helper
@@ -77,8 +78,6 @@ def _connect_and_send(socket_path: str, request: dict, timeout: float = 2.0) -> 
 # ---------------------------------------------------------------------------
 # Fixture: short Unix socket path (macOS limit is 104 bytes)
 # ---------------------------------------------------------------------------
-
-import pytest
 
 
 @pytest.fixture()
