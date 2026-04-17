@@ -232,7 +232,7 @@ wh uninstall        # Completely remove Local Whisper
 | Grammar | Switch grammar backend in-place |
 | Replacements | Toggle, shows rule count |
 | Retry Last / Copy Last | Re-transcribe or re-copy |
-| Transcriptions | Last 20, click to copy |
+| Transcriptions | Last 100, click to copy |
 | Recordings | Audio files, click to reveal in Finder |
 | Settings... | Full GUI |
 | Restart Service | Restart background service |
@@ -534,7 +534,7 @@ pip install -e .
 
 wh build              # Build Swift UI (one-time)
 wh                    # Run the service
-python tests/test_flow.py  # Run tests (requires a grammar backend)
+pytest tests/              # Run the full test suite
 ```
 
 ### Adding an Engine or Grammar Backend

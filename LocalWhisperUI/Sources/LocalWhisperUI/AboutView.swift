@@ -47,14 +47,14 @@ struct AboutView: View {
                         Text("Soroush Yousefpour")
                             .font(.system(size: 13))
                         Button("gabrimatic.info") {
-                            NSWorkspace.shared.open(URL(string: "https://gabrimatic.info")!)
+                            openExternal("https://gabrimatic.info")
                         }
                         .buttonStyle(.link)
                         .font(.system(size: 13))
                     }
 
                     Button("GitHub") {
-                        NSWorkspace.shared.open(URL(string: "https://github.com/gabrimatic/local-whisper")!)
+                        openExternal("https://github.com/gabrimatic/local-whisper")
                     }
                     .buttonStyle(.link)
                     .font(.system(size: 13))
@@ -105,11 +105,16 @@ struct AboutView: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 56, alignment: .leading)
             Button(name) {
-                NSWorkspace.shared.open(URL(string: url)!)
+                openExternal(url)
             }
             .buttonStyle(.link)
             .font(.system(size: 12))
         }
         .padding(.vertical, 3)
+    }
+
+    private func openExternal(_ string: String) {
+        guard let url = URL(string: string) else { return }
+        NSWorkspace.shared.open(url)
     }
 }

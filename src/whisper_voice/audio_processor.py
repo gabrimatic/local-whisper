@@ -404,8 +404,10 @@ class AudioProcessor:
         return stft
 
     def _istft(self, stft: np.ndarray, window: np.ndarray, original_length: int) -> np.ndarray:
-        # hop must equal n_fft // 2 for this vectorized OLA to be correct
-        assert _STFT_HOP == _STFT_N_FFT // 2, "vectorized _istft requires 50% overlap"
+        # hop must equal n_fft // 2 for this vectorized OLA to be correct.
+        # Use an explicit raise so the invariant holds under python -O (where assert is stripped).
+        if _STFT_HOP != _STFT_N_FFT // 2:
+            raise ValueError("vectorized _istft requires 50% overlap (hop = n_fft // 2)")
         n_fft = _STFT_N_FFT
         hop = _STFT_HOP
         n_frames = stft.shape[1]

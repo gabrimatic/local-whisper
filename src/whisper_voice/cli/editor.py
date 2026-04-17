@@ -267,8 +267,8 @@ def cmd_config(args: list):
         if not sys.stdin.isatty():
             # Non-interactive: print static summary
             if not config_path.exists():
-                print(f"{C_YELLOW}Config not found: {config_path}{C_RESET}")
-                return
+                print(f"{C_YELLOW}Config not found: {config_path}{C_RESET}", file=sys.stderr)
+                sys.exit(1)
             try:
                 import tomllib
                 with open(config_path, 'rb') as f:
@@ -304,5 +304,5 @@ def cmd_config(args: list):
         return
 
     print(f"{C_RED}Unknown config subcommand: {args[0]}{C_RESET}", file=sys.stderr)
-    print(f"{C_DIM}Usage: wh config [edit|path]{C_RESET}", file=sys.stderr)
+    print(f"{C_DIM}Usage: wh config [show|edit|path]{C_RESET}", file=sys.stderr)
     sys.exit(1)

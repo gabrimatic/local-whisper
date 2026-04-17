@@ -23,7 +23,6 @@ def _import_modes():
             del sys.modules[mod]
 
     stubs = {
-        "rumps": None,
         "sounddevice": None,
         "AppKit": None,
         "Foundation": None,

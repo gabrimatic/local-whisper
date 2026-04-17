@@ -10,7 +10,6 @@ import re
 import subprocess
 import threading
 from datetime import datetime
-from pathlib import Path
 
 from .config import get_config
 
@@ -35,49 +34,7 @@ LOG_STYLES = {
     "APP": (C_CYAN, "◆"),
 }
 
-# Menu bar icons + status glyphs
-ASSETS_DIR = Path(__file__).resolve().parent / "assets"
-
-def _validate_asset(path: str) -> str:
-    """Validate asset file exists, return path or raise error."""
-    if not Path(path).exists():
-        raise FileNotFoundError(f"Missing asset: {path}")
-    return path
-
-ICON_IMAGE = _validate_asset(str(ASSETS_DIR / "icon_waveform.png"))
-APP_ICON = _validate_asset(str(ASSETS_DIR / "icon_app.png"))
-ICON_FRAMES = [
-    _validate_asset(str(ASSETS_DIR / "icon_waveform_1.png")),
-    _validate_asset(str(ASSETS_DIR / "icon_waveform_2.png")),
-    _validate_asset(str(ASSETS_DIR / "icon_waveform_3.png")),
-    _validate_asset(str(ASSETS_DIR / "icon_waveform_4.png")),
-]
-ICON_PROCESS_FRAMES = [
-    _validate_asset(str(ASSETS_DIR / "icon_waveform_p1.png")),
-    _validate_asset(str(ASSETS_DIR / "icon_waveform_p2.png")),
-    _validate_asset(str(ASSETS_DIR / "icon_waveform_p3.png")),
-    _validate_asset(str(ASSETS_DIR / "icon_waveform_p4.png")),
-]
-ICON_IDLE = ""
-ICON_RECORDING = ""
-ICON_PROCESSING = "···"
-ICON_SUCCESS = "✓"
-ICON_ERROR = "✗"
-
-OVERLAY_WAVE_FRAMES = [
-    _validate_asset(str(ASSETS_DIR / "overlay_wave_1.png")),
-    _validate_asset(str(ASSETS_DIR / "overlay_wave_2.png")),
-    _validate_asset(str(ASSETS_DIR / "overlay_wave_3.png")),
-    _validate_asset(str(ASSETS_DIR / "overlay_wave_4.png")),
-]
-
-# Timing for icon resets (seconds)
-ICON_RESET_SUCCESS = 1.0
-ICON_RESET_ERROR = 1.0
-
-# Animation intervals (seconds)
-ANIM_INTERVAL_RECORDING = 0.1
-ANIM_INTERVAL_PROCESSING = 0.2
+# Duration update interval (seconds). Used by the recording duration ticker.
 DURATION_UPDATE_INTERVAL = 0.1
 
 # Timeout values (seconds)
@@ -254,21 +211,12 @@ def send_notification(title: str, message: str):
     config = get_config()
     if not config.ui.notifications_enabled:
         return
-    if _notification_sender is not None:
-        try:
-            _notification_sender(title, message)
-        except Exception:
-            pass
-
-
-def hide_dock_icon():
-    """Hide the dock icon (menu bar app only)."""
+    if _notification_sender is None:
+        return
     try:
-        from AppKit import NSApp, NSApplicationActivationPolicyAccessory
-        if NSApp:
-            NSApp.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
-    except Exception:
-        pass
+        _notification_sender(title, message)
+    except Exception as e:
+        log(f"Notification delivery failed: {type(e).__name__}: {e}", "WARN")
 
 
 def truncate(text: str, length: int = LOG_TRUNCATE) -> str:

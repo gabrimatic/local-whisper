@@ -69,17 +69,30 @@ def _validate_config(config: Config):
         print(f"Config warning: Invalid lm_studio check_url '{config.lm_studio.check_url}', using default", file=sys.stderr)
         config.lm_studio.check_url = "http://localhost:1234/"
 
-    # Transcription engine validation
-    if config.transcription.engine not in ("qwen3_asr", "whisperkit"):
-        print(f"Config warning: Invalid transcription engine '{config.transcription.engine}', using 'qwen3_asr'", file=sys.stderr)
-        config.transcription.engine = "qwen3_asr"
+    # Transcription engine validation — derive from the live registry so adding an
+    # engine in engines/__init__.py alone enables it without touching the validator.
+    from ..engines import ENGINE_REGISTRY
+    valid_engines = tuple(ENGINE_REGISTRY.keys())
+    if valid_engines and config.transcription.engine not in valid_engines:
+        default_engine = "qwen3_asr" if "qwen3_asr" in valid_engines else valid_engines[0]
+        print(
+            f"Config warning: Invalid transcription engine '{config.transcription.engine}', using '{default_engine}'",
+            file=sys.stderr,
+        )
+        config.transcription.engine = default_engine
 
-    # Grammar backend validation
+    # Grammar backend validation — same pattern against BACKEND_REGISTRY.
+    from ..backends import BACKEND_REGISTRY
+    valid_backends = tuple(BACKEND_REGISTRY.keys())
     if config.grammar.backend == "none":
         config.grammar.enabled = False
-    elif config.grammar.enabled and config.grammar.backend not in _schema.GRAMMAR_BACKENDS:
-        print(f"Config warning: Invalid grammar backend '{config.grammar.backend}', using 'apple_intelligence'", file=sys.stderr)
-        config.grammar.backend = "apple_intelligence"
+    elif config.grammar.enabled and valid_backends and config.grammar.backend not in valid_backends:
+        default_backend = "apple_intelligence" if "apple_intelligence" in valid_backends else valid_backends[0]
+        print(
+            f"Config warning: Invalid grammar backend '{config.grammar.backend}', using '{default_backend}'",
+            file=sys.stderr,
+        )
+        config.grammar.backend = default_backend
 
     # Hotkey validation
     valid_keys = {

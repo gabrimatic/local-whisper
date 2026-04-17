@@ -42,7 +42,7 @@ def _cmd_send_recv(request: dict) -> dict:
         if not stop_sent:
             stop_sent = True
             try:
-                sock.sendall((json.dumps({"type": "stop"}) + "\n").encode())
+                sock.sendall((json.dumps({"action": "stop"}) + "\n").encode())
             except Exception:
                 pass
 
@@ -117,7 +117,7 @@ def cmd_whisper(args: list):
         print(f"{C_DIM}Usage: wh whisper \"text\" [--voice NAME]{C_RESET}", file=sys.stderr)
         sys.exit(1)
 
-    request = {"type": "whisper", "text": text}
+    request = {"action": "whisper", "text": text}
     if voice:
         request["voice"] = voice
 
@@ -142,7 +142,7 @@ def cmd_listen(args: list):
                 print(f"{C_DIM}Usage: wh listen [seconds] [--raw]{C_RESET}", file=sys.stderr)
                 sys.exit(1)
 
-    request = {"type": "listen", "max_duration": max_duration, "raw": raw}
+    request = {"action": "listen", "max_duration": max_duration, "raw": raw}
     result = _cmd_send_recv(request)
 
     if result.get("type") == "error":
@@ -175,7 +175,7 @@ def cmd_transcribe(args: list):
     # Resolve to absolute path
     file_path = str(Path(file_path).resolve())
 
-    request = {"type": "transcribe", "path": file_path, "raw": raw}
+    request = {"action": "transcribe", "path": file_path, "raw": raw}
     result = _cmd_send_recv(request)
 
     if result.get("type") == "error":

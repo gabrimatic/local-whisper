@@ -104,7 +104,14 @@ struct GeneralSettingsView: View {
                         get: { appState.config.grammar.enabled },
                         set: { newValue in
                             appState.config.grammar.enabled = newValue
-                            appState.ipcClient?.sendConfigUpdate(section: "grammar", key: "enabled", value: newValue)
+                            // Use backend_switch so the service actually initializes or
+                            // tears down the backend in-process — a raw config_update
+                            // only writes the flag and leaves the loaded model dangling.
+                            if newValue {
+                                appState.ipcClient?.sendBackendSwitch(appState.config.grammar.backend)
+                            } else {
+                                appState.ipcClient?.sendBackendSwitch("none")
+                            }
                         }
                     ))
                     .accessibilityHint("When enabled, transcribed text is cleaned up by the selected grammar backend before being copied")

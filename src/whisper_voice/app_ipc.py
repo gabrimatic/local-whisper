@@ -218,6 +218,18 @@ class IPCMixin:
                 update_config_field(section, key, value)
                 self.config = get_config()
                 self._send_config_snapshot()
+                # Side effects for settings that drive runtime state. Toggling
+                # grammar.enabled must actually initialize or tear down the
+                # in-process backend, not just flip a bool in the config file.
+                if section == "grammar" and key == "enabled":
+                    if value:
+                        threading.Thread(
+                            target=self._switch_backend,
+                            args=(self.config.grammar.backend,),
+                            daemon=True,
+                        ).start()
+                    else:
+                        threading.Thread(target=self._disable_grammar, daemon=True).start()
         elif msg_type == "replacement_add":
             spoken = msg.get("spoken", "").strip()
             replacement = msg.get("replacement", "").strip()

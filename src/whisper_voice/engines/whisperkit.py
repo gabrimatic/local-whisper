@@ -94,6 +94,12 @@ class WhisperKitEngine(TranscriptionEngine):
 
         for i in range(STARTUP_TIMEOUT):
             time.sleep(1)
+            # Fail fast if the subprocess exited during startup.
+            if self._process.poll() is not None:
+                rc = self._process.returncode
+                self._process = None
+                log(f"WhisperKit process exited during startup (code={rc})", "ERR")
+                return False
             if self.running():
                 log("Whisper server ready", "OK")
                 return True
@@ -231,24 +237,31 @@ class WhisperKitEngine(TranscriptionEngine):
         except Exception:
             pass
 
+        # Drop this instance's atexit handler so a later engine switch doesn't
+        # accumulate dangling close() registrations for already-closed engines.
+        try:
+            atexit.unregister(self.close)
+        except Exception:
+            pass
+
+        if self._process is None:
+            # Engine was never started (e.g. never selected before shutdown); nothing to kill.
+            return
+
         log("Killing WhisperKit server...", "INFO")
 
         killed_via_pid = False
-
-        # Kill the tracked process if we started it
-        if self._process is not None:
-            if self._process.poll() is None:
-                try:
-                    self._process.kill()
-                    self._process.wait(timeout=3)
-                    log("WhisperKit server killed", "OK")
-                    killed_via_pid = True
-                except Exception as e:
-                    log(f"Failed to kill tracked process: {e}", "WARN")
-            else:
-                # Process already exited on its own
+        if self._process.poll() is None:
+            try:
+                self._process.kill()
+                self._process.wait(timeout=3)
+                log("WhisperKit server killed", "OK")
                 killed_via_pid = True
-            self._process = None
+            except Exception as e:
+                log(f"Failed to kill tracked process: {e}", "WARN")
+        else:
+            killed_via_pid = True
+        self._process = None
 
         # Fall back to pkill only when we have no tracked PID (server was
         # already running before this app started, i.e. an orphan process).

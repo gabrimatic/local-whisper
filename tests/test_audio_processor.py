@@ -47,7 +47,6 @@ def _make_processor(vad=True, noise_reduction=True, normalize=True):
 
     # Patch get_config so the module doesn't touch disk or load assets
     with patch.dict("sys.modules", {
-        "rumps": None,
         "sounddevice": None,
         "AppKit": None,
         "Foundation": None,

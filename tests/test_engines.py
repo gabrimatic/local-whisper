@@ -14,7 +14,7 @@ import pytest
 
 
 # ---------------------------------------------------------------------------
-# Module import helpers (avoid pulling in rumps/AppKit/sounddevice)
+# Module import helpers (avoid pulling in AppKit/sounddevice/mlx at import time)
 # ---------------------------------------------------------------------------
 
 def _import_engine_registry():
@@ -23,7 +23,6 @@ def _import_engine_registry():
             del sys.modules[mod]
     # Stub out modules that require hardware or macOS frameworks
     stubs = {
-        "rumps": None,
         "sounddevice": None,
         "AppKit": None,
         "Foundation": None,
@@ -41,7 +40,6 @@ def _import_backend_registry():
         if "whisper_voice" in mod:
             del sys.modules[mod]
     stubs = {
-        "rumps": None,
         "sounddevice": None,
         "AppKit": None,
         "Foundation": None,
@@ -62,7 +60,6 @@ def _import_language_map():
         "sounddevice": None,
         "AppKit": None,
         "Foundation": None,
-        "rumps": None,
     }
     with patch.dict("sys.modules", stubs):
         from whisper_voice.engines.qwen3_asr import LANGUAGE_MAP

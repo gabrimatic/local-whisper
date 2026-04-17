@@ -308,8 +308,20 @@ def cmd_doctor(args: list):
             _doctor_warn("LaunchAgent plist exists but not loaded", hint)
             if fix:
                 _doctor_fixing("launchctl load")
-                subprocess.run(["launchctl", "load", str(LAUNCHAGENT_PLIST)], capture_output=True)
-                _doctor_pass("LaunchAgent loaded")
+                load_result = subprocess.run(
+                    ["launchctl", "load", str(LAUNCHAGENT_PLIST)],
+                    capture_output=True,
+                    text=True,
+                )
+                if load_result.returncode == 0:
+                    _doctor_pass("LaunchAgent loaded")
+                else:
+                    stderr = (load_result.stderr or "").strip()
+                    _doctor_fail(
+                        "launchctl load failed",
+                        stderr or "Check the plist and permissions manually",
+                    )
+                    core_ok = False
     else:
         _doctor_fail("LaunchAgent not installed", "Run ./setup.sh to install")
         core_ok = False
@@ -349,8 +361,8 @@ def cmd_doctor(args: list):
         _doctor_fail("Service not running", hint)
         if fix:
             _doctor_fixing("Starting service...")
-            from .build import cmd_restart
-            cmd_restart()
+            from .lifecycle import cmd_start
+            cmd_start()
             time.sleep(2)
             running, pid = _is_running()
             if running:
@@ -443,19 +455,31 @@ def cmd_update():
     project_root = Path(__file__).resolve().parents[3]
     python = _get_venv_python()
 
-    # Step 1: git pull
+    # Step 1: git pull. Capture the pre-pull HEAD so a later step failure can
+    # surface a "roll back to <sha>" hint rather than leaving the user guessing.
     print(f"\n  {C_BOLD}1/5  Pulling latest code...{C_RESET}")
     git = shutil.which("git")
+    pre_pull_sha = None
+    pulled = False
     if git:
+        try:
+            pre_pull_sha = subprocess.check_output(
+                [git, "-C", str(project_root), "rev-parse", "HEAD"],
+                text=True,
+            ).strip()
+        except Exception:
+            pre_pull_sha = None
         result = subprocess.run(
             [git, "-C", str(project_root), "pull"],
         )
         if result.returncode != 0:
-            print(f"{C_YELLOW}  git pull failed or not a git repo - continuing{C_RESET}")
-        else:
-            print(f"  {C_GREEN}Done{C_RESET}")
+            print(f"{C_RED}  git pull failed. Aborting update so the service stays on known-good code.{C_RESET}", file=sys.stderr)
+            print(f"  {C_DIM}Resolve the issue (conflicts, auth, or network) and rerun: wh update{C_RESET}", file=sys.stderr)
+            sys.exit(1)
+        pulled = True
+        print(f"  {C_GREEN}Done{C_RESET}")
     else:
-        print(f"  {C_YELLOW}git not found - skipping{C_RESET}")
+        print(f"  {C_YELLOW}git not found, skipping source refresh{C_RESET}")
 
     # Step 2: pip install -e . --upgrade
     print(f"\n  {C_BOLD}2/5  Updating Python dependencies...{C_RESET}")
@@ -464,8 +488,17 @@ def cmd_update():
     )
     if result.returncode != 0:
         print(f"{C_RED}  pip install failed{C_RESET}", file=sys.stderr)
-    else:
-        print(f"  {C_GREEN}Done{C_RESET}")
+        if pulled and pre_pull_sha and git:
+            print(
+                f"{C_DIM}  Local code was updated but dependencies failed. To roll back:{C_RESET}",
+                file=sys.stderr,
+            )
+            print(
+                f"{C_DIM}    git -C {project_root} reset --hard {pre_pull_sha}{C_RESET}",
+                file=sys.stderr,
+            )
+        sys.exit(1)
+    print(f"  {C_GREEN}Done{C_RESET}")
 
     # Step 3: check for model updates
     print(f"\n  {C_BOLD}3/5  Checking models...{C_RESET}")

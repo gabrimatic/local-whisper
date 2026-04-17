@@ -60,7 +60,7 @@ def _print_help():
             ("wh engine [name]",   "Show or switch transcription engine"),
             ("wh backend [name]",  "Show or switch grammar backend"),
             ("wh replace",         "Manage text replacement rules"),
-            ("wh config [edit|path]", "Interactive config editor, open in $EDITOR, or print path"),
+            ("wh config [show|edit|path]", "Interactive config editor, open in $EDITOR, or print path"),
         ]),
         ("Maintenance", [
             ("wh install",         "Run full setup (deps, models, service)"),
@@ -139,18 +139,24 @@ def cmd_uninstall():
     print(f"  {C_BOLD}Uninstalling Local Whisper...{C_RESET}")
     print()
 
-    # Stop running service
+    # Stop running service. Wait briefly for graceful exit before escalating.
     running, pid = _is_running()
     if running and pid:
         try:
             os.kill(pid, signal.SIGTERM)
-            time.sleep(1)
+        except ProcessLookupError:
+            pass
+        for _ in range(20):
+            time.sleep(0.1)
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+        else:
             try:
                 os.kill(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-        except ProcessLookupError:
-            pass
     _cleanup_lock()
     subprocess.run(["pkill", "-9", "-f", "whisperkit-cli serve"], capture_output=True)
     print(f"  {C_GREEN}✓{C_RESET}  Service stopped")
@@ -192,7 +198,12 @@ def cmd_uninstall():
 
     print()
     print(f"  {C_BOLD}Done.{C_RESET} Local Whisper fully removed.")
-    print(f"  {C_DIM}Project folder and venv not deleted - remove manually if needed.{C_RESET}")
+    # Surface the source-install venv path explicitly so users know what to clean up.
+    project_root = Path(__file__).resolve().parents[3]
+    venv_dir = project_root / ".venv"
+    if venv_dir.exists():
+        print(f"  {C_DIM}Source-install venv preserved at {venv_dir}.{C_RESET}")
+        print(f"  {C_DIM}To remove it: rm -rf {venv_dir}{C_RESET}")
     print(f"  {C_DIM}Open a new shell for alias removal to take effect.{C_RESET}")
 
 

@@ -32,7 +32,6 @@ def _import_cmd_server(socket_path: str):
             del sys.modules[mod]
 
     stubs = {
-        "rumps": None,
         "sounddevice": None,
         "AppKit": None,
         "Foundation": None,

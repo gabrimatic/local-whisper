@@ -268,8 +268,12 @@ extension AdvancedSettingsView {
             return
         }
 
+        // Explicit 5s timeout so a stopped Ollama doesn't hang the fetch forever.
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 5
+
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
                 ollamaFetchError = "Server returned an error. Is Ollama running?"
                 ollamaFetching = false

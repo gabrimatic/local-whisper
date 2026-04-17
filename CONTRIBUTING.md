@@ -28,20 +28,37 @@ Python runs as a headless LaunchAgent service. Swift owns all UI (menu bar, over
 
 ```
 src/whisper_voice/
-├── app.py              # Headless service, state machine, IPC, hotkeys
-├── cli.py              # wh CLI controller
-├── ipc_server.py       # IPC server (Swift UI communication)
-├── cmd_server.py       # Command server (CLI commands)
+├── app.py              # Headless service coordinator (mixin composition)
+├── app_ipc.py          # IPCMixin: Swift socket push/pull
+├── app_recording.py    # RecordingMixin: hotkey state machine
+├── app_pipeline.py     # PipelineMixin: transcribe + grammar + replacements
+├── app_commands.py     # CommandsMixin: wh whisper/listen/transcribe
+├── app_switching.py    # SwitchingMixin: engine/backend switch with rollback
+├── ipc_server.py       # Unix socket server for the Swift UI
+├── cmd_server.py       # Unix socket server for the CLI
 ├── audio.py            # Recording and pre-buffer
 ├── audio_processor.py  # VAD, noise reduction, normalization
 ├── backup.py           # History persistence
-├── config.py           # Config management
-├── grammar.py          # Grammar backend factory
+├── grammar.py          # Grammar backend factory wrapper
 ├── transcriber.py      # Engine routing
-├── utils.py            # Helpers
+├── utils.py            # Helpers, logging, notifications
 ├── shortcuts.py        # Text transformation shortcuts
 ├── key_interceptor.py  # CGEvent tap
 ├── tts_processor.py    # TTS shortcut handler (⌥T)
+├── cli/                # wh CLI package
+│   ├── main.py         # Dispatcher and top-level commands
+│   ├── lifecycle.py    # status/start/stop
+│   ├── build.py        # build/restart
+│   ├── settings.py     # engine/backend/replace
+│   ├── editor.py       # interactive config TUI
+│   ├── client.py       # command socket client
+│   ├── doctor.py       # doctor + update
+│   └── constants.py    # shared constants
+├── config/             # Config package (loader, schema, mutations)
+│   ├── schema.py       # Dataclasses + DEFAULT_CONFIG TOML
+│   ├── loader.py       # load_config, get_config
+│   ├── toml_helpers.py # TOML section read/write primitives
+│   └── mutations.py    # add/remove replacement, update field
 ├── tts/
 │   ├── base.py         # TTSProvider base
 │   └── kokoro_tts.py   # Kokoro provider (MLX)
@@ -59,19 +76,23 @@ src/whisper_voice/
 
 ```
 LocalWhisperUI/Sources/LocalWhisperUI/
-├── AppMain.swift               # Menu bar + settings scenes
-├── AppState.swift              # Observable state, IPC message handling
-├── IPCClient.swift             # Unix socket connection
-├── IPCMessages.swift           # Codable message types
-├── MenuBarView.swift           # Menu bar dropdown
-├── OverlayWindowController.swift  # Floating overlay panel
-├── OverlayView.swift           # Recording/processing/speaking pill
-├── GeneralSettingsView.swift   # Engine, grammar, TTS, UI toggles
-├── AdvancedSettingsView.swift   # Audio, engine params, shortcuts
-├── AboutView.swift             # Version and credits
-├── SettingsView.swift          # Tab container
-├── SharedViews.swift           # Reusable components
-└── Constants.swift             # App-wide constants
+├── AppMain.swift                        # @main entry, menu bar + settings scenes
+├── AppState.swift                       # Observable state, IPC message handling
+├── IPCClient.swift                      # Unix socket connection
+├── IPCMessages.swift                    # Codable message types
+├── MenuBarView.swift                    # Menu bar dropdown
+├── OverlayWindowController.swift        # Floating overlay panel
+├── OverlayView.swift                    # Recording/processing/speaking pill
+├── GeneralSettingsView.swift            # Engine, grammar, TTS, UI toggles
+├── AdvancedSettingsView.swift           # Shell for Advanced tab
+├── AdvancedSettingsView+Audio.swift     # VAD, noise reduction, pre-buffer
+├── AdvancedSettingsView+Transcription.swift  # WhisperKit + Qwen3 params
+├── AdvancedSettingsView+Grammar.swift   # Ollama, LM Studio, Apple Intelligence
+├── AdvancedSettingsView+IO.swift        # Shortcuts, TTS, storage
+├── AboutView.swift                      # Version and credits
+├── SettingsView.swift                   # Tab container
+├── SharedViews.swift                    # DeferredTextField/Editor helpers
+└── Constants.swift                      # App-wide constants
 ```
 
 Key constraint: **lazy loading**. Backends, engines, and models initialize only when selected. Non-selected components stay completely uninitialized. If your change touches initialization paths, verify startup memory footprint hasn't increased.
@@ -104,7 +125,9 @@ See `tts/kokoro_tts.py` for the reference implementation.
 ## Testing
 
 ```bash
-python tests/test_flow.py   # end-to-end (requires a grammar backend)
+pytest tests/                           # full unit + integration suite
+pytest tests/test_flow.py -v            # end-to-end (requires a grammar backend)
+pytest -m integration -v                # only live-service integration tests
 ```
 
 Manual verification flow:

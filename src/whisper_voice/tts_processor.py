@@ -18,9 +18,8 @@ from ApplicationServices import (
     kAXSelectedTextAttribute,
 )
 
-from .utils import log, play_sound
+from .utils import CLIPBOARD_TIMEOUT, log, play_sound
 
-CLIPBOARD_TIMEOUT = 5
 CLIPBOARD_DELAY = 0.15
 STATUS_DISPLAY_DURATION = 1.5
 
@@ -183,8 +182,21 @@ class TTSProcessor:
             return None
 
     def _get_selected_text_clipboard(self) -> Optional[str]:
-        """Clipboard-based fallback: send Cmd+C and read the result."""
+        """Clipboard-based fallback: send Cmd+C and read the result.
+
+        Preserves the user's clipboard: saves current contents, performs Cmd+C,
+        reads the selection, restores the original clipboard. If no text was
+        selected the clipboard is left untouched.
+        """
+        saved_content = None
         try:
+            # Capture pre-existing clipboard as bytes (binary-safe vs. rich data).
+            prior = subprocess.run(
+                ['pbpaste'], capture_output=True, timeout=CLIPBOARD_TIMEOUT
+            )
+            if prior.returncode == 0:
+                saved_content = prior.stdout
+
             time.sleep(0.3)
             subprocess.run([
                 'osascript', '-e',
@@ -195,9 +207,28 @@ class TTSProcessor:
                 ['pbpaste'], capture_output=True, text=True, timeout=CLIPBOARD_TIMEOUT
             )
             content = result.stdout.strip()
+
+            # If we actually grabbed a new selection, restore the prior clipboard.
+            # If the selection equals the prior clipboard (nothing was selected),
+            # there is nothing to restore anyway.
+            if content and saved_content is not None:
+                try:
+                    subprocess.run(
+                        ['pbcopy'], input=saved_content, timeout=CLIPBOARD_TIMEOUT
+                    )
+                except Exception:
+                    log("TTS: clipboard restore failed", "WARN")
             return content if content else None
         except Exception as e:
             log(f"TTS clipboard error: {type(e).__name__}: {e}", "INFO")
+            # Best-effort restore on any failure.
+            if saved_content is not None:
+                try:
+                    subprocess.run(
+                        ['pbcopy'], input=saved_content, timeout=CLIPBOARD_TIMEOUT
+                    )
+                except Exception:
+                    pass
             return None
 
     def _show_status(self, message: str, is_error: bool = False):

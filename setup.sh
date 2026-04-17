@@ -109,8 +109,8 @@ fi
 
 MACOS_VERSION=$(sw_vers -productVersion)
 MACOS_MAJOR=$(echo "$MACOS_VERSION" | cut -d'.' -f1)
-if [[ "$MACOS_MAJOR" -lt 26 ]]; then
-    log_ok "macOS $MACOS_VERSION (Apple Intelligence requires macOS 26+)"
+if [[ "$MACOS_MAJOR" -lt 15 ]]; then
+    log_ok "macOS $MACOS_VERSION (Apple Intelligence requires macOS 15+)"
 else
     log_ok "macOS $MACOS_VERSION"
 fi
@@ -183,7 +183,9 @@ fi
 source "$VENV_DIR/bin/activate" || fail "Failed to activate virtual environment"
 
 pip install --upgrade pip -q || fail "Failed to upgrade pip"
-if [[ "$MACOS_MAJOR" -ge 26 ]]; then
+# Apple Intelligence Foundation Models SDK supports macOS 15+.
+# Earlier systems skip the optional extra and fall back to Ollama or LM Studio.
+if [[ "$MACOS_MAJOR" -ge 15 ]]; then
     pip install -e "$SCRIPT_DIR[apple-intelligence]" -q || fail "Failed to install package"
     log_ok "Package installed (with Apple Intelligence)"
 else
@@ -246,23 +248,35 @@ else
     log_warn "Qwen3-ASR download failed (will retry on first use)"
 fi
 
-# Warm up Qwen3-ASR
-log_info "Warming up Qwen3-ASR (compiling MLX graph, 60-120s, one-time)..."
-if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
+# Warm up Qwen3-ASR (compiles the MLX graph, 60-120s). Skip on re-runs so
+# repeat ./setup.sh invocations stay fast; remove the sentinel to force a rewarm.
+QWEN_WARM_SENTINEL="$MODEL_DIR/.qwen3_warmed"
+if [[ -f "$QWEN_WARM_SENTINEL" ]]; then
+    log_ok "Qwen3-ASR already warmed up"
+else
+    log_info "Warming up Qwen3-ASR (compiling MLX graph, 60-120s, one-time)..."
+    if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
 from qwen3_asr_mlx import Qwen3ASR
 model = Qwen3ASR.from_pretrained('mlx-community/Qwen3-ASR-1.7B-bf16')
 model.warm_up()
 " 2>/dev/null; then
-    log_ok "Qwen3-ASR warmed up"
-else
-    log_warn "Warm-up failed (first transcription may be slower)"
+        touch "$QWEN_WARM_SENTINEL"
+        log_ok "Qwen3-ASR warmed up"
+    else
+        log_warn "Warm-up failed (first transcription may be slower)"
+    fi
 fi
 
 # Kokoro TTS dependencies
 if ! brew list espeak-ng &>/dev/null 2>&1; then
     brew install espeak-ng -q 2>/dev/null || log_warn "espeak-ng install failed (TTS may not work)"
 fi
-"$VENV_DIR/bin/python3" -m spacy download en_core_web_sm -q 2>/dev/null || log_warn "spacy model download failed (TTS may not work)"
+# Skip the spaCy download when the model is already available; on re-runs it
+# otherwise re-downloads unconditionally even though pip already has it.
+if ! "$VENV_DIR/bin/python3" -c "import en_core_web_sm" 2>/dev/null; then
+    "$VENV_DIR/bin/python3" -m spacy download en_core_web_sm -q 2>/dev/null \
+        || log_warn "spacy model download failed (TTS may not work)"
+fi
 
 # Kokoro TTS model
 if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
@@ -291,6 +305,11 @@ if [[ -d "$SWIFT_UI_DIR" ]]; then
 
         SWIFT_BUILD_LOG=$(mktemp)
         if swift build -c release >"$SWIFT_BUILD_LOG" 2>&1; then
+            # Surface compiler warnings even on success so they don't silently pile up.
+            if grep -iq "warning:" "$SWIFT_BUILD_LOG"; then
+                log_warn "Swift build produced warnings:"
+                grep -i "warning:" "$SWIFT_BUILD_LOG" >&2 || true
+            fi
             rm -f "$SWIFT_BUILD_LOG"
             SWIFT_BIN="$SWIFT_UI_DIR/.build/release/LocalWhisperUI"
             if [[ -f "$SWIFT_BIN" ]]; then

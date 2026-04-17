@@ -22,7 +22,6 @@ def _import_utils():
             del sys.modules[mod]
 
     stubs = {
-        "rumps": None,
         "sounddevice": None,
         "AppKit": None,
         "Foundation": None,

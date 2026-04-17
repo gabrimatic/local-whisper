@@ -18,21 +18,24 @@ class CommandsMixin:
     # ------------------------------------------------------------------
 
     def _handle_command(self, request: dict, send: callable):
-        """Handle a CLI command from the command socket."""
-        cmd_type = request.get("type")
+        """Handle a CLI command from the command socket.
+
+        Requests use the ``action`` key (same vocabulary as responses).
+        """
+        action = request.get("action")
         stop_event = request.get("_stop_event", threading.Event())
 
-        if cmd_type == "whisper":
+        if action == "whisper":
             self._cmd_whisper(request, send, stop_event)
-        elif cmd_type == "listen":
+        elif action == "listen":
             self._cmd_listen(request, send, stop_event)
-        elif cmd_type == "transcribe":
+        elif action == "transcribe":
             self._cmd_transcribe(request, send, stop_event)
-        elif cmd_type == "stop":
+        elif action == "stop":
             # Stop is handled by the disconnect watcher in cmd_server
             pass
         else:
-            send({"type": "error", "message": f"Unknown command: {cmd_type}"})
+            send({"type": "error", "message": f"Unknown command: {action}"})
 
     def _cmd_whisper(self, request: dict, send: callable, stop_event: threading.Event):
         """Speak text aloud via TTS."""
@@ -155,6 +158,12 @@ class CommandsMixin:
         finally:
             if self.recorder.recording:
                 self.recorder.stop()
+            # Re-arm the pre-recording monitor. self.recorder.start() stops it when the
+            # CLI 'listen' begins; without this call it stays off until the next restart.
+            try:
+                self.recorder.start_monitoring()
+            except Exception:
+                pass
             with self._state_lock:
                 self._busy = False
 
