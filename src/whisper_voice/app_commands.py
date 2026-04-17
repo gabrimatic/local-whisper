@@ -142,6 +142,11 @@ class CommandsMixin:
                 send({"type": "error", "message": "No speech detected"})
                 return
 
+            # Dictation commands (always on; running wh listen --raw still
+            # wants "new line" to become a newline since that's what the user
+            # spoke — --raw means skip grammar correction, not skip dictation).
+            raw_text = self._apply_dictation_commands(raw_text)
+
             # Grammar
             final_text = raw_text
             if not skip_grammar:
@@ -205,6 +210,7 @@ class CommandsMixin:
                 return
 
             raw_text = cleaned
+            raw_text = self._apply_dictation_commands(raw_text)
             final_text = raw_text
             if not skip_grammar:
                 self._check_grammar_connection()

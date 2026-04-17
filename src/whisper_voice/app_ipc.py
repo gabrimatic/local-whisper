@@ -178,6 +178,10 @@ class IPCMixin:
                 "enabled": cfg.replacements.enabled,
                 "rules": cfg.replacements.rules,
             },
+            "dictation": {
+                "enabled": cfg.dictation.enabled,
+                "commands": cfg.dictation.commands,
+            },
         }})
 
     def _handle_ipc_message(self, msg: dict):

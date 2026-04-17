@@ -185,7 +185,100 @@ def cmd_replace(args: list):
             print(f"{C_RED}Error: {e}{C_RESET}", file=sys.stderr)
             sys.exit(1)
 
+    elif subcmd == "import":
+        if len(args) != 2:
+            print(
+                f"{C_RED}Usage: wh replace import <file>{C_RESET}\n"
+                f"{C_DIM}CSV (spoken,replacement), TSV, or \"a\"=\"b\" lines.{C_RESET}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        _import_replacements(args[1])
+
     else:
         print(f"{C_RED}Unknown subcommand: {subcmd}{C_RESET}", file=sys.stderr)
-        print(f"{C_DIM}Usage: wh replace [add|remove|on|off]{C_RESET}", file=sys.stderr)
+        print(f"{C_DIM}Usage: wh replace [add|remove|on|off|import <file>]{C_RESET}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _import_replacements(path_str: str) -> None:
+    """Bulk-import replacement rules from a CSV, TSV, or TOML-ish file.
+
+    Accepted per-line formats (leading/trailing whitespace tolerated):
+      - ``spoken, replacement``
+      - ``spoken\treplacement``
+      - ``"spoken" = "replacement"``   (matches the TOML style users already see)
+      - ``spoken -> replacement``
+    Blank lines and lines starting with ``#`` are ignored. Conflicts with
+    existing rules are overwritten and surfaced in the summary.
+    """
+    import csv
+    import re
+    from pathlib import Path
+
+    path = Path(path_str).expanduser()
+    if not path.exists():
+        print(f"{C_RED}File not found: {path}{C_RESET}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except Exception as e:
+        print(f"{C_RED}Could not read file: {e}{C_RESET}", file=sys.stderr)
+        sys.exit(1)
+
+    rules: list[tuple[str, str]] = []
+    duplicates_in_file: set[str] = set()
+    seen_keys: set[str] = set()
+
+    for raw_line in raw.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        spoken, replacement = "", ""
+        toml_match = re.match(r'^\s*"([^"]+)"\s*=\s*"([^"]*)"\s*$', line)
+        if toml_match:
+            spoken, replacement = toml_match.group(1), toml_match.group(2)
+        elif "->" in line:
+            left, _, right = line.partition("->")
+            spoken, replacement = left.strip(), right.strip()
+        else:
+            # CSV / TSV fallback. csv.reader handles quoted fields correctly.
+            dialect = "excel-tab" if "\t" in line and "," not in line else "excel"
+            try:
+                row = next(csv.reader([line], dialect=dialect))
+            except Exception:
+                row = []
+            if len(row) >= 2:
+                spoken, replacement = row[0].strip(), row[1].strip()
+
+        if not spoken:
+            continue
+        if spoken in seen_keys:
+            duplicates_in_file.add(spoken)
+        seen_keys.add(spoken)
+        rules.append((spoken, replacement))
+
+    if not rules:
+        print(f"{C_YELLOW}No rules found in {path}{C_RESET}")
+        return
+
+    from whisper_voice.config import add_replacement
+    added = 0
+    failed = 0
+    for spoken, replacement in rules:
+        try:
+            if add_replacement(spoken, replacement):
+                added += 1
+            else:
+                failed += 1
+        except Exception:
+            failed += 1
+
+    print(f"  {C_GREEN}Imported {added} rules{C_RESET} from {path}")
+    if duplicates_in_file:
+        print(f"  {C_YELLOW}{len(duplicates_in_file)} duplicate keys in file (last wins){C_RESET}")
+    if failed:
+        print(f"  {C_RED}{failed} rules failed to write{C_RESET}", file=sys.stderr)
         sys.exit(1)

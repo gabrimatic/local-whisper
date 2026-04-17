@@ -197,6 +197,7 @@ wh replace          # Show text replacement rules
 wh replace add "gonna" "going to"
 wh replace remove "gonna"
 wh replace on|off   # Enable or disable replacements
+wh replace import rules.csv   # Bulk-import rules (CSV, TSV, "a"="b", or a -> b)
 
 wh whisper "text"   # Speak text aloud via Kokoro TTS
 wh whisper --voice af_bella "text"
@@ -209,16 +210,42 @@ wh listen --raw     # Raw transcription, no grammar
 wh transcribe recording.wav
 wh transcribe --raw audio.wav
 
+wh stats            # Show usage statistics computed from history
+wh export           # Export history to ~/Desktop/local-whisper-history.md
+wh export --format json --out ~/Downloads/history.json
+wh export --format txt --limit 50
+
 wh config           # Interactive config editor (static summary when piped)
 wh config edit      # Open config.toml in $EDITOR
 wh config path      # Print config file path
 wh doctor           # Check system health
 wh doctor --fix     # Auto-repair issues
+wh doctor --report  # Write a shareable diagnostic report
 wh log              # Tail service log
 wh update           # Pull, upgrade deps, warm up models, rebuild, restart
 wh version          # Show version
 wh uninstall        # Completely remove Local Whisper
 ```
+
+### Voice Dictation Commands
+
+Speak these phrases anywhere in a dictation and Local Whisper replaces them with the literal punctuation or whitespace:
+
+| Spoken | Inserted |
+|--------|----------|
+| "new line" | newline |
+| "new paragraph" | blank line |
+| "period" | . |
+| "comma" | , |
+| "question mark" | ? |
+| "exclamation mark" | ! |
+| "colon" | : |
+| "semicolon" | ; |
+| "dash" | - |
+| "open paren" / "close paren" | ( / ) |
+| "scratch that" | deletes the current sentence fragment |
+
+Custom commands go under `[dictation.commands]` in `~/.whisper/config.toml`. The pass runs before grammar correction, so grammar sees well-punctuated sentences.
 
 ### Menu Bar
 

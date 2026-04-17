@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Voice dictation commands**: speak "new line", "new paragraph", "period", "comma", "question mark", "exclamation mark", "colon", "semicolon", "dash", "scratch that", and more, and Local Whisper replaces the phrase with the literal punctuation or whitespace. Runs before grammar correction so the grammar pass sees well-punctuated sentences. Toggle in `~/.whisper/config.toml` under `[dictation]`; add custom commands under `[dictation.commands]`.
+- **`wh export`** writes the full transcription history to Markdown, plain text, or JSON in one command. Defaults: `~/Desktop/local-whisper-history.md`. Supports `--format`, `--out`, and `--limit`.
+- **`wh stats`** prints local usage statistics: total sessions, total words and characters, average words per session, counts for today/7d/30d, first and last session timestamps, top words (stopwords filtered), and top replacement rules triggered.
+- **`wh doctor --report [PATH]`** writes a shareable diagnostic report (macOS version, architecture, Python version, install method, service state, configured engine and backend, installed package versions, last 60 log lines). Safe to paste into a GitHub issue; never includes config contents, recorded audio, or transcription text.
+- **`wh replace import <file>`** bulk-imports vocabulary rules from CSV, TSV, TOML-style (`"spoken" = "replacement"`), or arrow-style (`spoken -> replacement`) files. Duplicate keys in the input are surfaced in the summary.
+
 ### Fixed
 
 - Toggling "Enable grammar correction" in Settings now actually loads or unloads the backend in-process instead of only writing the flag to config and leaving the model dangling.

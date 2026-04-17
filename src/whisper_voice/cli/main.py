@@ -28,6 +28,7 @@ from .constants import (
 )
 from .doctor import cmd_doctor, cmd_update
 from .editor import cmd_config
+from .history import cmd_export, cmd_stats
 from .lifecycle import (
     _cleanup_lock,
     _get_config_path,
@@ -59,14 +60,18 @@ def _print_help():
         ("Settings", [
             ("wh engine [name]",   "Show or switch transcription engine"),
             ("wh backend [name]",  "Show or switch grammar backend"),
-            ("wh replace",         "Manage text replacement rules"),
+            ("wh replace [import FILE]", "Manage text replacement rules or bulk-import from CSV/TSV"),
             ("wh config [show|edit|path]", "Interactive config editor, open in $EDITOR, or print path"),
+        ]),
+        ("History", [
+            ("wh stats",           "Show usage statistics"),
+            ("wh export [opts]",   "Export transcription history (md/txt/json)"),
         ]),
         ("Maintenance", [
             ("wh install",         "Run full setup (deps, models, service)"),
             ("wh version",         "Show version and install method"),
             ("wh update",          "Update code, deps, models, and restart"),
-            ("wh doctor [--fix]",  "Check system health, auto-repair"),
+            ("wh doctor [--fix|--report]",  "Check system health, auto-repair, or write shareable report"),
             ("wh build",           "Rebuild Swift UI"),
             ("wh uninstall",       "Completely remove Local Whisper"),
         ]),
@@ -273,6 +278,10 @@ def cli_main():
         cmd_update()
     elif cmd == "doctor":
         cmd_doctor(rest)
+    elif cmd == "export":
+        cmd_export(rest)
+    elif cmd == "stats":
+        cmd_stats(rest)
     elif cmd == "install":
         cmd_install()
     elif cmd == "uninstall":

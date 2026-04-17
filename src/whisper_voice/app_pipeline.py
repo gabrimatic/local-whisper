@@ -142,11 +142,14 @@ class PipelineMixin:
             self.backup.save_raw(raw_text)
             log(f"Raw: {truncate(raw_text, LOG_TRUNCATE)}", "OK")
 
-            # 3. Grammar correction
+            # 3. Dictation commands (before grammar so grammar sees punctuation we inserted)
+            raw_text = self._apply_dictation_commands(raw_text)
+
+            # 4. Grammar correction
             self._check_grammar_connection()
             final_text = self._apply_grammar(raw_text)
 
-            # 4. Vocabulary replacements (last text transformation)
+            # 5. Vocabulary replacements (last text transformation)
             final_text = self._apply_replacements(final_text)
 
             # 5. Copy to clipboard / auto-paste
@@ -259,6 +262,15 @@ class PipelineMixin:
         for spoken, replacement in rules.items():
             text = re.sub(r'\b' + re.escape(spoken) + r'\b', replacement, text, flags=re.IGNORECASE)
         return text
+
+    def _apply_dictation_commands(self, text: str) -> str:
+        """Apply voice dictation commands (new line, period, scratch that, etc.)."""
+        from .dictation_commands import apply_dictation_commands
+        try:
+            return apply_dictation_commands(text)
+        except Exception as e:
+            log(f"Dictation command pass failed: {e}", "WARN")
+            return text
 
     def _transcribe_and_validate(self, path) -> tuple:
         """Transcribe audio and validate result. Returns (raw_text, error)."""

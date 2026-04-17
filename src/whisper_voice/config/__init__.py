@@ -34,6 +34,7 @@ from .schema import (
     AudioConfig,
     BackupConfig,
     Config,
+    DictationConfig,
     GrammarBackendType,
     GrammarConfig,
     HotkeyConfig,
@@ -77,6 +78,7 @@ __all__ = [
     "TTSConfig",
     "KokoroTTSConfig",
     "ReplacementsConfig",
+    "DictationConfig",
     "Config",
     # loader
     "load_config",

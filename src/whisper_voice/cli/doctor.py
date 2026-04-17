@@ -75,8 +75,29 @@ def _get_venv_python() -> Optional[str]:
 
 
 def cmd_doctor(args: list):
-    """Check system health and optionally fix issues."""
+    """Check system health and optionally fix issues.
+
+    Flags:
+        --fix               Attempt automatic repair for fixable issues.
+        --report [PATH]     Write a redacted, shareable diagnostic report.
+                            Defaults to ~/Desktop/local-whisper-doctor.md.
+    """
     fix = "--fix" in args
+    report_idx = -1
+    for flag in ("--report", "-r"):
+        if flag in args:
+            report_idx = args.index(flag)
+            break
+    if report_idx >= 0:
+        report_path: Path
+        if report_idx + 1 < len(args) and not args[report_idx + 1].startswith("-"):
+            report_path = Path(args[report_idx + 1]).expanduser()
+        else:
+            report_path = Path.home() / "Desktop" / "local-whisper-doctor.md"
+        from .doctor_report import write_doctor_report
+        write_doctor_report(report_path)
+        return
+
     core_ok = True
     install_method = get_install_method()
     python = _get_venv_python()

@@ -16,6 +16,7 @@ from .schema import (
     AudioConfig,
     BackupConfig,
     Config,
+    DictationConfig,
     GrammarConfig,
     HotkeyConfig,
     KokoroTTSConfig,
@@ -345,6 +346,18 @@ def load_config() -> Config:
         config.replacements = ReplacementsConfig(
             enabled=data['replacements'].get('enabled', config.replacements.enabled),
             rules=rules,
+        )
+
+    # Dictation commands
+    if 'dictation' in data:
+        commands = data['dictation'].get('commands', {})
+        if isinstance(commands, dict):
+            commands = {str(k): str(v) for k, v in commands.items()}
+        else:
+            commands = {}
+        config.dictation = DictationConfig(
+            enabled=data['dictation'].get('enabled', config.dictation.enabled),
+            commands=commands,
         )
 
     # Validate and sanitize config values
