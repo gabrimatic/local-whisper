@@ -50,9 +50,15 @@ class Recorder:
         return self._current_rms
 
     def start_monitoring(self):
-        """Start pre-recording monitor (lightweight, always-on when ready)."""
+        """Start pre-recording monitor (lightweight, always-on when ready).
+
+        Idempotent: a second call while a stream is already running is a no-op
+        rather than leaking the prior stream.
+        """
         config = get_config()
         if config.audio.pre_buffer <= 0:
+            return
+        if self._monitor_stream is not None:
             return
         try:
             self._monitor_stream = sd.InputStream(

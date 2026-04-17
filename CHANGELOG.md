@@ -35,7 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Command socket protocol requests now use the `action` key (`{"action": "listen", ...}`) to match response framing and documentation. Existing `wh listen / whisper / transcribe` CLI invocations are unaffected; only direct socket clients need updating.
+- Command socket protocol requests now use the `action` key (`{"action": "listen", ...}`) to match response framing and documentation. Both the CLI client and the service were updated in lockstep, so a normal `wh update` (which pulls code, upgrades deps, and restarts the service) moves both sides at once. Direct socket clients that used the previous `type` key must be updated.
 - Apple Intelligence backend is now installed on macOS 15 and later (was gated on macOS 26+). The `.glassEffect` Swift UI still requires macOS 26.
 - `./setup.sh` skips the Qwen3-ASR warm-up and the spaCy `en_core_web_sm` download when a sentinel or the already-installed module is detected, so re-running setup no longer repeats a two-minute warm-up or re-downloads models that are already present.
 - Swift compiler warnings are surfaced to stderr on successful builds (previously they were deleted with the build log).

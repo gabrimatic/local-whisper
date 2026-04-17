@@ -142,6 +142,11 @@ class PipelineMixin:
             self.backup.save_raw(raw_text)
             log(f"Raw: {truncate(raw_text, LOG_TRUNCATE)}", "OK")
 
+            # Snapshot the true raw text (pre-dictation) for history and stats.
+            # Everything below mutates `raw_text` in place through successive
+            # passes, but `save_history` must see the untransformed transcription.
+            original_raw = raw_text
+
             # 3. Dictation commands (before grammar so grammar sees punctuation we inserted)
             raw_text = self._apply_dictation_commands(raw_text)
 
@@ -152,15 +157,15 @@ class PipelineMixin:
             # 5. Vocabulary replacements (last text transformation)
             final_text = self._apply_replacements(final_text)
 
-            # 5. Copy to clipboard / auto-paste
+            # 6. Copy to clipboard / auto-paste
             if config.ui.auto_paste:
                 clipboard_ok = self._paste_text_at_cursor(final_text)
             else:
                 clipboard_ok = self._copy_to_clipboard(final_text, show_error=False)
 
-            # 6. Save backup
+            # 7. Save backup
             self.backup.save_text(final_text)
-            self.backup.save_history(raw_text, final_text)
+            self.backup.save_history(original_raw, final_text)
 
             # 7. Send result
             if clipboard_ok:

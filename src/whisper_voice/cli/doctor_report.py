@@ -113,9 +113,26 @@ def _log_tail_section() -> str:
         lines = LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()
     except Exception as e:
         return f"## Log tail\n\n_(could not read log: {e})_"
-    tail = lines[-60:]
+    tail = [_redact_log_line(line) for line in lines[-60:]]
     block = "\n".join(tail)
-    return "## Log tail (last 60 lines)\n\n```\n" + block + "\n```"
+    return "## Log tail (last 60 lines, transcription snippets redacted)\n\n```\n" + block + "\n```"
+
+
+# Prefixes in the service log that carry transcription text we don't want to
+# leak in a shareable report. Any line containing one of these markers has
+# everything from the marker onward replaced with ``<redacted>``.
+_REDACT_MARKERS = (
+    "Raw:", "Copied:", "Pasted:", "Retry:",
+    "Segment:", "Fixed:", "TTS: speaking",
+)
+
+
+def _redact_log_line(line: str) -> str:
+    for marker in _REDACT_MARKERS:
+        idx = line.find(marker)
+        if idx != -1:
+            return line[: idx + len(marker)] + " <redacted>"
+    return line
 
 
 # ---------------------------------------------------------------------------

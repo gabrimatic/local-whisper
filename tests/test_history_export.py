@@ -139,25 +139,37 @@ class TestStats:
         assert "5" in rendered
 
     def test_stats_counts_replacement_triggers(self, monkeypatch):
+        # Raw text contains the spoken form; fixed text has the replacement.
+        # Stats should count by scanning the RAW column so the counter matches
+        # "how many times did this rule fire" rather than "how many times does
+        # the replacement appear in the output".
         entries = [
             _fake_entry(0, datetime(2026, 1, 1, 9, 0, 0)),
             _fake_entry(1, datetime(2026, 1, 2, 10, 0, 0)),
+            _fake_entry(2, datetime(2026, 1, 3, 11, 0, 0)),
         ]
+        entries[0]["raw"] = "I saw open ai today."
         entries[0]["fixed"] = "I saw OpenAI today."
+        entries[1]["raw"] = "open ai and chat gpt are great."
         entries[1]["fixed"] = "OpenAI and ChatGPT are great."
+        entries[2]["raw"] = "nothing relevant here."
+        entries[2]["fixed"] = "Nothing relevant here."
 
         fake = _FakeBackupFactory()
         fake.entries = entries
         monkeypatch.setattr(st, "Backup", lambda: fake)
         fake_cfg = SimpleNamespace(
-            replacements=SimpleNamespace(enabled=True, rules={"open ai": "OpenAI"}),
+            replacements=SimpleNamespace(
+                enabled=True,
+                rules={"open ai": "OpenAI", "chat gpt": "ChatGPT"},
+            ),
         )
         monkeypatch.setattr(st, "get_config", lambda: fake_cfg)
 
         stats = st.compute_usage_stats()
-        # Rule "open ai" is stored lowercase; substring match against lowered text hits both entries.
-        # But neither "OpenAI" (lowered: "openai") contains "open ai" (with space). Expect 0 matches.
-        assert stats.top_replacements_triggered == []
+        counts = dict(stats.top_replacements_triggered)
+        assert counts.get("open ai") == 2
+        assert counts.get("chat gpt") == 1
 
     def test_stats_top_words_excludes_stopwords(self, monkeypatch):
         entries = _fake_entries(3)

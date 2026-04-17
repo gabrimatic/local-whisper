@@ -124,15 +124,8 @@ struct AboutView: View {
     }
 
     private func replayOnboarding() {
-        // Open the onboarding window again. We don't touch OnboardingFlag here
-        // so the "first-launch" semantics stay owned by AppDelegate.
-        let hosting = NSHostingController(rootView: OnboardingView().environment(appState))
-        let window = NSWindow(contentViewController: hosting)
-        window.styleMask = [.titled, .closable]
-        window.title = "Local Whisper tutorial"
-        window.isReleasedWhenClosed = false
-        window.center()
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
+        // Route through the shared presenter so we reuse its retention logic
+        // and never stack multiple onboarding windows on repeated clicks.
+        OnboardingPresenter.shared.present(with: appState, title: "Local Whisper tutorial")
     }
 }

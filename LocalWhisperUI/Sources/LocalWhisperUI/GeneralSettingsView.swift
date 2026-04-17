@@ -344,7 +344,7 @@ private struct DictationCommandsHelpView: View {
         ("exclamation mark", "!"),
         ("colon", ":"),
         ("semicolon", ";"),
-        ("dash", " — "),
+        ("dash", " - "),
         ("open paren / close paren", "( )"),
         ("open quote / close quote", "\" \""),
         ("scratch that", "delete fragment"),

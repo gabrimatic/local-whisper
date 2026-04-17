@@ -90,13 +90,16 @@ def compute_usage_stats(top_n: int = 10) -> UsageStats:
             if ts >= now - timedelta(days=30):
                 stats.sessions_past_30d += 1
 
-        # Count replacement-rule matches in the fixed text.
+        # Count replacement-rule matches by looking in the RAW text (before the
+        # rule substitution ran). The fixed text has already had the spoken
+        # form replaced, so checking there would almost never hit.
         if replacement_rules:
-            lowered_text = text.lower()
-            for spoken in replacement_rules:
-                needle = spoken.lower()
-                if needle and needle in lowered_text:
-                    replacement_counter[spoken] += 1
+            raw_for_counting = (entry.get("raw") or "").lower()
+            if raw_for_counting:
+                for spoken in replacement_rules:
+                    needle = spoken.lower()
+                    if needle and needle in raw_for_counting:
+                        replacement_counter[spoken] += 1
 
     if stats.total_sessions:
         stats.avg_words_per_session = stats.total_words / stats.total_sessions

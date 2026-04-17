@@ -269,3 +269,55 @@ enum OnboardingFlag {
         try? Data().write(to: path)
     }
 }
+
+
+// MARK: - Window presenter
+
+/// Single source of truth for onboarding window lifetime. Used by both the
+/// first-launch path and the About tab's "Replay Tutorial" button so we only
+/// ever have one window, and it stays retained for its full lifetime rather
+/// than leaking whenever someone presses the replay button.
+@MainActor
+final class OnboardingPresenter {
+    static let shared = OnboardingPresenter()
+
+    private var window: NSWindow?
+
+    private init() {}
+
+    func present(with state: AppState, title: String = "Welcome to Local Whisper") {
+        if let existing = window {
+            existing.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let hosting = NSHostingController(rootView: OnboardingView().environment(state))
+        let window = NSWindow(contentViewController: hosting)
+        window.styleMask = [.titled, .closable]
+        window.title = title
+        // Release the window naturally; keep a reference so ARC doesn't drop it
+        // between presentation and the user's first interaction, and clear the
+        // reference on close so a later "Replay Tutorial" click builds a fresh
+        // one instead of resurrecting a closed window.
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.level = .normal
+        window.delegate = OnboardingWindowDelegate.shared
+        self.window = window
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    fileprivate func didClose() {
+        self.window = nil
+    }
+}
+
+@MainActor
+private final class OnboardingWindowDelegate: NSObject, NSWindowDelegate {
+    static let shared = OnboardingWindowDelegate()
+
+    nonisolated func windowWillClose(_ notification: Notification) {
+        Task { @MainActor in OnboardingPresenter.shared.didClose() }
+    }
+}

@@ -241,7 +241,7 @@ Speak these phrases anywhere in a dictation and Local Whisper replaces them with
 | "exclamation mark" | ! |
 | "colon" | : |
 | "semicolon" | ; |
-| "dash" | - |
+| "dash" | ` - ` (space, hyphen, space) |
 | "open paren" / "close paren" | ( / ) |
 | "scratch that" | deletes the current sentence fragment |
 

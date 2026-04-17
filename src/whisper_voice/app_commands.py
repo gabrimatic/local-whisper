@@ -142,21 +142,22 @@ class CommandsMixin:
                 send({"type": "error", "message": "No speech detected"})
                 return
 
-            # Dictation commands (always on; running wh listen --raw still
-            # wants "new line" to become a newline since that's what the user
-            # spoke — --raw means skip grammar correction, not skip dictation).
-            raw_text = self._apply_dictation_commands(raw_text)
+            # Preserve the untouched transcription for the response payload so
+            # `raw_text` is actually raw (pre-dictation, pre-grammar, pre-
+            # replacements). The user is dictating into a shell, so dictation
+            # commands do apply on the processed text — --raw only suppresses
+            # grammar correction, matching historical CLI semantics.
+            original_raw = raw_text
+            processed = self._apply_dictation_commands(raw_text)
 
-            # Grammar
-            final_text = raw_text
+            final_text = processed
             if not skip_grammar:
                 self._check_grammar_connection()
-                final_text = self._apply_grammar(raw_text)
+                final_text = self._apply_grammar(processed)
 
-            # Replacements
             final_text = self._apply_replacements(final_text)
 
-            send({"type": "done", "text": final_text, "raw_text": raw_text, "success": True})
+            send({"type": "done", "text": final_text, "raw_text": original_raw, "success": True})
 
         except Exception as e:
             send({"type": "error", "message": str(e)})
@@ -209,16 +210,19 @@ class CommandsMixin:
                 send({"type": "error", "message": "No speech detected"})
                 return
 
-            raw_text = cleaned
-            raw_text = self._apply_dictation_commands(raw_text)
-            final_text = raw_text
+            # `wh transcribe` points at an arbitrary audio file, so the speaker
+            # is almost certainly not dictating with voice commands in mind.
+            # Running dictation would turn a literal "period" into a ".". Skip
+            # the dictation pass entirely and only run grammar + replacements.
+            original_raw = cleaned
+            final_text = original_raw
             if not skip_grammar:
                 self._check_grammar_connection()
-                final_text = self._apply_grammar(raw_text)
+                final_text = self._apply_grammar(original_raw)
 
             final_text = self._apply_replacements(final_text)
 
-            send({"type": "done", "text": final_text, "raw_text": raw_text, "success": True})
+            send({"type": "done", "text": final_text, "raw_text": original_raw, "success": True})
 
         except Exception as e:
             send({"type": "error", "message": str(e)})
