@@ -91,6 +91,11 @@ struct AboutView: View {
                         NSWorkspace.shared.open(URL(fileURLWithPath: AppDirectories.whisper))
                     }
                     .buttonStyle(.link)
+
+                    Button("Replay Tutorial") {
+                        replayOnboarding()
+                    }
+                    .buttonStyle(.link)
                 }
                 .padding(.bottom, 32)
             }
@@ -116,5 +121,18 @@ struct AboutView: View {
     private func openExternal(_ string: String) {
         guard let url = URL(string: string) else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    private func replayOnboarding() {
+        // Open the onboarding window again. We don't touch OnboardingFlag here
+        // so the "first-launch" semantics stay owned by AppDelegate.
+        let hosting = NSHostingController(rootView: OnboardingView().environment(appState))
+        let window = NSWindow(contentViewController: hosting)
+        window.styleMask = [.titled, .closable]
+        window.title = "Local Whisper tutorial"
+        window.isReleasedWhenClosed = false
+        window.center()
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
     }
 }

@@ -11,6 +11,7 @@ let sharedAppState = AppState()
 
 final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     private var overlayController: OverlayWindowController?
+    private var onboardingWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let state = sharedAppState
@@ -23,11 +24,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             let controller = OverlayWindowController(appState: state)
             self.overlayController = controller
             controller.setup()
+
+            if !OnboardingFlag.hasCompleted {
+                self.showOnboardingWindow(state: state)
+            }
         }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         sharedAppState.ipcClient?.stopSync()
+    }
+
+    @MainActor
+    private func showOnboardingWindow(state: AppState) {
+        let hosting = NSHostingController(rootView: OnboardingView().environment(state))
+        let window = NSWindow(contentViewController: hosting)
+        window.styleMask = [.titled, .closable]
+        window.title = "Welcome to Local Whisper"
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.level = .normal
+        self.onboardingWindow = window
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
     }
 }
 

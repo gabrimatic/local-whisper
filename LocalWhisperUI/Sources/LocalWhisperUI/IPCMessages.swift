@@ -209,6 +209,11 @@ struct ReplacementsConfig: Codable, Sendable {
     var rules: [String: String]
 }
 
+struct DictationConfig: Codable, Sendable {
+    var enabled: Bool
+    var commands: [String: String]
+}
+
 struct AppConfig: Codable, Sendable {
     var hotkey: HotkeyConfig
     var transcription: TranscriptionConfig
@@ -225,13 +230,63 @@ struct AppConfig: Codable, Sendable {
     var tts: TTSConfig
     var kokoroTts: KokoroTTSConfig
     var replacements: ReplacementsConfig
+    var dictation: DictationConfig
 
     enum CodingKeys: String, CodingKey {
-        case hotkey, transcription, whisper, grammar, ollama, audio, ui, backup, shortcuts, tts, replacements
+        case hotkey, transcription, whisper, grammar, ollama, audio, ui, backup, shortcuts, tts, replacements, dictation
         case qwen3Asr = "qwen3_asr"
         case appleIntelligence = "apple_intelligence"
         case lmStudio = "lm_studio"
         case kokoroTts = "kokoro_tts"
+    }
+
+    // `dictation` arrives on snapshots sent by services that know about the
+    // section. Older snapshots (or a future extension that drops the key)
+    // should still decode cleanly with a sensible default.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        hotkey = try c.decode(HotkeyConfig.self, forKey: .hotkey)
+        transcription = try c.decode(TranscriptionConfig.self, forKey: .transcription)
+        qwen3Asr = try c.decode(Qwen3ASRConfig.self, forKey: .qwen3Asr)
+        whisper = try c.decode(WhisperConfig.self, forKey: .whisper)
+        grammar = try c.decode(GrammarConfig.self, forKey: .grammar)
+        ollama = try c.decode(OllamaConfig.self, forKey: .ollama)
+        appleIntelligence = try c.decode(AppleIntelligenceConfig.self, forKey: .appleIntelligence)
+        lmStudio = try c.decode(LMStudioConfig.self, forKey: .lmStudio)
+        audio = try c.decode(AudioConfig.self, forKey: .audio)
+        ui = try c.decode(UIConfig.self, forKey: .ui)
+        backup = try c.decode(BackupConfig.self, forKey: .backup)
+        shortcuts = try c.decode(ShortcutsConfig.self, forKey: .shortcuts)
+        tts = try c.decode(TTSConfig.self, forKey: .tts)
+        kokoroTts = try c.decode(KokoroTTSConfig.self, forKey: .kokoroTts)
+        replacements = try c.decode(ReplacementsConfig.self, forKey: .replacements)
+        dictation = (try? c.decode(DictationConfig.self, forKey: .dictation)) ?? DictationConfig(enabled: true, commands: [:])
+    }
+
+    init(
+        hotkey: HotkeyConfig, transcription: TranscriptionConfig, qwen3Asr: Qwen3ASRConfig,
+        whisper: WhisperConfig, grammar: GrammarConfig, ollama: OllamaConfig,
+        appleIntelligence: AppleIntelligenceConfig, lmStudio: LMStudioConfig,
+        audio: AudioConfig, ui: UIConfig, backup: BackupConfig, shortcuts: ShortcutsConfig,
+        tts: TTSConfig, kokoroTts: KokoroTTSConfig, replacements: ReplacementsConfig,
+        dictation: DictationConfig
+    ) {
+        self.hotkey = hotkey
+        self.transcription = transcription
+        self.qwen3Asr = qwen3Asr
+        self.whisper = whisper
+        self.grammar = grammar
+        self.ollama = ollama
+        self.appleIntelligence = appleIntelligence
+        self.lmStudio = lmStudio
+        self.audio = audio
+        self.ui = ui
+        self.backup = backup
+        self.shortcuts = shortcuts
+        self.tts = tts
+        self.kokoroTts = kokoroTts
+        self.replacements = replacements
+        self.dictation = dictation
     }
 
     static var defaultConfig: AppConfig {
@@ -287,7 +342,8 @@ struct AppConfig: Codable, Sendable {
             ),
             tts: TTSConfig(enabled: true, provider: "kokoro", speakShortcut: "alt+t"),
             kokoroTts: KokoroTTSConfig(model: "mlx-community/Kokoro-82M-bf16", voice: "af_sky"),
-            replacements: ReplacementsConfig(enabled: false, rules: [:])
+            replacements: ReplacementsConfig(enabled: false, rules: [:]),
+            dictation: DictationConfig(enabled: true, commands: [:])
         )
     }
 }

@@ -271,6 +271,21 @@ struct GeneralSettingsView: View {
                     }
                 }
 
+                Section("Dictation Commands") {
+                    Toggle("Speak punctuation and whitespace", isOn: Binding(
+                        get: { appState.config.dictation.enabled },
+                        set: { newValue in
+                            appState.config.dictation.enabled = newValue
+                            appState.ipcClient?.sendConfigUpdate(section: "dictation", key: "enabled", value: newValue)
+                        }
+                    ))
+                    .accessibilityHint("When enabled, phrases like \"new line\", \"period\", and \"scratch that\" are replaced with literal punctuation or whitespace before grammar correction runs")
+
+                    if appState.config.dictation.enabled {
+                        DictationCommandsHelpView()
+                    }
+                }
+
                 Section("Replacements") {
                     Toggle("Enable text replacements", isOn: Binding(
                         get: { appState.config.replacements.enabled },
@@ -313,6 +328,90 @@ struct GeneralSettingsView: View {
             .formStyle(.grouped)
         }
     }
+}
+
+// MARK: - Dictation commands help
+
+private struct DictationCommandsHelpView: View {
+    @Environment(AppState.self) private var appState
+
+    private static let defaultExamples: [(String, String)] = [
+        ("new line", "↵"),
+        ("new paragraph", "¶"),
+        ("period", "."),
+        ("comma", ","),
+        ("question mark", "?"),
+        ("exclamation mark", "!"),
+        ("colon", ":"),
+        ("semicolon", ";"),
+        ("dash", " — "),
+        ("open paren / close paren", "( )"),
+        ("open quote / close quote", "\" \""),
+        ("scratch that", "delete fragment"),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "info.circle")
+                    .foregroundStyle(.secondary)
+                Text("Say these phrases while dictating to insert the literal punctuation or whitespace.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
+                ForEach(Self.defaultExamples, id: \.0) { phrase, glyph in
+                    GridRow {
+                        Text(phrase)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        Text(glyph)
+                            .font(.system(size: 12, design: .monospaced))
+                    }
+                }
+            }
+            .padding(.leading, 4)
+
+            if !appState.config.dictation.commands.isEmpty {
+                Divider()
+                Text("Custom commands (\(appState.config.dictation.commands.count))")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
+                    ForEach(Array(appState.config.dictation.commands.sorted(by: { $0.key < $1.key })), id: \.key) { phrase, replacement in
+                        GridRow {
+                            Text(phrase)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            Text(visualize(replacement))
+                                .font(.system(size: 12, design: .monospaced))
+                        }
+                    }
+                }
+                .padding(.leading, 4)
+            }
+
+            HStack {
+                Image(systemName: "text.cursor")
+                    .foregroundStyle(.secondary)
+                Text("Add more under `[dictation.commands]` in `~/.whisper/config.toml`.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func visualize(_ s: String) -> String {
+        s.replacingOccurrences(of: "\n\n", with: "¶¶")
+            .replacingOccurrences(of: "\n", with: "¶")
+            .replacingOccurrences(of: "\t", with: "→")
+            .ifEmpty("<removed>")
+    }
+}
+
+private extension String {
+    func ifEmpty(_ fallback: String) -> String { isEmpty ? fallback : self }
 }
 
 // MARK: - Replacement rules editor
