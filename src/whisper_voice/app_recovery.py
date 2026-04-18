@@ -23,7 +23,7 @@ class RecoveryMixin:
 
         age = recovery.marker_age_seconds()
         audio_path = pending[0]
-        age_note = f" ({age / 60:.1f} min ago)" if age else ""
+        age_note = f" ({age / 60:.1f} min ago)" if age is not None else ""
         log(f"Recovery: resuming interrupted transcription{age_note}: {audio_path.name}", "INFO")
         self._notify("Recovering last recording", "Service restarted mid-transcription.")
 

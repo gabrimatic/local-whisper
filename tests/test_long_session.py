@@ -94,6 +94,33 @@ def test_discard_pending_session_is_idempotent(session_tmp):
     assert not session_tmp.exists()
 
 
+def test_session_log_disables_after_init_failure(tmp_path, monkeypatch):
+    """When the header write fails, the log disables itself so every
+    subsequent append() is silent instead of spamming a WARN per chunk."""
+    bad_path = tmp_path / "missing_dir" / "current_session.jsonl"
+    monkeypatch.setattr(long_session, "_SESSION_PATH", bad_path)
+
+    def _boom(*_a, **_kw):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("pathlib.Path.mkdir", _boom)
+
+    warnings: list[str] = []
+    monkeypatch.setattr(long_session, "log", lambda msg, level="": warnings.append((level, msg)))
+
+    session = SessionLog(total_chunks=4)
+    assert session._disabled is True
+    init_warnings = [w for w in warnings if "init failed" in w[1]]
+    assert len(init_warnings) == 1
+
+    for i in range(4):
+        session.append(SessionChunk(index=i, text="x", raw="x", ts=0.0))
+
+    append_warnings = [w for w in warnings if "append failed" in w[1]]
+    assert append_warnings == []
+    assert len(session._chunks) == 4
+
+
 def test_empty_session_with_only_header_is_authoritative(session_tmp):
     """A session file with a header but zero chunks still signals that
     the long-session pipeline started. read_pending_session returns the

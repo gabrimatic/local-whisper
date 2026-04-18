@@ -38,6 +38,7 @@ class SessionLog:
         self.started_at = time.time()
         self.total_chunks = total_chunks
         self._chunks: list[SessionChunk] = []
+        self._disabled = False
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("w", encoding="utf-8") as f:
@@ -49,10 +50,13 @@ class SessionLog:
                 f.write(json.dumps(header) + "\n")
                 f.flush()
         except OSError as e:
-            log(f"Long session log init failed: {e}", "WARN")
+            log(f"Long session log init failed: {e} (partial persistence disabled)", "WARN")
+            self._disabled = True
 
     def append(self, chunk: SessionChunk) -> None:
         self._chunks.append(chunk)
+        if self._disabled:
+            return
         try:
             with self.path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps({
@@ -64,7 +68,8 @@ class SessionLog:
                 }) + "\n")
                 f.flush()
         except OSError as e:
-            log(f"Long session log append failed: {e}", "WARN")
+            log(f"Long session log append failed: {e} (partial persistence disabled)", "WARN")
+            self._disabled = True
 
     def aggregated_raw(self) -> str:
         return " ".join(c.raw for c in self._chunks if c.raw).strip()

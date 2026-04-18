@@ -10,6 +10,7 @@ import time
 import numpy as np
 
 from . import recovery
+from .dictation_commands import apply_dictation_commands
 from .long_session import LONG_SESSION_THRESHOLD_SECONDS, SessionChunk, SessionLog
 from .utils import (
     CLIPBOARD_TIMEOUT,
@@ -112,7 +113,6 @@ class PipelineMixin:
                     self._show_error(err, f"Long session failed: {err}")
                     self._notify("Transcription Failed", err)
                     return
-                raw_text = original_raw
                 self.backup.save_raw(original_raw)
                 log(f"Raw: {truncate(original_raw, LOG_TRUNCATE)}", "OK")
             else:
@@ -293,7 +293,6 @@ class PipelineMixin:
 
     def _apply_dictation_commands(self, text: str) -> str:
         """Apply voice dictation commands (new line, period, scratch that, etc.)."""
-        from .dictation_commands import apply_dictation_commands
         try:
             return apply_dictation_commands(text)
         except Exception as e:
@@ -502,8 +501,7 @@ class PipelineMixin:
             fixed = self._apply_grammar(dictated)
             fixed = self._apply_replacements(fixed)
 
-            import time as _time
-            chunk = SessionChunk(index=i, text=fixed, raw=raw_for_history, ts=_time.time())
+            chunk = SessionChunk(index=i, text=fixed, raw=raw_for_history, ts=time.time())
             session.append(chunk)
             partial_raw_parts.append(raw_for_history)
             partial_final_parts.append(fixed)
