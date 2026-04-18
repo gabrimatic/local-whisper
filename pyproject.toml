@@ -26,14 +26,14 @@ classifiers = [
 ]
 dependencies = [
     "sounddevice>=0.4.0",
-    "numpy>=1.20.0",
+    "numpy>=2.4.4",
     "requests>=2.25.0",
-    "pynput>=1.7.0",
-    "pyobjc-framework-Cocoa>=8.0",
-    "pyobjc-framework-Quartz>=8.0",
+    "pynput>=1.8.1",
+    "pyobjc-framework-Cocoa>=12.1",
+    "pyobjc-framework-Quartz>=12.1",
     "qwen3-asr-mlx>=0.1.0",
     "kokoro-mlx>=0.1.0",
-    "soundfile>=0.12.0",
+    "soundfile>=0.13.1",
     "misaki[en]>=0.9.4",
 ]
 
