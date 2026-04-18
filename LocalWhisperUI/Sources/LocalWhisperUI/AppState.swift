@@ -12,6 +12,8 @@ final class AppState {
     var rmsLevel: Double = 0.0
     var lastText: String? = nil
     var statusText: String = "Starting..."
+    // Latched so the idle state_update (sent ~1.5s after done) can't wipe "Copied!"/"Pasted!".
+    var doneStatusText: String = ""
     var history: [HistoryEntry] = []
     var config: AppConfig = .defaultConfig
 
@@ -43,6 +45,13 @@ final class AppState {
             }
             self.rmsLevel = rms
             self.durationSeconds = duration
+
+            switch phase {
+            case .done:
+                self.doneStatusText = statusText ?? defaultStatusText(for: phase)
+            default:
+                self.doneStatusText = ""
+            }
 
             if phase != oldPhase {
                 onPhaseChange?(phase)

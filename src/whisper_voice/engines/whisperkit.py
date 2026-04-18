@@ -231,47 +231,25 @@ class WhisperKitEngine(TranscriptionEngine):
             return None, str(e)[:30]
 
     def close(self) -> None:
-        """Clean up resources and kill WhisperKit server."""
         try:
             self._session.close()
         except Exception:
             pass
 
-        # Drop this instance's atexit handler so a later engine switch doesn't
-        # accumulate dangling close() registrations for already-closed engines.
         try:
             atexit.unregister(self.close)
         except Exception:
             pass
 
         if self._process is None:
-            # Engine was never started (e.g. never selected before shutdown); nothing to kill.
             return
 
         log("Killing WhisperKit server...", "INFO")
-
-        killed_via_pid = False
         if self._process.poll() is None:
             try:
                 self._process.kill()
                 self._process.wait(timeout=3)
                 log("WhisperKit server killed", "OK")
-                killed_via_pid = True
             except Exception as e:
                 log(f"Failed to kill tracked process: {e}", "WARN")
-        else:
-            killed_via_pid = True
         self._process = None
-
-        # Fall back to pkill only when we have no tracked PID (server was
-        # already running before this app started, i.e. an orphan process).
-        if not killed_via_pid:
-            try:
-                result = subprocess.run(
-                    ['pkill', '-f', 'whisperkit-cli serve'],
-                    timeout=2, capture_output=True
-                )
-                if result.returncode == 0:
-                    log("WhisperKit server killed via pkill (orphan cleanup)", "OK")
-            except Exception:
-                pass

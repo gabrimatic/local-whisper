@@ -2,9 +2,9 @@
 # Copyright (c) 2025-2026 Soroush Yousefpour
 """ANSI color codes and shared path constants for the CLI."""
 
-import sys
-from functools import lru_cache
 from pathlib import Path
+
+from .._install import INSTALL_BREW, INSTALL_PIP, INSTALL_SOURCE, get_install_method
 
 # Color constants
 C_RESET = "\033[0m"
@@ -23,34 +23,9 @@ MODEL_DIR = Path.home() / ".whisper" / "models"
 
 CMD_SOCKET_PATH = str(Path.home() / ".whisper" / "cmd.sock")
 
-
-# Install method detection
-
-INSTALL_SOURCE = "source"   # git clone + venv (development)
-INSTALL_BREW = "brew"       # Homebrew formula
-INSTALL_PIP = "pip"         # standalone pip install
-
-
-@lru_cache(maxsize=1)
-def get_install_method() -> str:
-    """Detect how local-whisper was installed.
-
-    Returns INSTALL_SOURCE, INSTALL_BREW, or INSTALL_PIP.
-
-    Homebrew formula installs have sys.prefix under /opt/homebrew/Cellar/ (the
-    libexec virtualenv lives inside the Cellar). A dev venv created from
-    Homebrew Python has sys.prefix pointing at the local .venv but the resolved
-    executable symlinks through Cellar, so only sys.prefix is a reliable signal.
-    """
-    if "/Cellar/" in sys.prefix:
-        return INSTALL_BREW
-
-    # Source (dev) install: project root is a git repo
-    try:
-        project_root = Path(__file__).resolve().parents[3]
-        if (project_root / ".git").is_dir():
-            return INSTALL_SOURCE
-    except (IndexError, OSError):
-        pass
-
-    return INSTALL_PIP
+__all__ = [
+    "C_RESET", "C_BOLD", "C_DIM", "C_RED", "C_GREEN", "C_YELLOW", "C_CYAN",
+    "LOCK_FILE", "LAUNCHAGENT_LABEL", "LAUNCHAGENT_PLIST", "LOG_FILE",
+    "MODEL_DIR", "CMD_SOCKET_PATH",
+    "INSTALL_SOURCE", "INSTALL_BREW", "INSTALL_PIP", "get_install_method",
+]

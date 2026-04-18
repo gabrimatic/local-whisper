@@ -16,9 +16,6 @@ final class OverlayWindowController {
         }
     }
 
-    // Called from AppMain after init, kept for API compatibility.
-    func setup() {}
-
     private func createPanel() -> NSPanel {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 260, height: 80),
@@ -55,7 +52,6 @@ final class OverlayWindowController {
     }
 
     private func handlePhaseChange(_ phase: AppPhase) {
-        // Cancel any pending hide before deciding what to do.
         hideTask?.cancel()
         hideTask = nil
 
@@ -73,10 +69,6 @@ final class OverlayWindowController {
     }
 
     private func showPanel() {
-        // Belt-and-suspenders cancel of any pending hide.
-        hideTask?.cancel()
-        hideTask = nil
-
         let p: NSPanel
         if let existing = panel {
             p = existing

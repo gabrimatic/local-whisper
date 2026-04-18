@@ -35,7 +35,6 @@ struct DeferredTextField: View {
     }
 }
 
-// Numeric variant (Int). Mirrors DeferredTextField's external-change behavior.
 struct DeferredIntTextField: View {
     let label: String
     let placeholder: String
@@ -68,13 +67,11 @@ struct DeferredIntTextField: View {
     private func commit() {
         if let v = Int(localValue) {
             onCommit(v)
-        } else if localValue.isEmpty {
-            onCommit(0)
-        } else {
-            // Non-parseable input: snap back to the last valid external value so the
-            // field stops showing a value that the service never received.
-            localValue = initialValue == 0 ? "" : "\(initialValue)"
+            return
         }
+        // Empty or unparseable: snap back. Never overwrite a real value
+        // with 0 just because the user deleted text mid-edit.
+        localValue = initialValue == 0 ? "" : "\(initialValue)"
     }
 }
 

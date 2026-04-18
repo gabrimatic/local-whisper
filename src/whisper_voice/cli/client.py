@@ -21,7 +21,6 @@ def _cmd_connect():
 def _cmd_send_recv(request: dict) -> dict:
     """Send a command and wait for the final response. Returns the last message."""
     import json
-    import socket as _socket
 
     running, _ = _is_running()
     if not running:
@@ -53,15 +52,15 @@ def _cmd_send_recv(request: dict) -> dict:
         data = (json.dumps(request) + "\n").encode()
         sock.sendall(data)
 
-        # Read responses until we get a terminal one (done/error)
+        # 2h cap guards against a catatonic service while still allowing
+        # long Qwen3-ASR runs (docs: up to 20 min native). Ctrl+C remains
+        # the primary escape — the signal handler sends `stop` and the
+        # service responds, unblocking recv().
+        sock.settimeout(2 * 60 * 60)
         buf = b""
         last_response = None
-        sock.settimeout(300)  # 5 min max for long operations
         while True:
-            try:
-                chunk = sock.recv(4096)
-            except _socket.timeout:
-                break
+            chunk = sock.recv(4096)
             if not chunk:
                 break
             buf += chunk
@@ -78,11 +77,8 @@ def _cmd_send_recv(request: dict) -> dict:
                 msg_type = msg.get("type")
                 if msg_type in ("done", "error"):
                     return msg
-                # "started" messages: continue waiting
-                if msg_type == "started":
-                    action = msg.get("action", "")
-                    if action == "listen":
-                        print("Recording... (Ctrl+C to stop)", file=sys.stderr)
+                if msg_type == "started" and msg.get("action") == "listen":
+                    print("Recording... (Ctrl+C to stop)", file=sys.stderr)
 
         return last_response or {"type": "error", "message": "Connection closed unexpectedly"}
     finally:

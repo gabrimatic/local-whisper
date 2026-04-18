@@ -13,7 +13,6 @@ struct AboutView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                // Hero
                 VStack(spacing: 10) {
                     Image(systemName: "waveform.badge.mic")
                         .font(.system(size: 56))
@@ -41,7 +40,6 @@ struct AboutView: View {
 
                 Divider().padding(.vertical, 20)
 
-                // Author + links
                 VStack(spacing: 8) {
                     HStack(spacing: 6) {
                         Text("Soroush Yousefpour")
@@ -62,7 +60,6 @@ struct AboutView: View {
 
                 Divider().padding(.vertical, 20)
 
-                // Credits
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Credits")
                         .font(.system(size: 12, weight: .semibold))
@@ -78,7 +75,6 @@ struct AboutView: View {
                 }
                 .frame(maxWidth: 400, alignment: .leading)
 
-                // Quick actions
                 Divider().padding(.vertical, 20)
 
                 HStack(spacing: 16) {
@@ -124,8 +120,6 @@ struct AboutView: View {
     }
 
     private func replayOnboarding() {
-        // Route through the shared presenter so we reuse its retention logic
-        // and never stack multiple onboarding windows on repeated clicks.
         OnboardingPresenter.shared.present(with: appState, title: "Local Whisper tutorial")
     }
 }

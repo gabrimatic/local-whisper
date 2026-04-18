@@ -195,6 +195,23 @@ class TestNormalization:
         # Essentially silent audio should not be artificially inflated
         assert float(np.max(np.abs(result.audio))) < 1e-3
 
+    def test_very_quiet_audio_gets_adaptive_second_stage_boost(self):
+        # A recording whose desired gain to reach the RMS target far
+        # exceeds the primary cap should still end up louder than a
+        # primary-cap-only boost would produce. The second-stage boost
+        # kicks in when peak < _QUIET_PEAK_THRESHOLD after stage one.
+        processor, _ = _make_processor(vad=False, noise_reduction=False, normalize=True)
+        audio = _quiet_sine(1.0, amplitude=0.0005)  # peak ~0.0005
+        result = processor.process(audio, SAMPLE_RATE)
+        peak = float(np.max(np.abs(result.audio)))
+        # With only the primary 3x cap the peak would be ~0.0015. The
+        # adaptive stage pushes it to at least 0.002 (a noticeable extra
+        # lift that still leaves plenty of headroom below the clip
+        # threshold).
+        assert peak > 0.002, f"second-stage boost did not engage (peak={peak})"
+        # And the clip guard must still hold.
+        assert peak <= 1.0
+
     def test_normalization_disabled_preserves_level(self):
         processor, _ = _make_processor(vad=False, noise_reduction=False, normalize=False)
         audio = _quiet_sine(1.0, amplitude=0.001)

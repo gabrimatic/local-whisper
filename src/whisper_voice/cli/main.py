@@ -53,14 +53,14 @@ def _print_help():
             ("wh log",             "Tail service log"),
         ]),
         ("Voice", [
-            ("wh whisper \"text\"",  "Speak text aloud via Kokoro TTS"),
-            ("wh listen [secs]",   "Record from mic, output transcription"),
-            ("wh transcribe <file>", "Transcribe an audio file"),
+            ("wh whisper \"text\" [--voice N]", "Speak text aloud via Kokoro TTS (accepts stdin)"),
+            ("wh listen [secs] [--raw]", "Record from mic, output transcription (0 = until Ctrl+C)"),
+            ("wh transcribe <file> [--raw]", "Transcribe an audio file"),
         ]),
         ("Settings", [
             ("wh engine [name]",   "Show or switch transcription engine"),
             ("wh backend [name]",  "Show or switch grammar backend"),
-            ("wh replace [import FILE]", "Manage text replacement rules or bulk-import from CSV/TSV"),
+            ("wh replace [add|remove|on|off|import FILE]", "Manage replacement rules"),
             ("wh config [show|edit|path]", "Interactive config editor, open in $EDITOR, or print path"),
         ]),
         ("History", [
@@ -71,7 +71,7 @@ def _print_help():
             ("wh install",         "Run full setup (deps, models, service)"),
             ("wh version",         "Show version and install method"),
             ("wh update",          "Update code, deps, models, and restart"),
-            ("wh doctor [--fix|--report]",  "Check system health, auto-repair, or write shareable report"),
+            ("wh doctor [--fix|--report [PATH]]", "Check system health, auto-repair, or write report"),
             ("wh build",           "Rebuild Swift UI"),
             ("wh uninstall",       "Completely remove Local Whisper"),
         ]),

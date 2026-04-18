@@ -39,14 +39,8 @@ engine = "qwen3_asr"
 # Model identifier from Hugging Face
 model = "mlx-community/Qwen3-ASR-1.7B-bf16"
 
-# Language code (en, fa, es, fr, de, etc.) or "auto" for detection
-language = "auto"
-
 # Transcription timeout in seconds (0 = no limit)
 timeout = 0
-
-# MLX prefill step size (higher = faster on Apple Silicon, default 4096)
-prefill_step_size = 4096
 
 [whisper]
 # WhisperKit server URL
@@ -269,15 +263,14 @@ class TranscriptionConfig:
 @dataclass
 class Qwen3ASRConfig:
     model: str = "mlx-community/Qwen3-ASR-1.7B-bf16"
-    language: str = "auto"
     timeout: int = 0
-    prefill_step_size: int = 4096
     temperature: float = 0.0
     top_p: float = 1.0
     top_k: int = 0
     repetition_context_size: int = 100
     repetition_penalty: float = 1.2
     chunk_duration: float = 1200.0
+    max_tokens: int = 0
 
 
 @dataclass

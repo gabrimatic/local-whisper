@@ -11,12 +11,7 @@ from .config import add_replacement, get_config, remove_replacement
 class IPCMixin:
     """Handles all IPC communication with the Swift client."""
 
-    # ------------------------------------------------------------------
-    # IPC helpers
-    # ------------------------------------------------------------------
-
     def _on_swift_connect(self):
-        """Called when the Swift client connects. Send initial state."""
         self._send_config_snapshot()
         self._send_state_update()
         self._send_history_update()
@@ -93,9 +88,13 @@ class IPCMixin:
             "transcription": {"engine": cfg.transcription.engine},
             "qwen3_asr": {
                 "model": cfg.qwen3_asr.model,
-                "language": cfg.qwen3_asr.language,
                 "timeout": cfg.qwen3_asr.timeout,
-                "prefill_step_size": cfg.qwen3_asr.prefill_step_size,
+                "temperature": cfg.qwen3_asr.temperature,
+                "top_p": cfg.qwen3_asr.top_p,
+                "top_k": cfg.qwen3_asr.top_k,
+                "repetition_context_size": cfg.qwen3_asr.repetition_context_size,
+                "repetition_penalty": cfg.qwen3_asr.repetition_penalty,
+                "chunk_duration": cfg.qwen3_asr.chunk_duration,
             },
             "whisper": {
                 "url": cfg.whisper.url,
@@ -204,6 +203,8 @@ class IPCMixin:
                 threading.Thread(target=self._restart_service, daemon=True).start()
             elif action == "update":
                 threading.Thread(target=self._update_service, daemon=True).start()
+            elif action == "resync_audio":
+                threading.Thread(target=self._resync_audio, daemon=True).start()
         elif msg_type == "engine_switch":
             engine = msg.get("engine", "")
             threading.Thread(target=self._switch_engine, args=(engine,), daemon=True).start()

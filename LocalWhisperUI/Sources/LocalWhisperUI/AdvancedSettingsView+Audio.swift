@@ -28,7 +28,7 @@ extension AdvancedSettingsView {
                     appState.ipcClient?.sendConfigUpdate(section: "audio", key: "normalize_audio", value: newValue)
                 }
             ))
-            .help("Adjusts recording volume to a consistent level. Target RMS 0.05, max +10dB gain")
+            .help("Adjusts recording volume to a consistent level. Target RMS 0.05. Primary cap +10dB; if a recording is still below −10dBFS an adaptive stage adds up to another +6dB with clip-guard.")
 
             LabeledContent("Pre-buffer") {
                 HStack {

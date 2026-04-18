@@ -227,15 +227,15 @@ class TestIncomingMessageParsing:
         assert msg["action"] == "cancel"
 
     def test_parse_config_update_int_value(self):
-        raw = json.dumps(make_config_update("qwen3_asr", "prefill_step_size", 8192))
+        raw = json.dumps(make_config_update("qwen3_asr", "repetition_context_size", 200))
         msg = json.loads(raw)
-        assert msg["value"] == 8192
+        assert msg["value"] == 200
         assert isinstance(msg["value"], int)
 
     def test_parse_config_update_string_value(self):
-        raw = json.dumps(make_config_update("qwen3_asr", "language", "en"))
+        raw = json.dumps(make_config_update("qwen3_asr", "model", "mlx-community/Qwen3-ASR-1.7B-8bit"))
         msg = json.loads(raw)
-        assert msg["value"] == "en"
+        assert msg["value"] == "mlx-community/Qwen3-ASR-1.7B-8bit"
 
     def test_parse_config_update_bool_value(self):
         raw = json.dumps(make_config_update("grammar", "enabled", False))

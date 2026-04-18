@@ -228,8 +228,7 @@ def _interactive_config() -> None:
         if not v:
             return ("", DM)
         try:
-            item["value"] = int(v)   if item["type"] == "int"   else \
-                            float(v) if item["type"] == "float" else v
+            item["value"] = float(v) if item["type"] == "float" else v
         except ValueError:
             return ("invalid value", YL)
         ok = _save(item)

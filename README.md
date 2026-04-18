@@ -80,14 +80,16 @@ Switch via Settings, `wh engine <name>`, or config.
 
 ### Qwen3-ASR (default)
 
-In-process via [qwen3-asr-mlx](https://github.com/gabrimatic/qwen3-asr-mlx). No server, no network. Long audio native.
+In-process via [qwen3-asr-mlx](https://github.com/gabrimatic/qwen3-asr-mlx). No server, no network. Long audio native. English-only.
 
 | Setting | Default | Notes |
 |---------|---------|-------|
 | `model` | `mlx-community/Qwen3-ASR-1.7B-bf16` | Downloaded by `setup.sh` |
-| `language` | `auto` | Force with `en`, `fa`, etc. |
 | `timeout` | `0` | No limit |
-| `prefill_step_size` | `4096` | Higher = faster on Apple Silicon |
+| `repetition_penalty` | `1.2` | Higher suppresses repetition loops |
+| `repetition_context_size` | `100` | Tokens considered for repetition penalty |
+| `chunk_duration` | `1200` | Seconds per internal chunk for very long audio |
+| `max_tokens` | `0` | `0` = auto-scale from duration. Cap for faster short-clip decode. |
 
 ### WhisperKit (alternative)
 
@@ -296,15 +298,14 @@ engine = "qwen3_asr"      # "qwen3_asr" (default) or "whisperkit"
 
 [qwen3_asr]
 model = "mlx-community/Qwen3-ASR-1.7B-bf16"
-language = "auto"          # "en", "fa", etc. or "auto"
 timeout = 0                # 0 = no limit
-prefill_step_size = 4096   # higher = faster on Apple Silicon
 temperature = 0.0
 top_p = 1.0
 top_k = 0
 repetition_context_size = 100
 repetition_penalty = 1.2
 chunk_duration = 1200.0    # max chunk length in seconds
+max_tokens = 0             # 0 = auto from duration
 
 [whisper]
 model = "whisper-large-v3-v20240930"
@@ -421,13 +422,25 @@ Python (LaunchAgent, headless)
   ├── Recording, transcription, grammar, replacements, clipboard, hotkeys
   ├── Text-to-Speech (Kokoro-82M, in-process)
   ├── IPC server at ~/.whisper/ipc.sock (Swift UI communication)
-  └── Command server at ~/.whisper/cmd.sock (CLI commands)
+  ├── Command server at ~/.whisper/cmd.sock (CLI commands)
+  ├── Pipeline watchdog (per-stage timeouts, skip-don't-freeze)
+  └── Crash recovery (~/.whisper/processing.marker + current_session.jsonl)
 
 Swift (subprocess, all UI)
   ├── Menu bar with grammar submenus and transcription history
   ├── Floating overlay pill (recording, processing, speaking states)
-  └── Settings window (General, Advanced, About)
+  ├── NSWorkspace sleep/wake observer → resync_audio IPC
+  └── Settings window (auto-fetches Ollama / LM Studio models on open)
 ```
+
+The LaunchAgent uses `KeepAlive={SuccessfulExit=false}` with
+`ThrottleInterval=10` so real crashes auto-restart while clean stops
+(`wh stop`, `wh restart`, user-error exits) don't relaunch. Recordings
+longer than five minutes take the chunked pipeline: each VAD segment is
+transcribed, grammar-corrected, and persisted to
+`~/.whisper/current_session.jsonl` before the next chunk runs, so a
+crash mid-lecture recovers the completed chunks on next boot instead of
+losing everything.
 
 <details>
 <summary><strong>Data flow</strong></summary>

@@ -34,7 +34,7 @@ def _write_replacements_rules(rules: dict) -> bool:
     Creates the section if it doesn't exist.
     """
     try:
-        fd = os.open(str(_schema.CONFIG_FILE), os.O_RDWR | os.O_CREAT, 0o644)
+        fd = os.open(str(_schema.CONFIG_FILE), os.O_RDWR | os.O_CREAT, 0o600)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
             content = _schema.CONFIG_FILE.read_text()
@@ -113,7 +113,7 @@ def update_config_backend(new_backend: str) -> bool:
         config.grammar.backend = new_backend
         config.grammar.enabled = (new_backend != "none")
     try:
-        fd = os.open(str(_schema.CONFIG_FILE), os.O_RDWR | os.O_CREAT, 0o644)
+        fd = os.open(str(_schema.CONFIG_FILE), os.O_RDWR | os.O_CREAT, 0o600)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
             content = _schema.CONFIG_FILE.read_text()
@@ -143,7 +143,7 @@ def update_config_field(section: str, key: str, value) -> bool:
         with _config_lock:
             setattr(section_obj, key, value)
     try:
-        fd = os.open(str(_schema.CONFIG_FILE), os.O_RDWR | os.O_CREAT, 0o644)
+        fd = os.open(str(_schema.CONFIG_FILE), os.O_RDWR | os.O_CREAT, 0o600)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
             content = _schema.CONFIG_FILE.read_text()

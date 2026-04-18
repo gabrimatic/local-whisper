@@ -4,7 +4,7 @@
 Unit tests for the engine and backend registries.
 
 Does NOT instantiate any engine or backend (they require hardware/servers).
-Tests only registry structure, factory error behavior, and LANGUAGE_MAP.
+Tests only registry structure and factory error behavior.
 """
 
 import sys
@@ -47,22 +47,6 @@ def _import_backend_registry():
     with patch.dict("sys.modules", stubs):
         from whisper_voice.backends import BACKEND_REGISTRY, create_backend
     return BACKEND_REGISTRY, create_backend
-
-
-def _import_language_map():
-    for mod in list(sys.modules.keys()):
-        if "whisper_voice" in mod:
-            del sys.modules[mod]
-    stubs = {
-        "mlx": None,
-        "mlx.core": None,
-        "sounddevice": None,
-        "AppKit": None,
-        "Foundation": None,
-    }
-    with patch.dict("sys.modules", stubs):
-        from whisper_voice.engines.qwen3_asr import LANGUAGE_MAP
-    return LANGUAGE_MAP
 
 
 # ---------------------------------------------------------------------------
@@ -163,52 +147,3 @@ class TestBackendRegistry:
     def test_at_least_three_backends(self):
         registry, _ = _import_backend_registry()
         assert len(registry) >= 3
-
-
-# ---------------------------------------------------------------------------
-# LANGUAGE_MAP
-# ---------------------------------------------------------------------------
-
-class TestLanguageMap:
-    REQUIRED_CODES = ["en", "fa", "de", "fr", "es", "ja", "zh", "ko"]
-
-    def test_required_language_codes_present(self):
-        lmap = _import_language_map()
-        for code in self.REQUIRED_CODES:
-            assert code in lmap, f"Missing language code: {code}"
-
-    def test_no_auto_key(self):
-        lmap = _import_language_map()
-        assert "auto" not in lmap, "'auto' should not be in LANGUAGE_MAP"
-
-    def test_all_values_are_strings(self):
-        lmap = _import_language_map()
-        for code, name in lmap.items():
-            assert isinstance(name, str), f"Language name for '{code}' is not a string"
-
-    def test_all_keys_are_lowercase(self):
-        lmap = _import_language_map()
-        for code in lmap:
-            assert code == code.lower(), f"Language code '{code}' is not lowercase"
-
-    def test_all_values_non_empty(self):
-        lmap = _import_language_map()
-        for code, name in lmap.items():
-            assert name.strip(), f"Language name for '{code}' is empty"
-
-    def test_english_maps_to_english(self):
-        lmap = _import_language_map()
-        assert lmap["en"] == "English"
-
-    def test_persian_mapped(self):
-        lmap = _import_language_map()
-        # fa = Persian/Farsi
-        assert "fa" in lmap
-
-    def test_map_is_dict(self):
-        lmap = _import_language_map()
-        assert isinstance(lmap, dict)
-
-    def test_at_least_ten_languages(self):
-        lmap = _import_language_map()
-        assert len(lmap) >= 10

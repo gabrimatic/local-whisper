@@ -11,6 +11,7 @@ let sharedAppState = AppState()
 
 final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     private var overlayController: OverlayWindowController?
+    private var wakeObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let state = sharedAppState
@@ -20,9 +21,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             state.setupIPC()
             state.ipcClient?.start()
 
-            let controller = OverlayWindowController(appState: state)
-            self.overlayController = controller
-            controller.setup()
+            self.overlayController = OverlayWindowController(appState: state)
+
+            self.installSleepWakeObservers(for: state)
 
             if !OnboardingFlag.hasCompleted {
                 OnboardingPresenter.shared.present(with: state)
@@ -30,7 +31,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         }
     }
 
+    @MainActor
+    private func installSleepWakeObservers(for state: AppState) {
+        let center = NSWorkspace.shared.notificationCenter
+        wakeObserver = center.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                state.ipcClient?.sendAction("resync_audio")
+            }
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
+        if let observer = wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            wakeObserver = nil
+        }
         sharedAppState.ipcClient?.stopSync()
     }
 }

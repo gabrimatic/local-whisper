@@ -8,7 +8,6 @@ struct MenuBarView: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
-        // Status row
         Text(appState.menuStatusLabel)
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(statusColor)
@@ -16,13 +15,12 @@ struct MenuBarView: View {
 
         Divider()
 
-        // Grammar submenu — Picker renders native radio checkmarks automatically
         Picker(grammarMenuTitle, selection: grammarBinding) {
             Text("Apple Intelligence").tag("apple_intelligence")
             Text("Ollama").tag("ollama")
             Text("LM Studio").tag("lm_studio")
             Divider()
-            Text("Disabled").tag("")
+            Text("Disabled").tag("none")
         }
 
         Toggle(replacementsMenuTitle, isOn: Binding(
@@ -49,7 +47,6 @@ struct MenuBarView: View {
 
         Divider()
 
-        // Transcriptions submenu
         Menu("Transcriptions") {
             if appState.history.isEmpty {
                 Text("No transcriptions yet")
@@ -72,7 +69,6 @@ struct MenuBarView: View {
             }
         }
 
-        // Recordings submenu
         Menu("Recordings") {
             if appState.historyWithAudio.isEmpty {
                 Text("No recordings yet")
@@ -123,21 +119,19 @@ struct MenuBarView: View {
 
     // MARK: - Grammar binding
 
-    /// Unified selection: backend id when enabled, "" when disabled.
     private var grammarBinding: Binding<String> {
         Binding(
             get: {
-                appState.config.grammar.enabled ? appState.config.grammar.backend : ""
+                appState.config.grammar.enabled ? appState.config.grammar.backend : "none"
             },
             set: { newValue in
-                if newValue.isEmpty {
+                if newValue == "none" {
                     appState.config.grammar.enabled = false
-                    appState.ipcClient?.sendBackendSwitch("none")
                 } else {
                     appState.config.grammar.backend = newValue
                     appState.config.grammar.enabled = true
-                    appState.ipcClient?.sendBackendSwitch(newValue)
                 }
+                appState.ipcClient?.sendBackendSwitch(newValue)
             }
         )
     }

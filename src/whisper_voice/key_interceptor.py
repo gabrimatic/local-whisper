@@ -43,7 +43,11 @@ from Quartz import (
 
 from .utils import log, request_accessibility_permission
 
-# macOS virtual key codes to character mapping
+# macOS virtual keycodes
+KEY_SPACE = 49
+KEY_ESC = 53
+KEY_RIGHT_OPT = 61
+
 VK_TO_CHAR = {
     0x00: 'a', 0x0B: 'b', 0x08: 'c', 0x02: 'd', 0x0E: 'e', 0x03: 'f',
     0x05: 'g', 0x04: 'h', 0x22: 'i', 0x26: 'j', 0x28: 'k', 0x25: 'l',
@@ -217,8 +221,7 @@ class KeyInterceptor:
             keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
             flags = CGEventGetFlags(event)
 
-            # Recording mode: only intercept the three stop/cancel keys
-            _RECORDING_KEYS = {49, 53, 61}  # Space, Esc, Right Option
+            _RECORDING_KEYS = {KEY_SPACE, KEY_ESC, KEY_RIGHT_OPT}
             with self._lock:
                 recording_active = self._recording_active
                 recording_handler = self._recording_handler
@@ -228,29 +231,22 @@ class KeyInterceptor:
             if recording_active and keycode in _RECORDING_KEYS:
                 if recording_handler:
                     threading.Thread(target=recording_handler, args=(keycode, flags), daemon=True).start()
-                return None  # suppress only these keys
+                return None
 
-            # Speaking mode: intercept Esc to stop TTS
-            if speaking_active and keycode == 53:  # Esc
-                if speaking_handler:
-                    threading.Thread(target=speaking_handler, daemon=True).start()
-                return None  # suppress Esc while speaking
+            if speaking_active and keycode == KEY_ESC and speaking_handler is not None:
+                threading.Thread(target=speaking_handler, daemon=True).start()
+                return None
 
             char = VK_TO_CHAR.get(keycode)
-
             if char is None:
-                # Not an alphabetic key we care about
                 return event
 
-            # Check if we have a shortcut registered for this key
             with self._lock:
                 if char not in self._shortcuts:
                     return event
                 required_modifiers, callback = self._shortcuts[char]
 
-            # Check modifier flags
             active_modifiers = set()
-
             if flags & kCGEventFlagMaskControl:
                 active_modifiers.add("ctrl")
             if flags & kCGEventFlagMaskShift:
@@ -260,18 +256,13 @@ class KeyInterceptor:
             if flags & kCGEventFlagMaskAlternate:
                 active_modifiers.add("alt")
 
-            # Check if required modifiers are held
             if not (active_modifiers >= required_modifiers):
                 return event
-
-            # Check enabled guard
             if self._enabled_guard and not self._enabled_guard():
                 return event
 
-            # Trigger callback in a separate thread to avoid blocking
+            # Off-thread so the event tap keeps pumping during the callback.
             threading.Thread(target=callback, daemon=True).start()
-
-            # Suppress the event
             return None
 
         except Exception as e:

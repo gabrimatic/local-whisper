@@ -73,30 +73,6 @@ struct GeneralSettingsView: View {
                     }
                     .accessibilityHint("Qwen3-ASR runs fully in-process. WhisperKit requires a local server.")
                     RestartNote()
-
-                    if appState.config.transcription.engine == "qwen3_asr" {
-                        Picker("Language", selection: Binding(
-                            get: { appState.config.qwen3Asr.language },
-                            set: { newValue in
-                                appState.config.qwen3Asr.language = newValue
-                                appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "language", value: newValue)
-                            }
-                        )) {
-                            Text("Auto-detect").tag("auto")
-                            Text("English").tag("en")
-                            Text("Persian").tag("fa")
-                            Text("Spanish").tag("es")
-                            Text("French").tag("fr")
-                            Text("German").tag("de")
-                            Text("Arabic").tag("ar")
-                            Text("Chinese").tag("zh")
-                            Text("Japanese").tag("ja")
-                            Text("Korean").tag("ko")
-                            Text("Italian").tag("it")
-                            Text("Portuguese").tag("pt")
-                            Text("Russian").tag("ru")
-                        }
-                    }
                 }
 
                 Section("Grammar Correction") {

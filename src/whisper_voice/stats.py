@@ -9,6 +9,7 @@ metrics from the history files so numbers are always accurate.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -90,15 +91,16 @@ def compute_usage_stats(top_n: int = 10) -> UsageStats:
             if ts >= now - timedelta(days=30):
                 stats.sessions_past_30d += 1
 
-        # Count replacement-rule matches by looking in the RAW text (before the
-        # rule substitution ran). The fixed text has already had the spoken
-        # form replaced, so checking there would almost never hit.
+        # Count rule hits against raw (pre-substitution) text using the same
+        # \b word-boundary semantics the pipeline uses, so stats match reality.
         if replacement_rules:
             raw_for_counting = (entry.get("raw") or "").lower()
             if raw_for_counting:
                 for spoken in replacement_rules:
                     needle = spoken.lower()
-                    if needle and needle in raw_for_counting:
+                    if not needle:
+                        continue
+                    if re.search(rf"\b{re.escape(needle)}\b", raw_for_counting):
                         replacement_counter[spoken] += 1
 
     if stats.total_sessions:

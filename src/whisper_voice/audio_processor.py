@@ -14,7 +14,9 @@ from numpy.lib.stride_tricks import as_strided
 
 from .utils import log
 
-_SPEECH_PAD_SAMPLES = 4800     # 0.3s padding around speech segments at 16kHz
+_SPEECH_PAD_SAMPLES = 4800     # 0.3s padding at 16kHz
+_VAD_HANGOVER_FRAMES = 7       # ~210ms trailing edge at 30ms hop
+_VAD_ABS_MIN_THRESHOLD = 0.0015
 
 # Noise reduction parameters
 _STFT_N_FFT = 1024
@@ -26,8 +28,10 @@ _NOISE_GATE_ATTENUATION = 0.3  # gain applied to gated bins (conservative: highe
 _NOISE_FLOOR_SAFETY_RATIO = 0.3
 
 # Normalization parameters
-_TARGET_RMS = 0.05             # -26 dBFS (conservative target to avoid over-amplifying)
-_MAX_GAIN = 3.0                # ~10 dB boost cap (prevents extreme amplification of quiet-but-clean audio)
+_TARGET_RMS = 0.05             # -26 dBFS target
+_MAX_GAIN = 3.0                # ~10 dB primary cap
+_MAX_GAIN_QUIET = 6.0          # ~16 dB adaptive cap (clip-guarded)
+_QUIET_PEAK_THRESHOLD = 0.3
 _CLIP_THRESHOLD = 0.99
 
 # Segmentation parameters
@@ -201,7 +205,7 @@ class AudioProcessor:
             log(f"VAD: uniform energy detected (floor={noise_floor:.4f}, median={median_energy:.4f}), treating as all speech", "INFO")
             return [(0, len(audio))]
 
-        speech_threshold = max(noise_floor * 3.0, 0.003)  # at least 0.003 RMS
+        speech_threshold = max(noise_floor * 3.0, _VAD_ABS_MIN_THRESHOLD)
 
         # Find frames above threshold
         is_speech = energies > speech_threshold
@@ -215,6 +219,17 @@ class AudioProcessor:
         # sliding sum of kernel_size elements
         sliding_sum = cumsum[kernel_size:] - cumsum[:-kernel_size]
         is_speech = sliding_sum > (kernel_size / 2.0)
+
+        # Trailing-edge hangover to preserve quiet word tails.
+        # np.maximum.accumulate on speech-indexed array gives the index of
+        # the most recent speech frame at each position.
+        if _VAD_HANGOVER_FRAMES > 0 and len(is_speech) > 0:
+            n = len(is_speech)
+            indices = np.arange(n, dtype=np.int64)
+            sentinel = -(_VAD_HANGOVER_FRAMES + 1)
+            masked = np.where(is_speech, indices, sentinel)
+            last_speech_idx = np.maximum.accumulate(masked)
+            is_speech = is_speech | ((indices - last_speech_idx) <= _VAD_HANGOVER_FRAMES)
 
         # Find contiguous speech regions
         segments = []
@@ -487,17 +502,30 @@ class AudioProcessor:
     # ------------------------------------------------------------------
 
     def _normalize(self, audio: np.ndarray) -> tuple[np.ndarray, float]:
-        """Scale audio to target RMS with gain cap and clip prevention."""
+        """Scale audio to target RMS with primary + adaptive gain and clip guard."""
         if len(audio) == 0:
             return audio, 0.0
         rms = float(np.sqrt(np.mean(audio ** 2)))
         if rms < 1e-6:
             return audio, 0.0
-        gain = min(_TARGET_RMS / rms, _MAX_GAIN)
+
+        desired = _TARGET_RMS / rms
+        gain = min(desired, _MAX_GAIN)
         audio = audio * np.float32(gain)
         peak = float(np.max(np.abs(audio)))
+
+        # Adaptive stage: quiet recording that saturated the primary cap.
+        if gain >= _MAX_GAIN - 1e-3 and peak < _QUIET_PEAK_THRESHOLD and desired > _MAX_GAIN:
+            extra_budget = _MAX_GAIN_QUIET / _MAX_GAIN
+            wanted_extra = min(extra_budget, _QUIET_PEAK_THRESHOLD / max(peak, 1e-6))
+            if wanted_extra > 1.0:
+                audio = audio * np.float32(wanted_extra)
+                gain *= wanted_extra
+                peak = float(np.max(np.abs(audio)))
+
         if peak > _CLIP_THRESHOLD:
             audio = audio * np.float32(_CLIP_THRESHOLD / peak)
+            gain *= _CLIP_THRESHOLD / peak
         gain_db = 20.0 * np.log10(gain)
         return audio, gain_db
 

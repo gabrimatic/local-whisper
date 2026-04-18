@@ -29,9 +29,7 @@ struct TranscriptionConfig: Codable, Sendable {
 
 struct Qwen3ASRConfig: Codable, Sendable {
     var model: String
-    var language: String
     var timeout: Double
-    var prefillStepSize: Int
     var temperature: Double
     var topP: Double
     var topK: Int
@@ -40,8 +38,7 @@ struct Qwen3ASRConfig: Codable, Sendable {
     var chunkDuration: Double
 
     enum CodingKeys: String, CodingKey {
-        case model, language, timeout, temperature
-        case prefillStepSize = "prefill_step_size"
+        case model, timeout, temperature
         case topP = "top_p"
         case topK = "top_k"
         case repetitionContextSize = "repetition_context_size"
@@ -240,29 +237,6 @@ struct AppConfig: Codable, Sendable {
         case kokoroTts = "kokoro_tts"
     }
 
-    // `dictation` arrives on snapshots sent by services that know about the
-    // section. Older snapshots (or a future extension that drops the key)
-    // should still decode cleanly with a sensible default.
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        hotkey = try c.decode(HotkeyConfig.self, forKey: .hotkey)
-        transcription = try c.decode(TranscriptionConfig.self, forKey: .transcription)
-        qwen3Asr = try c.decode(Qwen3ASRConfig.self, forKey: .qwen3Asr)
-        whisper = try c.decode(WhisperConfig.self, forKey: .whisper)
-        grammar = try c.decode(GrammarConfig.self, forKey: .grammar)
-        ollama = try c.decode(OllamaConfig.self, forKey: .ollama)
-        appleIntelligence = try c.decode(AppleIntelligenceConfig.self, forKey: .appleIntelligence)
-        lmStudio = try c.decode(LMStudioConfig.self, forKey: .lmStudio)
-        audio = try c.decode(AudioConfig.self, forKey: .audio)
-        ui = try c.decode(UIConfig.self, forKey: .ui)
-        backup = try c.decode(BackupConfig.self, forKey: .backup)
-        shortcuts = try c.decode(ShortcutsConfig.self, forKey: .shortcuts)
-        tts = try c.decode(TTSConfig.self, forKey: .tts)
-        kokoroTts = try c.decode(KokoroTTSConfig.self, forKey: .kokoroTts)
-        replacements = try c.decode(ReplacementsConfig.self, forKey: .replacements)
-        dictation = (try? c.decode(DictationConfig.self, forKey: .dictation)) ?? DictationConfig(enabled: true, commands: [:])
-    }
-
     init(
         hotkey: HotkeyConfig, transcription: TranscriptionConfig, qwen3Asr: Qwen3ASRConfig,
         whisper: WhisperConfig, grammar: GrammarConfig, ollama: OllamaConfig,
@@ -293,7 +267,7 @@ struct AppConfig: Codable, Sendable {
         AppConfig(
             hotkey: HotkeyConfig(key: "alt_r", doubleTapThreshold: 0.4),
             transcription: TranscriptionConfig(engine: "qwen3_asr"),
-            qwen3Asr: Qwen3ASRConfig(model: "mlx-community/Qwen3-ASR-1.7B-bf16", language: "auto", timeout: 0, prefillStepSize: 4096, temperature: 0.0, topP: 1.0, topK: 0, repetitionContextSize: 100, repetitionPenalty: 1.2, chunkDuration: 1200.0),
+            qwen3Asr: Qwen3ASRConfig(model: "mlx-community/Qwen3-ASR-1.7B-bf16", timeout: 0, temperature: 0.0, topP: 1.0, topK: 0, repetitionContextSize: 100, repetitionPenalty: 1.2, chunkDuration: 1200.0),
             whisper: WhisperConfig(
                 url: "http://localhost:50060/v1/audio/transcriptions",
                 checkUrl: "http://localhost:50060/",

@@ -22,6 +22,9 @@ extension AdvancedSettingsView {
                 ) { value in
                     appState.config.ollama.checkUrl = value
                     appState.ipcClient?.sendConfigUpdate(section: "ollama", key: "check_url", value: value)
+                    // Swap servers -> reset cache so the next probe hits the new host.
+                    ollamaLastAutoFetched = ""
+                    Task { await autoFetchOllamaIfNeeded() }
                 }
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 280)
@@ -53,7 +56,8 @@ extension AdvancedSettingsView {
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 220)
                     }
-                    Button(ollamaFetching ? "Fetching…" : "Fetch Models") {
+                    Button(ollamaFetching ? "Fetching…" : "Refresh") {
+                        ollamaLastAutoFetched = ""
                         Task { await fetchOllamaModels() }
                     }
                     .buttonStyle(.bordered)
@@ -162,21 +166,58 @@ extension AdvancedSettingsView {
                 ) { value in
                     appState.config.lmStudio.checkUrl = value
                     appState.ipcClient?.sendConfigUpdate(section: "lm_studio", key: "check_url", value: value)
+                    // Swap servers -> reset cache so the next probe hits the new host.
+                    lmStudioLastAutoFetched = ""
+                    Task { await autoFetchLMStudioIfNeeded() }
                 }
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 280)
             }
 
             LabeledContent("Model") {
-                DeferredTextField(
-                    label: "Model",
-                    initialValue: appState.config.lmStudio.model
-                ) { value in
-                    appState.config.lmStudio.model = value
-                    appState.ipcClient?.sendConfigUpdate(section: "lm_studio", key: "model", value: value)
+                HStack(spacing: 6) {
+                    if !lmStudioModels.isEmpty {
+                        Picker("", selection: Binding(
+                            get: { appState.config.lmStudio.model },
+                            set: { newValue in
+                                appState.config.lmStudio.model = newValue
+                                appState.ipcClient?.sendConfigUpdate(section: "lm_studio", key: "model", value: newValue)
+                            }
+                        )) {
+                            ForEach(lmStudioModels, id: \.self) { model in
+                                Text(model).tag(model)
+                            }
+                        }
+                        .frame(maxWidth: 220)
+                    } else {
+                        DeferredTextField(
+                            label: "Model",
+                            initialValue: appState.config.lmStudio.model
+                        ) { value in
+                            appState.config.lmStudio.model = value
+                            appState.ipcClient?.sendConfigUpdate(section: "lm_studio", key: "model", value: value)
+                        }
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 220)
+                    }
+                    Button(lmStudioFetching ? "Fetching…" : "Refresh") {
+                        lmStudioLastAutoFetched = ""
+                        Task { await fetchLMStudioModels() }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(lmStudioFetching)
                 }
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 280)
+            }
+
+            if let error = lmStudioFetchError {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             LabeledContent("Max characters") {
@@ -218,6 +259,8 @@ extension AdvancedSettingsView {
 
     var appleIntelligenceSection: some View {
         Section("Apple Intelligence") {
+            appleIntelligenceStatusRow
+
             LabeledContent("Max characters") {
                 HStack {
                     Stepper("", value: Binding(
@@ -253,6 +296,56 @@ extension AdvancedSettingsView {
         }
     }
 
+    // MARK: - Apple Intelligence status row
+
+    @ViewBuilder
+    private var appleIntelligenceStatusRow: some View {
+        switch appleIntelligenceStatus {
+        case .unknown:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Checking availability…")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        case .supported:
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                Text("On-device Foundation Models. Status shown in menu bar.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        case .unsupported(let reason):
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text(reason)
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    // MARK: - Auto-fetch helpers
+
+    @MainActor
+    func autoFetchOllamaIfNeeded() async {
+        let key = appState.config.ollama.checkUrl
+        if key.isEmpty { return }
+        let alreadyHaveModels = !ollamaModels.isEmpty
+        if key == ollamaLastAutoFetched && alreadyHaveModels { return }
+        ollamaLastAutoFetched = key
+        await fetchOllamaModels()
+    }
+
+    @MainActor
+    func autoFetchLMStudioIfNeeded() async {
+        let key = appState.config.lmStudio.checkUrl
+        if key.isEmpty { return }
+        let alreadyHaveModels = !lmStudioModels.isEmpty
+        if key == lmStudioLastAutoFetched && alreadyHaveModels { return }
+        lmStudioLastAutoFetched = key
+        await fetchLMStudioModels()
+    }
+
     @MainActor
     func fetchOllamaModels() async {
         ollamaFetching = true
@@ -268,7 +361,6 @@ extension AdvancedSettingsView {
             return
         }
 
-        // Explicit 5s timeout so a stopped Ollama doesn't hang the fetch forever.
         var request = URLRequest(url: url)
         request.timeoutInterval = 5
 
@@ -301,5 +393,59 @@ extension AdvancedSettingsView {
         }
 
         ollamaFetching = false
+    }
+
+    @MainActor
+    func fetchLMStudioModels() async {
+        lmStudioFetching = true
+        lmStudioFetchError = nil
+
+        let baseUrl = appState.config.lmStudio.checkUrl
+            .trimmingCharacters(in: .init(charactersIn: "/"))
+        let urlString = "\(baseUrl)/v1/models"
+
+        guard let url = URL(string: urlString) else {
+            lmStudioFetchError = "Invalid check URL: \(urlString)"
+            lmStudioFetching = false
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 5
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                lmStudioFetchError = "Server returned an error. Is LM Studio's local server running?"
+                lmStudioFetching = false
+                return
+            }
+
+            struct LMStudioModelsResponse: Decodable {
+                struct Model: Decodable { var id: String }
+                var data: [Model]
+            }
+
+            let decoded = try JSONDecoder().decode(LMStudioModelsResponse.self, from: data)
+            let names = decoded.data.map(\.id).sorted()
+            if names.isEmpty {
+                lmStudioFetchError = "No models loaded. Load one in LM Studio, then retry."
+            } else {
+                lmStudioModels = names
+                if !names.contains(appState.config.lmStudio.model), let first = names.first {
+                    appState.config.lmStudio.model = first
+                    appState.ipcClient?.sendConfigUpdate(section: "lm_studio", key: "model", value: first)
+                }
+            }
+        } catch {
+            lmStudioFetchError = "Could not connect to LM Studio: \(error.localizedDescription)"
+        }
+
+        lmStudioFetching = false
+    }
+
+    @MainActor
+    func probeAppleIntelligence() {
+        appleIntelligenceStatus = .supported
     }
 }

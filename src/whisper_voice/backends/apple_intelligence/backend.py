@@ -61,9 +61,8 @@ class AppleIntelligenceBackend(GrammarBackend):
         gc.collect()
 
     def running(self) -> bool:
-        """Check if Apple Intelligence is available on this device."""
         if not _SDK_AVAILABLE:
-            from ...cli.constants import INSTALL_BREW, get_install_method
+            from ..._install import INSTALL_BREW, get_install_method
             if get_install_method() == INSTALL_BREW:
                 hint = "brew reinstall local-whisper"
             else:

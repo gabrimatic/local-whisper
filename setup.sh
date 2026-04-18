@@ -31,6 +31,7 @@ fail() {
 }
 
 write_plist() {
+    # KeepAlive={SuccessfulExit=false} restarts on crash but honors `wh stop`.
     cat > "$PLIST_PATH" <<PLIST_EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -57,11 +58,20 @@ write_plist() {
     <key>RunAtLoad</key>
     <${1}/>
     <key>KeepAlive</key>
-    <false/>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>ExitTimeOut</key>
+    <integer>30</integer>
+    <key>ProcessType</key>
+    <string>Interactive</string>
     <key>StandardOutPath</key>
     <string>$LOG_PATH</string>
     <key>StandardErrorPath</key>
-    <string>$LOG_PATH</string>
+    <string>$HOME/.whisper/service.err.log</string>
 </dict>
 </plist>
 PLIST_EOF

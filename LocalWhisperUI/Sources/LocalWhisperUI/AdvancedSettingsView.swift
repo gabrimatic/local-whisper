@@ -9,6 +9,14 @@ struct AdvancedSettingsView: View {
     @State var ollamaModels: [String] = []
     @State var ollamaFetchError: String? = nil
     @State var ollamaFetching = false
+    @State var ollamaLastAutoFetched: String = ""
+
+    @State var lmStudioModels: [String] = []
+    @State var lmStudioFetchError: String? = nil
+    @State var lmStudioFetching = false
+    @State var lmStudioLastAutoFetched: String = ""
+
+    @State var appleIntelligenceStatus: AppleIntelligenceProbe = .unknown
 
     var body: some View {
         ScrollView {
@@ -28,7 +36,21 @@ struct AdvancedSettingsView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     NSApp.keyWindow?.makeFirstResponder(nil)
                 }
+                Task { await autoFetchAllBackends() }
             }
         }
     }
+
+    @MainActor
+    func autoFetchAllBackends() async {
+        await autoFetchOllamaIfNeeded()
+        await autoFetchLMStudioIfNeeded()
+        probeAppleIntelligence()
+    }
+}
+
+enum AppleIntelligenceProbe: Equatable {
+    case unknown
+    case supported
+    case unsupported(String)
 }

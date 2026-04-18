@@ -1,25 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025-2026 Soroush Yousefpour
-"""
-Whisper - 100% Local Voice Transcription + Grammar Correction
-
-Headless background service. All UI is owned by the Swift app.
-Communication with Swift happens over a Unix domain socket (IPC).
-
-Double-tap Right Option to start recording, single tap to stop.
-Transcribed and polished text is copied to clipboard.
-
-Architecture:
-    Voice -> Transcription Engine (Qwen3-ASR by default) -> Grammar Backend -> Clipboard
-    IPC <-> Swift UI (state updates, history, config snapshots, actions)
-
-Supported grammar backends:
-    - apple_intelligence: Apple's on-device Foundation Models (macOS 15+)
-    - ollama: Local Ollama server with configurable LLM models
-    - lm_studio: LM Studio local server (OpenAI-compatible API)
-
-Privacy: All processing on-device. No internet. No cloud. No tracking.
-"""
+"""App coordinator. Loads the service mixins and owns `service_main`."""
 
 import atexit
 import fcntl
@@ -35,10 +16,12 @@ from typing import Optional
 
 from pynput import keyboard
 
+from .app_audio_health import AudioHealthMixin
 from .app_commands import CommandsMixin
 from .app_ipc import IPCMixin
 from .app_pipeline import PipelineMixin
 from .app_recording import RecordingMixin
+from .app_recovery import RecoveryMixin
 from .app_switching import SwitchingMixin
 from .audio import Recorder
 from .audio_processor import AudioProcessor
@@ -69,7 +52,6 @@ from .utils import (
 warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
 
 
-# Key name to pynput key mapping
 KEY_MAP = {
     "alt_r": keyboard.Key.alt_r,
     "alt_l": keyboard.Key.alt_l,
@@ -95,19 +77,17 @@ KEY_MAP = {
 }
 
 
-class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin):
+class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin, AudioHealthMixin, RecoveryMixin):
     """Headless service. No UI. All state changes go over IPC to Swift."""
 
     def __init__(self):
         self.config = get_config()
         self.backup = Backup()
         self.transcriber = Transcriber()
-        # Only create Grammar if enabled
         self.grammar = Grammar() if self.config.grammar.enabled else None
         self.recorder = Recorder()
         self.audio_processor = AudioProcessor(self.config)
 
-        # State flags
         self._busy = False
         self._ready = False
         self._grammar_ready = False
@@ -123,33 +103,26 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
         self._keyboard_listener = None
         self._record_key = KEY_MAP.get(self.config.hotkey.key, keyboard.Key.alt_r)
 
-        # Shortcut processor for text transformation modes
         self._shortcut_processor: Optional[ShortcutProcessor] = None
         self._shortcut_map: dict = {}
         self._key_interceptor: Optional[KeyInterceptor] = None
-
-        # TTS processor
         self._tts_processor: Optional[TTSProcessor] = None
-
-        # Swift process handle
         self._swift_process = None
 
-        # Stop event - blocks run() until shutdown
         self._stop_event = threading.Event()
         self._cleaned_up = False
 
-        # Idle model unload timer
         self._last_model_use: float = time.time()
         self._idle_timer: Optional[threading.Timer] = None
         self._models_loaded: bool = True
 
-        # IPC server
+        self._monitor_heartbeat_timer: Optional[threading.Timer] = None
+
         self.ipc = IPCServer()
         self.ipc.set_on_connect(self._on_swift_connect)
         self.ipc.set_message_handler(self._handle_ipc_message)
         self.ipc.start()
 
-        # Command server for CLI access (wh whisper/listen/transcribe)
         self._cmd_server = CommandServer(self._handle_command)
         self._cmd_server.start()
 
@@ -157,7 +130,6 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
             lambda title, body: self.ipc.send({"type": "notification", "title": title, "body": body})
         )
 
-        # Start initialization in background
         threading.Thread(target=self._init, daemon=True).start()
 
     # ------------------------------------------------------------------
@@ -252,8 +224,16 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
         # Start idle unload timer
         self._schedule_idle_unload()
 
+        # Start audio monitor heartbeat
+        self._schedule_monitor_heartbeat()
+
         # Start keyboard listener
         self._start_keyboard_listener()
+
+        try:
+            self._recover_pending_audio()
+        except Exception as e:
+            log(f"Recovery pass failed to start: {e}", "WARN")
 
     def _exit_app(self):
         """Exit the application from any thread."""
@@ -282,15 +262,22 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
         self._idle_timer.start()
 
     def _idle_unload(self):
-        """Unload models after idle timeout."""
-        if self._busy or self.recorder.recording:
-            self._schedule_idle_unload()
-            return
-        log(f"Idle for {int((time.time() - self._last_model_use) / 60)}min — unloading models", "INFO")
-        self.transcriber.unload()
-        if self._tts_processor:
-            self._tts_processor.unload_model()
-        self._models_loaded = False
+        """Unload models after idle timeout.
+
+        Must hold ``_state_lock`` around the busy check AND the unload so a
+        concurrent ``_touch_model_activity`` → ``transcribe()`` path can't
+        observe ``_busy=False``, start a transcription, and then have the
+        engine nulled out from under it.
+        """
+        with self._state_lock:
+            if self._busy or self.recorder.recording:
+                self._schedule_idle_unload()
+                return
+            log(f"Idle for {int((time.time() - self._last_model_use) / 60)}min — unloading models", "INFO")
+            self.transcriber.unload()
+            if self._tts_processor:
+                self._tts_processor.unload_model()
+            self._models_loaded = False
 
     def _reload_models(self):
         """Reload models that were unloaded due to idle timeout."""
@@ -484,6 +471,10 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
             self._idle_timer.cancel()
             self._idle_timer = None
 
+        if self._monitor_heartbeat_timer:
+            self._monitor_heartbeat_timer.cancel()
+            self._monitor_heartbeat_timer = None
+
         # Stop recording if active
         if self.recorder.recording:
             log("Stopping active recording...", "INFO")
@@ -618,7 +609,8 @@ def service_main():
         log(f"Microphone permission denied: {mic_msg}", "ERR")
         log("Grant access: System Settings -> Privacy & Security -> Microphone -> Python", "ERR")
         log("Then run: wh restart", "ERR")
-        sys.exit(1)
+        # Exit 0 so launchd's KeepAlive doesn't hot-loop on user action.
+        sys.exit(0)
 
     key_name = config.hotkey.key.upper().replace("_", " ")
 

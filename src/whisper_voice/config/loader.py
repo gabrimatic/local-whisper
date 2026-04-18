@@ -182,9 +182,15 @@ def load_config() -> Config:
     except OSError:
         pass
 
-    # Create default config if it doesn't exist
     if not _schema.CONFIG_FILE.exists():
         _schema.CONFIG_FILE.write_text(_schema.DEFAULT_CONFIG, encoding='utf-8')
+
+    # Fix up legacy 0o644 configs written before we tightened perms.
+    try:
+        if (_schema.CONFIG_FILE.stat().st_mode & 0o777) != 0o600:
+            _schema.CONFIG_FILE.chmod(0o600)
+    except OSError:
+        pass
 
     # Load and parse config
     data = {}
@@ -214,15 +220,14 @@ def load_config() -> Config:
     if 'qwen3_asr' in data:
         config.qwen3_asr = Qwen3ASRConfig(
             model=data['qwen3_asr'].get('model', config.qwen3_asr.model),
-            language=data['qwen3_asr'].get('language', config.qwen3_asr.language),
             timeout=data['qwen3_asr'].get('timeout', config.qwen3_asr.timeout),
-            prefill_step_size=data['qwen3_asr'].get('prefill_step_size', config.qwen3_asr.prefill_step_size),
             temperature=data['qwen3_asr'].get('temperature', config.qwen3_asr.temperature),
             top_p=data['qwen3_asr'].get('top_p', config.qwen3_asr.top_p),
             top_k=data['qwen3_asr'].get('top_k', config.qwen3_asr.top_k),
             repetition_context_size=data['qwen3_asr'].get('repetition_context_size', config.qwen3_asr.repetition_context_size),
             repetition_penalty=data['qwen3_asr'].get('repetition_penalty', config.qwen3_asr.repetition_penalty),
             chunk_duration=data['qwen3_asr'].get('chunk_duration', config.qwen3_asr.chunk_duration),
+            max_tokens=data['qwen3_asr'].get('max_tokens', config.qwen3_asr.max_tokens),
         )
 
     # Whisper settings

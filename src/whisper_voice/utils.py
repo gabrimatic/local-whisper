@@ -251,7 +251,7 @@ def time_ago(dt: datetime) -> str:
 
 
 def check_accessibility_trusted() -> bool:
-    """Return True if this process has Accessibility permission."""
+    """Return True if this process has Accessibility permission. False on error."""
     try:
         import ctypes
         lib = ctypes.CDLL(
@@ -261,8 +261,9 @@ def check_accessibility_trusted() -> bool:
         func.restype = ctypes.c_bool
         func.argtypes = [ctypes.c_void_p]
         return bool(func(None))
-    except Exception:
-        return True  # assume trusted if we can't check
+    except Exception as e:
+        log(f"Accessibility check failed: {e}", "WARN")
+        return False
 
 
 _accessibility_prompt_shown = False

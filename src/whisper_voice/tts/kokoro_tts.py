@@ -103,6 +103,8 @@ class KokoroTTSProvider(TTSProvider):
 
         with self._lock:
             model = self._model
+        if model is None:
+            return
 
         with self._speak_lock:
             try:

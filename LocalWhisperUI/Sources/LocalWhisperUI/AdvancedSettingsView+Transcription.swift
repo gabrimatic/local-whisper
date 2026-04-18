@@ -219,28 +219,6 @@ extension AdvancedSettingsView {
             .help("Hugging Face model ID for Qwen3-ASR. Must be an MLX-quantized variant.")
             RestartNote()
 
-            Picker("Language", selection: Binding(
-                get: { appState.config.qwen3Asr.language },
-                set: { newValue in
-                    appState.config.qwen3Asr.language = newValue
-                    appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "language", value: newValue)
-                }
-            )) {
-                Text("Auto-detect").tag("auto")
-                Text("English").tag("en")
-                Text("Persian").tag("fa")
-                Text("Spanish").tag("es")
-                Text("French").tag("fr")
-                Text("German").tag("de")
-                Text("Arabic").tag("ar")
-                Text("Chinese").tag("zh")
-                Text("Japanese").tag("ja")
-                Text("Korean").tag("ko")
-                Text("Italian").tag("it")
-                Text("Portuguese").tag("pt")
-                Text("Russian").tag("ru")
-            }
-
             LabeledContent("Timeout") {
                 HStack {
                     Stepper("", value: Binding(
@@ -255,21 +233,6 @@ extension AdvancedSettingsView {
                 }
             }
             .help("Maximum seconds to wait for Qwen3-ASR to finish. 0 means no limit. Long audio may take more time.")
-
-            LabeledContent("Prefill step size") {
-                HStack {
-                    Stepper("", value: Binding(
-                        get: { appState.config.qwen3Asr.prefillStepSize },
-                        set: { v in
-                            appState.config.qwen3Asr.prefillStepSize = v
-                            appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "prefill_step_size", value: v)
-                        }
-                    ), in: 512...16384, step: 512)
-                    Text("\(appState.config.qwen3Asr.prefillStepSize)")
-                        .font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary).frame(width: 60, alignment: .trailing)
-                }
-            }
-            .help("Controls audio encoding batch size for MLX on Apple Silicon. Higher values process audio faster but use more memory. Default 4096.")
 
             LabeledContent("Temperature") {
                 HStack {

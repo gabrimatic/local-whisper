@@ -1,7 +1,11 @@
 import Foundation
 import Network
+import os
 
 // MARK: - IPCClient
+
+private let ipcLogger = Logger(subsystem: "com.local-whisper", category: "ipc")
+private let maxBufferBytes = 4 * 1024 * 1024
 
 final class IPCClient: @unchecked Sendable {
     private let socketPath = AppDirectories.ipcSocket
@@ -13,8 +17,28 @@ final class IPCClient: @unchecked Sendable {
     private var isRunning = false
     private weak var appState: AppState?
 
+    // Serial queue so state_update ordering survives even when multiple
+    // messages arrive within one receive callback. `Task { @MainActor in … }`
+    // per message does NOT preserve order; this continuation does.
+    private let messageQueue: AsyncStream<IncomingMessage>
+    private let messageSink: AsyncStream<IncomingMessage>.Continuation
+
     init(appState: AppState) {
         self.appState = appState
+        let (stream, continuation) = AsyncStream.makeStream(of: IncomingMessage.self)
+        self.messageQueue = stream
+        self.messageSink = continuation
+        // The consumer task must not retain `self`, otherwise the client
+        // outlives the process despite the @unchecked Sendable dance.
+        Task { @MainActor [weak appState] in
+            for await message in stream {
+                appState?.apply(message)
+            }
+        }
+    }
+
+    deinit {
+        messageSink.finish()
     }
 
     func start() {
@@ -32,16 +56,17 @@ final class IPCClient: @unchecked Sendable {
             self.connection?.cancel()
             self.connection = nil
         }
+        messageSink.finish()
     }
 
-    /// Synchronous variant of stop() — blocks until the queue drains. Use only from
-    /// applicationWillTerminate or other contexts where the process is about to exit.
+    /// Blocks until the queue drains. Use only from applicationWillTerminate.
     func stopSync() {
         queue.sync {
             self.isRunning = false
             self.connection?.cancel()
             self.connection = nil
         }
+        messageSink.finish()
     }
 
     private func connect() {
@@ -73,6 +98,11 @@ final class IPCClient: @unchecked Sendable {
             guard let self else { return }
             if let data {
                 self.buffer.append(data)
+                if self.buffer.count > maxBufferBytes {
+                    ipcLogger.error("IPC buffer exceeded \(maxBufferBytes) bytes; dropping connection")
+                    self.connection?.cancel()
+                    return
+                }
                 self.processBuffer()
             }
             if isComplete || error != nil {
@@ -96,14 +126,11 @@ final class IPCClient: @unchecked Sendable {
     }
 
     private func handleLine(_ data: Data) {
-        guard let state = appState else { return }
         do {
             let message = try decodeIncomingMessage(data)
-            Task { @MainActor in
-                state.apply(message)
-            }
+            messageSink.yield(message)
         } catch {
-            // Silently ignore unrecognized or malformed messages
+            ipcLogger.warning("IPC decode failed: \(error.localizedDescription)")
         }
     }
 
@@ -125,10 +152,10 @@ final class IPCClient: @unchecked Sendable {
             guard let self else { return }
             do {
                 var data = try JSONEncoder().encode(message)
-                data.append(0x0A) // newline delimiter
+                data.append(0x0A)
                 self.connection?.send(content: data, completion: .idempotent)
             } catch {
-                // Encoding failure is a programmer error; ignore silently in production
+                ipcLogger.error("IPC encode failed: \(error.localizedDescription)")
             }
         }
     }

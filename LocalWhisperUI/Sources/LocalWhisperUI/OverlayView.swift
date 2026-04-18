@@ -76,7 +76,7 @@ struct OverlayView: View {
                 .foregroundStyle(.green)
                 .symbolEffect(.bounce, value: appState.phase)
 
-            Text("Copied")
+            Text(appState.doneStatusText)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.primary)
         }

@@ -1,13 +1,6 @@
 import SwiftUI
 import AppKit
 
-// MARK: - First launch onboarding
-
-/// Lightweight onboarding that surfaces once per install. The service already
-/// handles the heavy lifting (permission prompts, model download, engine
-/// warm-up via setup.sh); this sheet orients the user to the core shortcut,
-/// confirms permissions, and lets them set a grammar backend without hunting
-/// through Settings.
 struct OnboardingView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
@@ -26,10 +19,11 @@ struct OnboardingView: View {
             header
             Divider()
             content
+                .frame(minHeight: 340, alignment: .topLeading)
             Divider()
             footer
         }
-        .frame(minWidth: 480, idealWidth: 520, minHeight: 380)
+        .frame(minWidth: 520, minHeight: 500)
         .padding(0)
     }
 
@@ -250,8 +244,6 @@ struct OnboardingView: View {
 
 // MARK: - Completion flag
 
-/// Tracks whether onboarding has been shown. Stored as a tiny file under
-/// ``~/.whisper`` so uninstalling and reinstalling retriggers the flow.
 enum OnboardingFlag {
     private static var path: URL {
         let dir = URL(fileURLWithPath: AppDirectories.whisper)
@@ -273,10 +265,6 @@ enum OnboardingFlag {
 
 // MARK: - Window presenter
 
-/// Single source of truth for onboarding window lifetime. Used by both the
-/// first-launch path and the About tab's "Replay Tutorial" button so we only
-/// ever have one window, and it stays retained for its full lifetime rather
-/// than leaking whenever someone presses the replay button.
 @MainActor
 final class OnboardingPresenter {
     static let shared = OnboardingPresenter()
@@ -287,29 +275,41 @@ final class OnboardingPresenter {
 
     func present(with state: AppState, title: String = "Welcome to Local Whisper") {
         if let existing = window {
-            existing.makeKeyAndOrderFront(nil)
+            NSApp.setActivationPolicy(.regular)
             NSApp.activate(ignoringOtherApps: true)
+            existing.makeKeyAndOrderFront(nil)
+            existing.orderFrontRegardless()
             return
         }
         let hosting = NSHostingController(rootView: OnboardingView().environment(state))
+        hosting.preferredContentSize = NSSize(width: 560, height: 540)
         let window = NSWindow(contentViewController: hosting)
         window.styleMask = [.titled, .closable]
         window.title = title
-        // Release the window naturally; keep a reference so ARC doesn't drop it
-        // between presentation and the user's first interaction, and clear the
-        // reference on close so a later "Replay Tutorial" click builds a fresh
-        // one instead of resurrecting a closed window.
         window.isReleasedWhenClosed = false
-        window.center()
+        window.setContentSize(NSSize(width: 560, height: 540))
+        window.setFrameAutosaveName("LocalWhisperOnboarding")
+        if !window.setFrameUsingName("LocalWhisperOnboarding") {
+            window.center()
+        }
         window.level = .normal
         window.delegate = OnboardingWindowDelegate.shared
         self.window = window
+        // LSUIElement apps can't front windows without .regular first.
+        NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
     }
 
     fileprivate func didClose() {
         self.window = nil
+        let anotherWindowOpen = NSApp.windows.contains { win in
+            win.isVisible && win.title.localizedCaseInsensitiveContains("settings")
+        }
+        if !anotherWindowOpen {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 }
 
@@ -318,6 +318,10 @@ private final class OnboardingWindowDelegate: NSObject, NSWindowDelegate {
     static let shared = OnboardingWindowDelegate()
 
     nonisolated func windowWillClose(_ notification: Notification) {
-        Task { @MainActor in OnboardingPresenter.shared.didClose() }
+        // Mark complete even on red-button close so first-launch never replays.
+        Task { @MainActor in
+            OnboardingFlag.markCompleted()
+            OnboardingPresenter.shared.didClose()
+        }
     }
 }

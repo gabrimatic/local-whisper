@@ -28,47 +28,57 @@ Python runs as a headless LaunchAgent service. Swift owns all UI (menu bar, over
 
 ```
 src/whisper_voice/
-├── app.py              # Headless service coordinator (mixin composition)
-├── app_ipc.py          # IPCMixin: Swift socket push/pull
-├── app_recording.py    # RecordingMixin: hotkey state machine
-├── app_pipeline.py     # PipelineMixin: transcribe + grammar + replacements
-├── app_commands.py     # CommandsMixin: wh whisper/listen/transcribe
-├── app_switching.py    # SwitchingMixin: engine/backend switch with rollback
-├── ipc_server.py       # Unix socket server for the Swift UI
-├── cmd_server.py       # Unix socket server for the CLI
-├── audio.py            # Recording and pre-buffer
-├── audio_processor.py  # VAD, noise reduction, normalization
-├── backup.py           # History persistence
-├── grammar.py          # Grammar backend factory wrapper
-├── transcriber.py      # Engine routing
-├── utils.py            # Helpers, logging, notifications
-├── shortcuts.py        # Text transformation shortcuts
-├── key_interceptor.py  # CGEvent tap
-├── tts_processor.py    # TTS shortcut handler (⌥T)
-├── cli/                # wh CLI package
-│   ├── main.py         # Dispatcher and top-level commands
-│   ├── lifecycle.py    # status/start/stop
-│   ├── build.py        # build/restart
-│   ├── settings.py     # engine/backend/replace
-│   ├── editor.py       # interactive config TUI
-│   ├── client.py       # command socket client
-│   ├── doctor.py       # doctor + update
-│   └── constants.py    # shared constants
-├── config/             # Config package (loader, schema, mutations)
-│   ├── schema.py       # Dataclasses + DEFAULT_CONFIG TOML
-│   ├── loader.py       # load_config, get_config
-│   ├── toml_helpers.py # TOML section read/write primitives
-│   └── mutations.py    # add/remove replacement, update field
+├── app.py                 # Headless service coordinator (7-mixin composition)
+├── app_ipc.py             # IPCMixin: Swift socket push/pull, resync_audio routing
+├── app_recording.py       # RecordingMixin: hotkey state machine
+├── app_pipeline.py        # PipelineMixin: transcribe + grammar + replacements
+├── app_commands.py        # CommandsMixin: wh whisper/listen/transcribe
+├── app_switching.py       # SwitchingMixin: engine/backend switch with rollback
+├── app_audio_health.py    # AudioHealthMixin: monitor heartbeat + post-wake resync
+├── app_recovery.py        # RecoveryMixin: replay interrupted runs on startup
+├── ipc_server.py          # Unix socket server for the Swift UI
+├── cmd_server.py          # Unix socket server for the CLI
+├── audio.py               # Recording + locked pre-buffer monitor stream
+├── audio_processor.py     # VAD (+ hangover), noise reduction, adaptive gain
+├── backup.py              # History persistence + disk-space guard
+├── grammar.py             # Grammar backend factory wrapper
+├── transcriber.py         # Engine routing (+ reload() for timeout recovery)
+├── recovery.py            # processing.marker lifecycle
+├── watchdog.py            # run_with_timeout per-stage wrapper
+├── long_session.py        # Chunked long-session pipeline + JSONL persistence
+├── dictation_commands.py  # "new line" / "period" / "scratch that" replacer
+├── history_export.py      # wh export: Markdown / TXT / JSON renderers
+├── stats.py               # wh stats: usage aggregation (raw-text trigger counts)
+├── utils.py               # Helpers, logging, notifications
+├── shortcuts.py           # Text transformation shortcuts
+├── key_interceptor.py     # CGEvent tap
+├── tts_processor.py       # TTS shortcut handler (⌥T)
+├── cli/                   # wh CLI package
+│   ├── main.py            # Dispatcher and top-level commands
+│   ├── lifecycle.py       # status (+uptime/RSS/pending)/start/stop
+│   ├── build.py           # build/restart
+│   ├── settings.py        # engine/backend/replace (incl. `replace import`)
+│   ├── editor.py          # interactive config TUI
+│   ├── client.py          # command socket client
+│   ├── doctor.py          # doctor / doctor --fix / doctor --report / update
+│   ├── doctor_report.py   # redacted markdown report renderer
+│   ├── history.py         # cmd_export / cmd_stats
+│   └── constants.py       # shared constants
+├── config/                # Config package (loader, schema, mutations)
+│   ├── schema.py          # 17 dataclasses + DEFAULT_CONFIG TOML
+│   ├── loader.py          # load_config, get_config, registry-driven validation
+│   ├── toml_helpers.py    # TOML section read/write primitives
+│   └── mutations.py       # add/remove replacement, update field
 ├── tts/
-│   ├── base.py         # TTSProvider base
-│   └── kokoro_tts.py   # Kokoro provider (MLX)
+│   ├── base.py            # TTSProvider base
+│   └── kokoro_tts.py      # Kokoro provider (MLX)
 ├── engines/
-│   ├── base.py         # TranscriptionEngine base
-│   ├── qwen3_asr.py    # Qwen3-ASR (default, MLX)
-│   └── whisperkit.py   # WhisperKit (alternative)
+│   ├── base.py            # TranscriptionEngine base
+│   ├── qwen3_asr.py       # Qwen3-ASR (default, MLX, low-confidence retry)
+│   └── whisperkit.py      # WhisperKit (alternative)
 └── backends/
-    ├── base.py         # Backend base
-    ├── modes.py        # Transformation modes
+    ├── base.py            # Backend base
+    ├── modes.py           # Transformation modes
     ├── ollama/
     ├── lm_studio/
     └── apple_intelligence/
@@ -76,20 +86,21 @@ src/whisper_voice/
 
 ```
 LocalWhisperUI/Sources/LocalWhisperUI/
-├── AppMain.swift                        # @main entry, menu bar + settings scenes
+├── AppMain.swift                        # @main entry, sleep/wake observer, onboarding presenter
 ├── AppState.swift                       # Observable state, IPC message handling
 ├── IPCClient.swift                      # Unix socket connection
-├── IPCMessages.swift                    # Codable message types
+├── IPCMessages.swift                    # Codable message types (incl. DictationConfig)
 ├── MenuBarView.swift                    # Menu bar dropdown
 ├── OverlayWindowController.swift        # Floating overlay panel
 ├── OverlayView.swift                    # Recording/processing/speaking pill
-├── GeneralSettingsView.swift            # Engine, grammar, TTS, UI toggles
-├── AdvancedSettingsView.swift           # Shell for Advanced tab
+├── OnboardingView.swift                 # 4-step first-launch tutorial + presenter
+├── GeneralSettingsView.swift            # Engine, grammar, dictation, TTS, UI toggles
+├── AdvancedSettingsView.swift           # Shell for Advanced tab + auto-fetch hook
 ├── AdvancedSettingsView+Audio.swift     # VAD, noise reduction, pre-buffer
 ├── AdvancedSettingsView+Transcription.swift  # WhisperKit + Qwen3 params
-├── AdvancedSettingsView+Grammar.swift   # Ollama, LM Studio, Apple Intelligence
+├── AdvancedSettingsView+Grammar.swift   # Ollama + LM Studio auto-fetch, AI status
 ├── AdvancedSettingsView+IO.swift        # Shortcuts, TTS, storage
-├── AboutView.swift                      # Version and credits
+├── AboutView.swift                      # Version, credits, Replay Tutorial
 ├── SettingsView.swift                   # Tab container
 ├── SharedViews.swift                    # DeferredTextField/Editor helpers
 └── Constants.swift                      # App-wide constants

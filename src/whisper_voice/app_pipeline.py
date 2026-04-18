@@ -9,6 +9,8 @@ import time
 
 import numpy as np
 
+from . import recovery
+from .long_session import LONG_SESSION_THRESHOLD_SECONDS, SessionChunk, SessionLog
 from .utils import (
     CLIPBOARD_TIMEOUT,
     LOG_TRUNCATE,
@@ -20,6 +22,12 @@ from .utils import (
     strip_hallucination_lines,
     truncate,
 )
+from .watchdog import TimedOut, run_with_timeout
+
+_TRANSCRIBE_WATCHDOG_SECONDS = 20 * 60
+_GRAMMAR_WATCHDOG_SECONDS = 90
+_PASTE_WATCHDOG_SECONDS = 8
+_MIN_CLIP_SECONDS = 0.5
 
 
 class PipelineMixin:
@@ -34,8 +42,16 @@ class PipelineMixin:
         self._touch_model_activity()
         self._current_status = "Processing..."
         self._send_state_update()
+        marker_written = False
         try:
             config = self.config
+
+            # 0a. Reject accidental short taps before running VAD/STFT/engine.
+            clip_seconds = len(audio) / config.audio.sample_rate if len(audio) else 0.0
+            if clip_seconds < _MIN_CLIP_SECONDS:
+                log(f"Clip too short ({clip_seconds:.2f}s) — ignoring", "WARN")
+                self._show_error("Too short", f"Clip too short ({clip_seconds:.2f}s)")
+                return
 
             # 0. Save raw audio in background (independent of processing)
             _raw_save_result: list = [None]
@@ -45,6 +61,9 @@ class PipelineMixin:
 
             _raw_save_thread = threading.Thread(target=_save_raw, daemon=True)
             _raw_save_thread.start()
+
+            recovery.mark_processing(self.backup.audio_path)
+            marker_written = True
 
             # 1. Audio pre-processing (VAD, noise reduction, normalization)
             self._current_status = "Processing..."
@@ -79,83 +98,64 @@ class PipelineMixin:
                 return
 
             audio = processed.audio
+            duration_seconds = len(audio) / config.audio.sample_rate
 
-            # 2. Long recording segmentation
-            if self.transcriber.supports_long_audio:
-                segments = [audio]
-            else:
-                segments = self.audio_processor.segment_long_audio(
-                    audio, config.audio.sample_rate, segments=processed.segments
+            # 2. Route short vs long sessions differently. Long sessions
+            # persist each chunk's transcription before moving on to the
+            # next so a mid-session crash loses at most one chunk of work.
+            is_long = duration_seconds >= LONG_SESSION_THRESHOLD_SECONDS
+            if is_long:
+                original_raw, final_text, err = self._process_long_session(
+                    audio, processed, config,
                 )
-
-            if len(segments) == 1:
-                path = self.backup.save_processed_audio(segments[0])
-                if not path:
-                    self._show_error("Save failed", "Processed audio save failed")
-                    return
-
-                raw_text, err = self._transcribe_and_validate(path)
                 if err:
-                    self._show_error(err, f"Transcription failed: {err}")
-                    send_notification("Transcription Failed", err)
+                    self._show_error(err, f"Long session failed: {err}")
+                    self._notify("Transcription Failed", err)
                     return
+                raw_text = original_raw
+                self.backup.save_raw(original_raw)
+                log(f"Raw: {truncate(original_raw, LOG_TRUNCATE)}", "OK")
             else:
-                log(f"Long recording: {len(segments)} segments", "INFO")
-                all_text = []
-                failed_segments = []
-                for i, seg in enumerate(segments):
-                    self._current_status = f"Transcribing {i + 1}/{len(segments)}..."
-                    self._send_state_update()
-                    path = self.backup.save_audio_segment(seg, i)
+                if self.transcriber.supports_long_audio:
+                    segments = [audio]
+                else:
+                    segments = self.audio_processor.segment_long_audio(
+                        audio, config.audio.sample_rate, segments=processed.segments
+                    )
+
+                if len(segments) == 1:
+                    path = self.backup.save_processed_audio(segments[0])
                     if not path:
-                        log(f"Segment {i} save failed, skipping", "WARN")
-                        failed_segments.append(i)
-                        continue
-                    try:
-                        text, seg_err = self.transcriber.transcribe(path)
-                    except Exception as e:
-                        log(f"Segment {i} transcription error: {e}", "ERR")
-                        failed_segments.append(i)
-                        continue
-                    if seg_err:
-                        log(f"Segment {i} transcription failed: {seg_err}", "WARN")
-                        failed_segments.append(i)
-                        continue
-                    if text:
-                        cleaned, stripped = strip_hallucination_lines(text)
-                        if stripped:
-                            log(f"Segment {i}: stripped hallucination", "WARN")
-                        if cleaned and not is_hallucination(cleaned):
-                            all_text.append(cleaned)
+                        self._show_error("Save failed", "Processed audio save failed")
+                        return
 
-                if failed_segments:
-                    log(f"Warning: {len(failed_segments)}/{len(segments)} segments failed: {failed_segments}", "WARN")
+                    raw_text, err = self._transcribe_and_validate(path)
+                    if err:
+                        self._show_error(err, f"Transcription failed: {err}")
+                        self._notify("Transcription Failed", err)
+                        return
+                else:
+                    raw_text, err = self._transcribe_segments(segments)
+                    if err:
+                        self._show_error(err, f"Transcription failed: {err} (raw audio saved for retry)")
+                        self._notify("Transcription Failed", f"{err} (raw audio saved)")
+                        return
 
-                raw_text = " ".join(all_text) if all_text else None
-                err = "No speech" if not raw_text else None
+                self.backup.save_raw(raw_text)
+                log(f"Raw: {truncate(raw_text, LOG_TRUNCATE)}", "OK")
 
-                if err:
-                    self._show_error(err, f"Transcription failed: {err} (raw audio saved for retry)")
-                    send_notification("Transcription Failed", f"{err} (raw audio saved)")
-                    return
+                # Snapshot before dictation mutates raw_text.
+                original_raw = raw_text
 
-            self.backup.save_raw(raw_text)
-            log(f"Raw: {truncate(raw_text, LOG_TRUNCATE)}", "OK")
+                # 3. Dictation commands (before grammar so grammar sees punctuation we inserted)
+                raw_text = self._apply_dictation_commands(raw_text)
 
-            # Snapshot the true raw text (pre-dictation) for history and stats.
-            # Everything below mutates `raw_text` in place through successive
-            # passes, but `save_history` must see the untransformed transcription.
-            original_raw = raw_text
+                # 4. Grammar correction
+                self._check_grammar_connection()
+                final_text = self._apply_grammar(raw_text)
 
-            # 3. Dictation commands (before grammar so grammar sees punctuation we inserted)
-            raw_text = self._apply_dictation_commands(raw_text)
-
-            # 4. Grammar correction
-            self._check_grammar_connection()
-            final_text = self._apply_grammar(raw_text)
-
-            # 5. Vocabulary replacements (last text transformation)
-            final_text = self._apply_replacements(final_text)
+                # 5. Vocabulary replacements (last text transformation)
+                final_text = self._apply_replacements(final_text)
 
             # 6. Copy to clipboard / auto-paste
             if config.ui.auto_paste:
@@ -170,38 +170,45 @@ class PipelineMixin:
             # 7. Send result
             if clipboard_ok:
                 self._show_success(final_text)
-                send_notification("Transcription Complete", truncate(final_text, PREVIEW_TRUNCATE))
+                self._notify("Transcription Complete", truncate(final_text, PREVIEW_TRUNCATE))
             else:
                 log("Text saved but clipboard failed. Use 'Copy Last' to copy.", "WARN")
-                send_notification("Clipboard Failed", "Text saved. Use 'Copy Last' to copy.")
+                self._notify("Clipboard Failed", "Text saved. Use 'Copy Last' to copy.")
 
         except Exception as e:
             log(f"Processing error: {e}", "ERR")
             try:
                 self._show_error("Error", f"Error: {e}")
-                send_notification("Transcription Error", str(e))
+                self._notify("Transcription Error", str(e))
             except Exception:
                 pass
         finally:
+            # Restart the pre-buffer monitor BEFORE releasing _busy so a
+            # hotkey press between release and monitor-restart can't race
+            # the rebuild against Recorder.start()'s own stop_monitoring.
             with self._state_lock:
+                try:
+                    self.recorder.start_monitoring()
+                except Exception:
+                    pass
                 self._busy = False
-            try:
-                self.recorder.start_monitoring()
-            except Exception:
-                pass
+            if marker_written:
+                recovery.clear_marker()
 
     # ------------------------------------------------------------------
     # Result display helpers
     # ------------------------------------------------------------------
 
+    def _notify(self, title: str, body: str):
+        if self.config.ui.notifications_enabled:
+            send_notification(title, body)
+
     def _show_error(self, status: str, log_msg: str = None):
-        """Display error state."""
         if log_msg:
             log(log_msg, "ERR")
         if self.config.ui.sounds_enabled:
             play_sound("Basso")
-        if self.config.ui.notifications_enabled:
-            send_notification("Error", status)
+        self._notify("Error", status)
         self._send_state_error(status)
         threading.Timer(2.0, self._reset_to_idle).start()
 
@@ -244,7 +251,7 @@ class PipelineMixin:
             self._grammar_ready = False
 
     def _apply_grammar(self, raw_text: str) -> str:
-        """Apply grammar correction if available. Returns final text."""
+        """Apply grammar under the watchdog. On any failure deliver raw_text."""
         with self._grammar_lock:
             grammar = self.grammar
             grammar_ready = self._grammar_ready
@@ -253,7 +260,23 @@ class PipelineMixin:
         self._current_status = "Polishing..."
         self._send_state_update()
         log("Polishing text...", "AI")
-        final_text, g_err = grammar.fix(raw_text)
+        try:
+            result = run_with_timeout(
+                grammar.fix,
+                raw_text,
+                timeout_seconds=_GRAMMAR_WATCHDOG_SECONDS,
+                stage="grammar",
+            )
+        except Exception as e:
+            log(f"Grammar fix crashed: {e}", "WARN")
+            self._notify("Grammar unavailable", "Delivered raw transcription.")
+            return raw_text
+        if isinstance(result, TimedOut):
+            with self._grammar_lock:
+                self._grammar_ready = False
+            self._notify("Grammar timed out", "Delivered raw transcription.")
+            return raw_text
+        final_text, g_err = result
         if g_err:
             log(f"Grammar fix skipped: {g_err}", "WARN")
             return raw_text
@@ -278,11 +301,27 @@ class PipelineMixin:
             return text
 
     def _transcribe_and_validate(self, path) -> tuple:
-        """Transcribe audio and validate result. Returns (raw_text, error)."""
+        """Transcribe under the watchdog. Returns (raw_text, error)."""
         self._current_status = "Transcribing..."
         self._send_state_update()
         log("Transcribing (this may take a moment)...")
-        raw_text, err = self.transcriber.transcribe(path)
+        try:
+            result = run_with_timeout(
+                self.transcriber.transcribe,
+                path,
+                timeout_seconds=_TRANSCRIBE_WATCHDOG_SECONDS,
+                stage="transcribe",
+            )
+        except Exception as e:
+            return None, f"Transcription crashed: {e}"
+        if isinstance(result, TimedOut):
+            # Force reload: abandoned worker left MLX state mid-mutation.
+            try:
+                self.transcriber.reload()
+            except Exception as e:
+                log(f"Transcriber reload after timeout failed: {e}", "ERR")
+            return None, f"Transcription timed out after {result.seconds:.0f}s"
+        raw_text, err = result
 
         if err:
             log(f"Transcription failed: {err}", "ERR")
@@ -316,11 +355,23 @@ class PipelineMixin:
             return False
 
     def _paste_text_at_cursor(self, text: str) -> bool:
-        """Paste text at the current cursor position without permanently modifying the clipboard.
+        """Paste via save/Cmd+V/restore, under the watchdog."""
+        try:
+            ok = run_with_timeout(
+                self._paste_text_at_cursor_inner,
+                text,
+                timeout_seconds=_PASTE_WATCHDOG_SECONDS,
+                stage="paste",
+            )
+        except Exception as e:
+            log(f"Auto-paste failed: {e}", "ERR")
+            return False
+        if isinstance(ok, TimedOut):
+            log("Auto-paste timed out", "WARN")
+            return False
+        return bool(ok)
 
-        Saves the current clipboard, temporarily puts the text in it, simulates Cmd+V,
-        then restores the original clipboard content.
-        """
+    def _paste_text_at_cursor_inner(self, text: str) -> bool:
         try:
             saved = subprocess.run(['pbpaste'], capture_output=True, timeout=CLIPBOARD_TIMEOUT)
             saved_content = saved.stdout if saved.returncode == 0 else None
@@ -410,3 +461,115 @@ class PipelineMixin:
         log(f"Copied: {truncate(text, LOG_TRUNCATE)}", "OK")
         self._send_state_done(text)
         threading.Timer(1.5, self._reset_to_idle).start()
+
+    # ------------------------------------------------------------------
+    # Long session (chunked transcription + partial persistence)
+    # ------------------------------------------------------------------
+
+    def _process_long_session(self, audio, processed, config):
+        """Chunked pipeline. Returns (original_raw, final_text, err)."""
+        segments = self.audio_processor.segment_long_audio(
+            audio, config.audio.sample_rate, segments=processed.segments
+        )
+        total = len(segments)
+        log(f"Long session: {total} chunks, {len(audio) / config.audio.sample_rate:.1f}s total", "INFO")
+        self._check_grammar_connection()
+
+        session = SessionLog(total_chunks=total)
+        partial_final_parts: list[str] = []
+        partial_raw_parts: list[str] = []
+        failed: list[int] = []
+
+        for i, seg in enumerate(segments):
+            status = f"Long session: chunk {i + 1}/{total}..."
+            self._current_status = status
+            self._send_state_update("processing", status_text=status)
+
+            path = self.backup.save_audio_segment(seg, i)
+            if not path:
+                log(f"Chunk {i} save failed, skipping", "WARN")
+                failed.append(i)
+                continue
+
+            raw_text, err = self._transcribe_and_validate(path)
+            if err or not raw_text:
+                log(f"Chunk {i} transcription failed: {err or 'empty'}", "WARN")
+                failed.append(i)
+                continue
+
+            raw_for_history = raw_text
+            dictated = self._apply_dictation_commands(raw_text)
+            fixed = self._apply_grammar(dictated)
+            fixed = self._apply_replacements(fixed)
+
+            import time as _time
+            chunk = SessionChunk(index=i, text=fixed, raw=raw_for_history, ts=_time.time())
+            session.append(chunk)
+            partial_raw_parts.append(raw_for_history)
+            partial_final_parts.append(fixed)
+            log(f"Long session chunk {i + 1}/{total}: {truncate(fixed, LOG_TRUNCATE)}", "OK")
+
+        if not partial_final_parts:
+            session.close()
+            return "", "", "All chunks failed"
+
+        if failed:
+            log(f"Long session: {len(failed)}/{total} chunks failed: {failed}", "WARN")
+
+        original_raw = " ".join(partial_raw_parts).strip()
+        final_text = " ".join(partial_final_parts).strip()
+        session.close()
+        return original_raw, final_text, None
+
+    def _transcribe_segments(self, segments):
+        """Multi-segment transcription for WhisperKit under the long-session threshold."""
+        log(f"Multi-segment transcription: {len(segments)} segments", "INFO")
+        all_text: list[str] = []
+        failed: list[int] = []
+        for i, seg in enumerate(segments):
+            self._current_status = f"Transcribing {i + 1}/{len(segments)}..."
+            self._send_state_update()
+            path = self.backup.save_audio_segment(seg, i)
+            if not path:
+                log(f"Segment {i} save failed, skipping", "WARN")
+                failed.append(i)
+                continue
+            try:
+                result = run_with_timeout(
+                    self.transcriber.transcribe,
+                    path,
+                    timeout_seconds=_TRANSCRIBE_WATCHDOG_SECONDS,
+                    stage="transcribe",
+                )
+            except Exception as e:
+                log(f"Segment {i} transcription error: {e}", "ERR")
+                failed.append(i)
+                continue
+            if isinstance(result, TimedOut):
+                log(
+                    f"Segment {i} transcription timed out after {result.seconds:.0f}s",
+                    "ERR",
+                )
+                try:
+                    self.transcriber.reload()
+                except Exception as e:
+                    log(f"Transcriber reload after segment timeout failed: {e}", "ERR")
+                failed.append(i)
+                continue
+            text, seg_err = result
+            if seg_err:
+                log(f"Segment {i} transcription failed: {seg_err}", "WARN")
+                failed.append(i)
+                continue
+            if text:
+                cleaned, stripped = strip_hallucination_lines(text)
+                if stripped:
+                    log(f"Segment {i}: stripped hallucination", "WARN")
+                if cleaned and not is_hallucination(cleaned):
+                    all_text.append(cleaned)
+        if failed:
+            log(f"Warning: {len(failed)}/{len(segments)} segments failed: {failed}", "WARN")
+        raw_text = " ".join(all_text).strip() if all_text else ""
+        return (raw_text or None), (None if raw_text else "No speech")
+
+# Crash-recovery entry points live in :mod:`whisper_voice.app_recovery`.
