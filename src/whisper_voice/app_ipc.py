@@ -13,8 +13,19 @@ class IPCMixin:
 
     def _on_swift_connect(self):
         self._send_config_snapshot()
+        self._send_engines_status()
         self._send_state_update()
         self._send_history_update()
+
+    def _send_engines_status(self):
+        """Broadcast per-engine download/cache state so Swift can render it."""
+        from .engines.status import all_engine_statuses
+        active = self.config.transcription.engine
+        self.ipc.send({
+            "type": "engines_status",
+            "active": active,
+            "engines": all_engine_statuses(active),
+        })
 
     def _send_state_update(self, phase: str = None, status_text: str = None):
         """Send current state to Swift client."""
@@ -86,6 +97,19 @@ class IPCMixin:
                 "double_tap_threshold": cfg.hotkey.double_tap_threshold,
             },
             "transcription": {"engine": cfg.transcription.engine},
+            "parakeet_v3": {
+                "model": cfg.parakeet.model,
+                "timeout": cfg.parakeet.timeout,
+                "chunk_duration": cfg.parakeet.chunk_duration,
+                "overlap_duration": cfg.parakeet.overlap_duration,
+                "decoding": cfg.parakeet.decoding,
+                "beam_size": cfg.parakeet.beam_size,
+                "length_penalty": cfg.parakeet.length_penalty,
+                "patience": cfg.parakeet.patience,
+                "duration_reward": cfg.parakeet.duration_reward,
+                "local_attention": cfg.parakeet.local_attention,
+                "local_attention_context_size": cfg.parakeet.local_attention_context_size,
+            },
             "qwen3_asr": {
                 "model": cfg.qwen3_asr.model,
                 "timeout": cfg.qwen3_asr.timeout,
@@ -208,6 +232,9 @@ class IPCMixin:
         elif msg_type == "engine_switch":
             engine = msg.get("engine", "")
             threading.Thread(target=self._switch_engine, args=(engine,), daemon=True).start()
+        elif msg_type == "engine_remove_cache":
+            engine = msg.get("engine", "")
+            threading.Thread(target=self._remove_engine_cache, args=(engine,), daemon=True).start()
         elif msg_type == "backend_switch":
             backend = msg.get("backend", "")
             if backend in ("disabled", "none"):

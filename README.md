@@ -8,7 +8,7 @@
 **On-device voice transcription, grammar correction, and text-to-speech for macOS. Private, fast, runs on MLX.**
 
 Double-tap, speak, tap to stop. Text is ready. Multiple engines, pluggable grammar, all MLX-native on Apple Silicon. Nothing leaves your Mac.
-Select text, hit ⌥T, hear it read aloud. Multiple voices, streaming playback, same deal.
+Optional text-to-speech reads any selection aloud with ⌥T. Multiple voices, streaming playback, same deal.
 
 <p align="center">
   <img src="assets/hero.png" width="600" alt="Local Whisper recording in Notes">
@@ -78,9 +78,23 @@ Results go to clipboard. TTS plays through speakers.
 
 Switch via Settings, `wh engine <name>`, or config.
 
-### Qwen3-ASR (default)
+### Parakeet-TDT v3 (default)
 
-In-process via [qwen3-asr-mlx](https://github.com/gabrimatic/qwen3-asr-mlx). No server, no network. Long audio native. English-only.
+In-process via [parakeet-mlx](https://github.com/senstella/parakeet-mlx). No server, no network. Multilingual: English plus 24 European languages. Tops the HuggingFace [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) and beats much larger Whisper and Parakeet variants. Long audio handled via overlapping chunks.
+
+| Setting | Default | Notes |
+|---------|---------|-------|
+| `model` | `mlx-community/parakeet-tdt-0.6b-v3` | Downloaded by `setup.sh` |
+| `timeout` | `0` | No limit |
+| `chunk_duration` | `120.0` | Seconds per chunk for long audio. `0` disables chunking (pair with local attention). |
+| `overlap_duration` | `15.0` | Overlap between consecutive chunks. |
+| `decoding` | `"greedy"` | Or `"beam"` for a small quality bump at higher cost. |
+| `beam_size` / `length_penalty` / `patience` / `duration_reward` | `5` / `0.013` / `3.5` / `0.67` | Beam-only tuning knobs. |
+| `local_attention` | `false` | Reduces peak RAM for unchunked long audio. |
+
+### Qwen3-ASR (English only)
+
+In-process via [qwen3-asr-mlx](https://github.com/gabrimatic/qwen3-asr-mlx). No server, no network. Long audio native (up to 20 minutes in a single pass). English-only. Switch with `wh engine qwen3_asr`.
 
 | Setting | Default | Notes |
 |---------|---------|-------|
@@ -107,6 +121,8 @@ Whisper on Apple Neural Engine via [Argmax](https://github.com/argmaxinc/Whisper
 ## Text-to-Speech
 
 Kokoro-82M via [kokoro-mlx](https://github.com/gabrimatic/kokoro-mlx). Runs in-process, no server, no network. Streaming playback starts before full synthesis completes.
+
+Toggle from the menu bar or Settings -> Voice. Activating the feature downloads the Kokoro voice model (~170 MB) and uses the spaCy `en_core_web_sm` dictionary plus system `espeak-ng`. Running `./setup.sh` while the toggle is on pre-fetches everything so the first speak has no wait.
 
 **Usage:**
 - **⌥T** on selected text in any app. Press ⌥T again, Esc, or start a recording to stop.
@@ -307,7 +323,20 @@ key = "alt_r"              # alt_r, alt_l, ctrl_r, ctrl_l, cmd_r, cmd_l,
 double_tap_threshold = 0.4 # seconds
 
 [transcription]
-engine = "qwen3_asr"      # "qwen3_asr" (default) or "whisperkit"
+engine = "parakeet_v3"    # "parakeet_v3" (default), "qwen3_asr", or "whisperkit"
+
+[parakeet_v3]
+model = "mlx-community/parakeet-tdt-0.6b-v3"
+timeout = 0                 # 0 = no limit
+chunk_duration = 120.0      # 0 disables chunking
+overlap_duration = 15.0
+decoding = "greedy"         # "greedy" or "beam"
+beam_size = 5
+length_penalty = 0.013
+patience = 3.5
+duration_reward = 0.67
+local_attention = false
+local_attention_context_size = 256
 
 [qwen3_asr]
 model = "mlx-community/Qwen3-ASR-1.7B-bf16"
@@ -396,7 +425,7 @@ rewrite = "ctrl+shift+r"
 prompt_engineer = "ctrl+shift+p"
 
 [tts]
-enabled = true
+enabled = false            # toggle from Settings -> Voice or the menu bar
 provider = "kokoro"
 speak_shortcut = "alt+t"
 
@@ -415,6 +444,7 @@ Zero network calls. Every component runs on-device or localhost.
 
 | Component | Runs at |
 |-----------|---------|
+| Parakeet-TDT v3 | In-process MLX |
 | Qwen3-ASR | In-process MLX |
 | Kokoro TTS | In-process MLX |
 | WhisperKit | localhost:50060 |
@@ -471,9 +501,9 @@ losing everything.
 ┌───────────────────────────────────────────────────────────┐
 │  Transcription Engine                                     │
 │                                                           │
-│  Qwen3-ASR (default)       │  WhisperKit (alternative)   │
-│  In-process MLX            │  localhost:50060             │
-│  Long audio native         │  Split at 28s gaps          │
+│  Parakeet-TDT v3 (default) │ Qwen3-ASR  │ WhisperKit     │
+│  Multilingual, MLX         │ English, MLX│ localhost:50060│
+│  120s chunked              │ Long audio  │ Split at 28s   │
 └──────────────────────────┬────────────────────────────────┘
                            ▼
 ┌───────────────────────────────────────────────────────────┐
@@ -669,6 +699,7 @@ local-whisper/
     │   └── kokoro_tts.py   # Kokoro provider (MLX)
     ├── engines/
     │   ├── base.py         # TranscriptionEngine base
+    │   ├── parakeet.py     # Parakeet-TDT v3 (MLX, default)
     │   ├── qwen3_asr.py    # Qwen3-ASR (MLX)
     │   └── whisperkit.py   # WhisperKit (localhost)
     └── backends/
@@ -691,7 +722,7 @@ Data stored in `~/.whisper/`:
 ├── last_transcription.txt  # Final text
 ├── audio_history/
 ├── history/                # Last 100 transcriptions
-└── models/                 # Qwen3-ASR, Kokoro TTS
+└── models/                 # Parakeet-TDT, Qwen3-ASR, Kokoro TTS
 ```
 
 </details>
@@ -700,16 +731,16 @@ Data stored in `~/.whisper/`:
 
 ## Credits
 
-[qwen3-asr-mlx](https://github.com/gabrimatic/qwen3-asr-mlx) (MLX port of Qwen3-ASR) · [kokoro-mlx](https://github.com/gabrimatic/kokoro-mlx) (MLX port of Kokoro-82M) · [Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR) by [Qwen Team](https://qwen.ai) · [Kokoro-82M](https://github.com/remsky/Kokoro-FastAPI) · [WhisperKit](https://github.com/argmaxinc/WhisperKit) by [Argmax](https://www.argmaxinc.com) · [Apple Intelligence](https://www.apple.com/apple-intelligence/) · [Apple FM SDK](https://github.com/apple/python-apple-fm-sdk) · [Ollama](https://ollama.com) · [LM Studio](https://lmstudio.ai) · [SwiftUI](https://developer.apple.com/swiftui/)
+[parakeet-mlx](https://github.com/senstella/parakeet-mlx) (MLX port of NVIDIA Parakeet) · [Parakeet-TDT](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) by [NVIDIA NeMo](https://github.com/NVIDIA/NeMo) · [qwen3-asr-mlx](https://github.com/gabrimatic/qwen3-asr-mlx) (MLX port of Qwen3-ASR) · [kokoro-mlx](https://github.com/gabrimatic/kokoro-mlx) (MLX port of Kokoro-82M) · [Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR) by [Qwen Team](https://qwen.ai) · [Kokoro-82M](https://github.com/remsky/Kokoro-FastAPI) · [WhisperKit](https://github.com/argmaxinc/WhisperKit) by [Argmax](https://www.argmaxinc.com) · [Apple Intelligence](https://www.apple.com/apple-intelligence/) · [Apple FM SDK](https://github.com/apple/python-apple-fm-sdk) · [Ollama](https://ollama.com) · [LM Studio](https://lmstudio.ai) · [SwiftUI](https://developer.apple.com/swiftui/)
 
 <details>
 <summary><strong>Legal notices</strong></summary>
 
 ### Trademarks
 
-"Whisper" is a trademark of OpenAI. "Apple Intelligence" is a trademark of Apple Inc. "WhisperKit" is a trademark of Argmax, Inc. "Qwen" is a trademark of Alibaba Cloud. "Ollama" and "LM Studio" are trademarks of their respective owners.
+"Whisper" is a trademark of OpenAI. "Apple Intelligence" is a trademark of Apple Inc. "WhisperKit" is a trademark of Argmax, Inc. "Qwen" is a trademark of Alibaba Cloud. "Parakeet" and "NeMo" are trademarks of NVIDIA Corporation. "Ollama" and "LM Studio" are trademarks of their respective owners.
 
-This project is not affiliated with, endorsed by, or sponsored by OpenAI, Apple, Argmax, Alibaba Cloud, or any other trademark holder. All trademark names are used solely to describe compatibility with their respective technologies.
+This project is not affiliated with, endorsed by, or sponsored by OpenAI, Apple, Argmax, Alibaba Cloud, NVIDIA, or any other trademark holder. All trademark names are used solely to describe compatibility with their respective technologies.
 
 ### Third-Party Licenses
 

@@ -31,6 +31,7 @@ dependencies = [
     "pynput>=1.8.1",
     "pyobjc-framework-Cocoa>=12.1",
     "pyobjc-framework-Quartz>=12.1",
+    "parakeet-mlx>=0.5.1",
     "qwen3-asr-mlx>=0.1.0",
     "kokoro-mlx>=0.1.0",
     "soundfile>=0.13.1",

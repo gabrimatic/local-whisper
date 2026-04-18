@@ -31,6 +31,13 @@ struct VoicePanel: View {
             ))
             .help("Press the speak shortcut in any app to hear the selection. Press it again to stop.")
 
+            if !appState.config.tts.enabled {
+                InlineNotice(
+                    kind: .info,
+                    text: "Activating Read selected text aloud downloads Kokoro-82M (~170 MB) on the first ⌥T press and uses espeak-ng plus the spaCy en_core_web_sm dictionary. Run ./setup.sh while enabled to pre-fetch everything."
+                )
+            }
+
             if appState.config.tts.enabled {
                 LabeledContent("Shortcut") {
                     HStack(spacing: 4) {

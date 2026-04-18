@@ -27,6 +27,31 @@ struct TranscriptionConfig: Codable, Sendable {
     var engine: String
 }
 
+struct ParakeetConfig: Codable, Sendable {
+    var model: String
+    var timeout: Double
+    var chunkDuration: Double
+    var overlapDuration: Double
+    var decoding: String
+    var beamSize: Int
+    var lengthPenalty: Double
+    var patience: Double
+    var durationReward: Double
+    var localAttention: Bool
+    var localAttentionContextSize: Int
+
+    enum CodingKeys: String, CodingKey {
+        case model, timeout, decoding, patience
+        case chunkDuration = "chunk_duration"
+        case overlapDuration = "overlap_duration"
+        case beamSize = "beam_size"
+        case lengthPenalty = "length_penalty"
+        case durationReward = "duration_reward"
+        case localAttention = "local_attention"
+        case localAttentionContextSize = "local_attention_context_size"
+    }
+}
+
 struct Qwen3ASRConfig: Codable, Sendable {
     var model: String
     var timeout: Double
@@ -214,6 +239,7 @@ struct DictationConfig: Codable, Sendable {
 struct AppConfig: Codable, Sendable {
     var hotkey: HotkeyConfig
     var transcription: TranscriptionConfig
+    var parakeet: ParakeetConfig
     var qwen3Asr: Qwen3ASRConfig
     var whisper: WhisperConfig
     var grammar: GrammarConfig
@@ -231,6 +257,7 @@ struct AppConfig: Codable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case hotkey, transcription, whisper, grammar, ollama, audio, ui, backup, shortcuts, tts, replacements, dictation
+        case parakeet = "parakeet_v3"
         case qwen3Asr = "qwen3_asr"
         case appleIntelligence = "apple_intelligence"
         case lmStudio = "lm_studio"
@@ -238,7 +265,8 @@ struct AppConfig: Codable, Sendable {
     }
 
     init(
-        hotkey: HotkeyConfig, transcription: TranscriptionConfig, qwen3Asr: Qwen3ASRConfig,
+        hotkey: HotkeyConfig, transcription: TranscriptionConfig,
+        parakeet: ParakeetConfig, qwen3Asr: Qwen3ASRConfig,
         whisper: WhisperConfig, grammar: GrammarConfig, ollama: OllamaConfig,
         appleIntelligence: AppleIntelligenceConfig, lmStudio: LMStudioConfig,
         audio: AudioConfig, ui: UIConfig, backup: BackupConfig, shortcuts: ShortcutsConfig,
@@ -247,6 +275,7 @@ struct AppConfig: Codable, Sendable {
     ) {
         self.hotkey = hotkey
         self.transcription = transcription
+        self.parakeet = parakeet
         self.qwen3Asr = qwen3Asr
         self.whisper = whisper
         self.grammar = grammar
@@ -266,7 +295,20 @@ struct AppConfig: Codable, Sendable {
     static var defaultConfig: AppConfig {
         AppConfig(
             hotkey: HotkeyConfig(key: "alt_r", doubleTapThreshold: 0.4),
-            transcription: TranscriptionConfig(engine: "qwen3_asr"),
+            transcription: TranscriptionConfig(engine: "parakeet_v3"),
+            parakeet: ParakeetConfig(
+                model: "mlx-community/parakeet-tdt-0.6b-v3",
+                timeout: 0,
+                chunkDuration: 120.0,
+                overlapDuration: 15.0,
+                decoding: "greedy",
+                beamSize: 5,
+                lengthPenalty: 0.013,
+                patience: 3.5,
+                durationReward: 0.67,
+                localAttention: false,
+                localAttentionContextSize: 256
+            ),
             qwen3Asr: Qwen3ASRConfig(model: "mlx-community/Qwen3-ASR-1.7B-bf16", timeout: 0, temperature: 0.0, topP: 1.0, topK: 0, repetitionContextSize: 100, repetitionPenalty: 1.2, chunkDuration: 1200.0),
             whisper: WhisperConfig(
                 url: "http://localhost:50060/v1/audio/transcriptions",
@@ -314,11 +356,32 @@ struct AppConfig: Codable, Sendable {
                 rewrite: "ctrl+shift+r",
                 promptEngineer: "ctrl+shift+p"
             ),
-            tts: TTSConfig(enabled: true, provider: "kokoro", speakShortcut: "alt+t"),
+            tts: TTSConfig(enabled: false, provider: "kokoro", speakShortcut: "alt+t"),
             kokoroTts: KokoroTTSConfig(model: "mlx-community/Kokoro-82M-bf16", voice: "af_sky"),
             replacements: ReplacementsConfig(enabled: false, rules: [:]),
             dictation: DictationConfig(enabled: true, commands: [:])
         )
+    }
+}
+
+// MARK: - Engine status
+
+struct EngineStatus: Codable, Sendable, Identifiable {
+    var id: String
+    var name: String
+    var description: String
+    var active: Bool
+    var downloaded: Bool
+    var sizeMb: Int?
+    var warmed: Bool
+    var cacheDir: String?
+    var hfRepo: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, description, active, downloaded, warmed
+        case sizeMb = "size_mb"
+        case cacheDir = "cache_dir"
+        case hfRepo = "hf_repo"
     }
 }
 
@@ -346,6 +409,7 @@ enum IncomingMessage: Sendable {
     case configSnapshot(AppConfig)
     case stateUpdate(phase: AppPhase, durationSeconds: Double, rmsLevel: Double, text: String?, statusText: String?)
     case historyUpdate([HistoryEntry])
+    case enginesStatus([EngineStatus])
     case notification(title: String, body: String)
 }
 
@@ -358,6 +422,7 @@ private struct RawIncoming: Decodable {
     var text: String?
     var status_text: String?
     var entries: [HistoryEntry]?
+    var engines: [String: EngineStatus]?
 }
 
 func decodeIncomingMessage(_ data: Data) throws -> IncomingMessage {
@@ -378,6 +443,8 @@ func decodeIncomingMessage(_ data: Data) throws -> IncomingMessage {
         )
     case "history_update":
         return .historyUpdate(raw.entries ?? [])
+    case "engines_status":
+        return .enginesStatus(Array((raw.engines ?? [:]).values))
     case "notification":
         if let msg = try? JSONDecoder().decode(NotificationMessage.self, from: data) {
             return .notification(title: msg.title, body: msg.body)
@@ -406,6 +473,11 @@ struct ActionMessage: Encodable, Sendable {
 
 struct EngineSwitchMessage: Encodable, Sendable {
     var type = "engine_switch"
+    var engine: String
+}
+
+struct EngineRemoveCacheMessage: Encodable, Sendable {
+    var type = "engine_remove_cache"
     var engine: String
 }
 

@@ -128,8 +128,8 @@ def cmd_doctor(args: list):
 
     # 3. Core Python packages
     missing_pkgs = []
-    for pkg in ["sounddevice", "numpy", "pynput", "qwen3_asr_mlx", "kokoro_mlx",
-                "requests", "soundfile", "misaki"]:
+    for pkg in ["sounddevice", "numpy", "pynput", "parakeet_mlx", "qwen3_asr_mlx",
+                "kokoro_mlx", "requests", "soundfile", "misaki"]:
         try:
             __import__(pkg)
         except ImportError:
@@ -187,90 +187,126 @@ def cmd_doctor(args: list):
         else:
             core_ok = False
 
-    # 5. spaCy model
-    spacy_ok = False
+    # 5. spaCy model (only required when TTS is enabled)
     try:
-        result = subprocess.run(
-            [python, "-c", "import spacy; spacy.load('en_core_web_sm')"],
-            capture_output=True, timeout=15,
-        )
-        spacy_ok = result.returncode == 0
+        from whisper_voice.config import load_config
+        tts_enabled = load_config().tts.enabled
     except Exception:
-        pass
-    if spacy_ok:
-        _doctor_pass("spaCy model (en_core_web_sm)")
-    else:
-        hint = "Run: python -m spacy download en_core_web_sm" if not fix else ""
-        _doctor_fail("spaCy model en_core_web_sm not found", hint)
-        if fix:
-            _doctor_fixing("python -m spacy download en_core_web_sm")
-            result = subprocess.run(
-                [python, "-m", "spacy", "download", "en_core_web_sm"],
-                capture_output=True,
-            )
-            if result.returncode == 0:
-                _doctor_pass("spaCy model installed")
-            else:
-                _doctor_fail("spaCy model download failed")
-                core_ok = False
-        else:
-            core_ok = False
+        tts_enabled = False
 
-    # 6. Qwen3-ASR model
-    qwen_model_dir = MODEL_DIR / "models--mlx-community--Qwen3-ASR-1.7B-bf16"
-    if qwen_model_dir.is_dir():
-        _doctor_pass("Qwen3-ASR model")
-    else:
-        hint = "Run: wh doctor --fix" if not fix else ""
-        _doctor_fail("Qwen3-ASR model not found", hint)
-        if fix:
-            _doctor_fixing("Downloading Qwen3-ASR model...")
-            MODEL_DIR.mkdir(parents=True, exist_ok=True)
-            model_env = os.environ.copy()
-            model_env["HF_HUB_CACHE"] = str(MODEL_DIR)
-            model_env["HF_HUB_DISABLE_TELEMETRY"] = "1"
-            model_env["HF_HUB_OFFLINE"] = "0"
+    if tts_enabled:
+        spacy_ok = False
+        try:
             result = subprocess.run(
-                [python, "-c",
-                 "from qwen3_asr_mlx import Qwen3ASR; "
-                 "Qwen3ASR.from_pretrained('mlx-community/Qwen3-ASR-1.7B-bf16')"],
-                env=model_env, capture_output=True, timeout=300,
+                [python, "-c", "import spacy; spacy.load('en_core_web_sm')"],
+                capture_output=True, timeout=15,
             )
-            if result.returncode == 0:
-                _doctor_pass("Qwen3-ASR model downloaded")
-            else:
-                _doctor_fail("Qwen3-ASR model download failed")
-                core_ok = False
+            spacy_ok = result.returncode == 0
+        except Exception:
+            pass
+        if spacy_ok:
+            _doctor_pass("spaCy model (en_core_web_sm)")
         else:
-            core_ok = False
+            hint = "Run: python -m spacy download en_core_web_sm" if not fix else ""
+            _doctor_fail("spaCy model en_core_web_sm not found", hint)
+            if fix:
+                _doctor_fixing("python -m spacy download en_core_web_sm")
+                result = subprocess.run(
+                    [python, "-m", "spacy", "download", "en_core_web_sm"],
+                    capture_output=True,
+                )
+                if result.returncode == 0:
+                    _doctor_pass("spaCy model installed")
+                else:
+                    _doctor_fail("spaCy model download failed")
+                    core_ok = False
+            else:
+                core_ok = False
+    else:
+        _doctor_info("spaCy model (TTS disabled, not required)")
 
-    # 7. Kokoro TTS model
-    kokoro_model_dir = MODEL_DIR / "models--mlx-community--Kokoro-82M-bf16"
-    if kokoro_model_dir.is_dir():
-        _doctor_pass("Kokoro TTS model")
-    else:
-        hint = "Run: wh doctor --fix" if not fix else ""
-        _doctor_fail("Kokoro TTS model not found", hint)
-        if fix:
-            _doctor_fixing("Downloading Kokoro TTS model...")
-            MODEL_DIR.mkdir(parents=True, exist_ok=True)
-            model_env = os.environ.copy()
-            model_env["HF_HUB_CACHE"] = str(MODEL_DIR)
-            model_env["HF_HUB_DISABLE_TELEMETRY"] = "1"
-            model_env["HF_HUB_OFFLINE"] = "0"
-            result = subprocess.run(
-                [python, "-c",
-                 "from kokoro_mlx import KokoroTTS; "
-                 "KokoroTTS.from_pretrained('mlx-community/Kokoro-82M-bf16')"],
-                env=model_env, capture_output=True, timeout=300,
-            )
-            if result.returncode == 0:
-                _doctor_pass("Kokoro TTS model downloaded")
-            else:
-                _doctor_fail("Kokoro TTS model download failed")
-                core_ok = False
+    # 6. Active transcription model only. Users who switch engines later
+    # download + warm on that engine's first call (lazy-loaded).
+    try:
+        from whisper_voice.config import load_config
+        active_engine = load_config().transcription.engine
+    except Exception:
+        active_engine = "parakeet_v3"
+
+    engine_model_map = {
+        "parakeet_v3": (
+            "Parakeet-TDT v3",
+            "models--mlx-community--parakeet-tdt-0.6b-v3",
+            "from parakeet_mlx import from_pretrained; "
+            "from_pretrained('mlx-community/parakeet-tdt-0.6b-v3')",
+        ),
+        "qwen3_asr": (
+            "Qwen3-ASR",
+            "models--mlx-community--Qwen3-ASR-1.7B-bf16",
+            "from qwen3_asr_mlx import Qwen3ASR; "
+            "Qwen3ASR.from_pretrained('mlx-community/Qwen3-ASR-1.7B-bf16')",
+        ),
+    }
+
+    if active_engine in engine_model_map:
+        label, dir_name, fetch_cmd = engine_model_map[active_engine]
+        model_path = MODEL_DIR / dir_name
+        if model_path.is_dir():
+            _doctor_pass(f"{label} model (active engine)")
         else:
-            core_ok = False
+            hint = "Run: wh doctor --fix" if not fix else ""
+            _doctor_fail(f"{label} model not found", hint)
+            if fix:
+                _doctor_fixing(f"Downloading {label} model...")
+                MODEL_DIR.mkdir(parents=True, exist_ok=True)
+                model_env = os.environ.copy()
+                model_env["HF_HUB_CACHE"] = str(MODEL_DIR)
+                model_env["HF_HUB_DISABLE_TELEMETRY"] = "1"
+                model_env["HF_HUB_OFFLINE"] = "0"
+                result = subprocess.run(
+                    [python, "-c", fetch_cmd],
+                    env=model_env, capture_output=True, timeout=600,
+                )
+                if result.returncode == 0:
+                    _doctor_pass(f"{label} model downloaded")
+                else:
+                    _doctor_fail(f"{label} model download failed")
+                    core_ok = False
+            else:
+                core_ok = False
+    else:
+        _doctor_info(f"Active engine '{active_engine}' manages its own model")
+
+    # 7. Kokoro TTS model (only required when TTS is enabled)
+    if tts_enabled:
+        kokoro_model_dir = MODEL_DIR / "models--mlx-community--Kokoro-82M-bf16"
+        if kokoro_model_dir.is_dir():
+            _doctor_pass("Kokoro TTS model")
+        else:
+            hint = "Run: wh doctor --fix" if not fix else ""
+            _doctor_fail("Kokoro TTS model not found", hint)
+            if fix:
+                _doctor_fixing("Downloading Kokoro TTS model...")
+                MODEL_DIR.mkdir(parents=True, exist_ok=True)
+                model_env = os.environ.copy()
+                model_env["HF_HUB_CACHE"] = str(MODEL_DIR)
+                model_env["HF_HUB_DISABLE_TELEMETRY"] = "1"
+                model_env["HF_HUB_OFFLINE"] = "0"
+                result = subprocess.run(
+                    [python, "-c",
+                     "from kokoro_mlx import KokoroTTS; "
+                     "KokoroTTS.from_pretrained('mlx-community/Kokoro-82M-bf16')"],
+                    env=model_env, capture_output=True, timeout=300,
+                )
+                if result.returncode == 0:
+                    _doctor_pass("Kokoro TTS model downloaded")
+                else:
+                    _doctor_fail("Kokoro TTS model download failed")
+                    core_ok = False
+            else:
+                core_ok = False
+    else:
+        _doctor_info("Kokoro TTS model (TTS disabled, not required)")
 
     # 8. Config file
     config_path = _get_config_path()
@@ -548,33 +584,60 @@ def cmd_update():
 
 
 def _update_models():
-    """Check and download model updates."""
+    """Check and download updates for the active engine's model + Kokoro TTS."""
     python = _get_venv_python()
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     model_env = os.environ.copy()
     model_env["HF_HUB_OFFLINE"] = "0"
     model_env["HF_HUB_DISABLE_TELEMETRY"] = "1"
     model_env["HF_HUB_CACHE"] = str(MODEL_DIR)
-    result = subprocess.run(
-        [
-            python, "-c",
+
+    try:
+        from whisper_voice.config import load_config
+        active_engine = load_config().transcription.engine
+    except Exception:
+        active_engine = "parakeet_v3"
+
+    engine_fetch = {
+        "parakeet_v3": (
+            "Parakeet-TDT v3",
+            "from parakeet_mlx import from_pretrained; "
+            "from_pretrained('mlx-community/parakeet-tdt-0.6b-v3'); "
+            "print('Parakeet-TDT v3 up to date.')",
+        ),
+        "qwen3_asr": (
+            "Qwen3-ASR",
             "from qwen3_asr_mlx import Qwen3ASR; "
             "Qwen3ASR.from_pretrained('mlx-community/Qwen3-ASR-1.7B-bf16'); "
             "print('Qwen3-ASR up to date.')",
-        ],
-        env=model_env,
-    )
-    if result.returncode != 0:
-        print(f"{C_YELLOW}  Qwen3-ASR model check failed - skipping{C_RESET}")
+        ),
+    }
 
-    result = subprocess.run(
-        [
-            python, "-c",
-            "from kokoro_mlx import KokoroTTS; "
-            "KokoroTTS.from_pretrained('mlx-community/Kokoro-82M-bf16'); "
-            "print('Kokoro TTS up to date.')",
-        ],
-        env=model_env,
-    )
-    if result.returncode != 0:
-        print(f"{C_YELLOW}  Kokoro TTS model check failed - skipping{C_RESET}")
+    if active_engine in engine_fetch:
+        label, cmd = engine_fetch[active_engine]
+        result = subprocess.run([python, "-c", cmd], env=model_env)
+        if result.returncode != 0:
+            print(f"{C_YELLOW}  {label} model check failed - skipping{C_RESET}")
+    else:
+        print(f"{C_DIM}  Active engine '{active_engine}' manages its own model.{C_RESET}")
+
+    try:
+        from whisper_voice.config import load_config
+        tts_enabled = load_config().tts.enabled
+    except Exception:
+        tts_enabled = False
+
+    if tts_enabled:
+        result = subprocess.run(
+            [
+                python, "-c",
+                "from kokoro_mlx import KokoroTTS; "
+                "KokoroTTS.from_pretrained('mlx-community/Kokoro-82M-bf16'); "
+                "print('Kokoro TTS up to date.')",
+            ],
+            env=model_env,
+        )
+        if result.returncode != 0:
+            print(f"{C_YELLOW}  Kokoro TTS model check failed - skipping{C_RESET}")
+    else:
+        print(f"{C_DIM}  Kokoro TTS skipped (TTS disabled).{C_RESET}")

@@ -53,7 +53,7 @@ class TestLoadConfig:
         # File should now exist (created by load_config)
         assert (tmp_path / "config.toml").exists()
         # Default engine
-        assert config.transcription.engine == "qwen3_asr"
+        assert config.transcription.engine == "parakeet_v3"
 
     def test_valid_toml_loads_values(self, tmp_path):
         toml = """
@@ -74,11 +74,11 @@ repetition_context_size = 50
         (tmp_path / "config.toml").write_text("[[[ not valid toml", encoding="utf-8")
         config, _ = _load_config_from(tmp_path)
         # Falls back gracefully
-        assert config.transcription.engine == "qwen3_asr"
+        assert config.transcription.engine == "parakeet_v3"
 
     def test_empty_toml_returns_defaults(self, tmp_path):
         config, _ = _load_config_from(tmp_path, toml_content="")
-        assert config.transcription.engine == "qwen3_asr"
+        assert config.transcription.engine == "parakeet_v3"
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +88,7 @@ repetition_context_size = 50
 class TestDefaultValues:
     def test_engine_default(self, tmp_path):
         config, _ = _load_config_from(tmp_path, toml_content="")
-        assert config.transcription.engine == "qwen3_asr"
+        assert config.transcription.engine == "parakeet_v3"
 
     def test_model_default(self, tmp_path):
         config, _ = _load_config_from(tmp_path, toml_content="")
@@ -131,7 +131,7 @@ class TestValidation:
     def test_invalid_engine_falls_back(self, tmp_path):
         toml = "[transcription]\nengine = \"nonexistent_engine\"\n"
         config, _ = _load_config_from(tmp_path, toml)
-        assert config.transcription.engine == "qwen3_asr"
+        assert config.transcription.engine == "parakeet_v3"
 
     def test_invalid_hotkey_falls_back(self, tmp_path):
         toml = "[hotkey]\nkey = \"super_hyper_key\"\n"

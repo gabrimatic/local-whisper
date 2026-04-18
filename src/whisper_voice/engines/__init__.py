@@ -30,6 +30,11 @@ class EngineInfo:
     factory: Callable[[], TranscriptionEngine]  # Function to create instance
 
 
+def _create_parakeet() -> TranscriptionEngine:
+    from .parakeet import ParakeetEngine
+    return ParakeetEngine()
+
+
 def _create_qwen3_asr() -> TranscriptionEngine:
     from .qwen3_asr import Qwen3ASREngine
     return Qwen3ASREngine()
@@ -44,10 +49,16 @@ def _create_whisperkit() -> TranscriptionEngine:
 # ENGINE REGISTRY - Add new engines here
 # ============================================================================
 ENGINE_REGISTRY: Dict[str, EngineInfo] = {
+    "parakeet_v3": EngineInfo(
+        id="parakeet_v3",
+        name="Parakeet-TDT v3",
+        description="On-device MLX transcription, multilingual, tops Open ASR (default)",
+        factory=_create_parakeet,
+    ),
     "qwen3_asr": EngineInfo(
         id="qwen3_asr",
         name="Qwen3-ASR",
-        description="On-device MLX transcription (no server required)",
+        description="On-device MLX transcription, English only",
         factory=_create_qwen3_asr,
     ),
     "whisperkit": EngineInfo(

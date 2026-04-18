@@ -46,9 +46,10 @@ struct AdvancedPanel: View {
 
     private var engineDisplay: String {
         switch appState.config.transcription.engine {
-        case "qwen3_asr":  return "Qwen3-ASR"
-        case "whisperkit": return "WhisperKit"
-        default:           return appState.config.transcription.engine
+        case "parakeet_v3": return "Parakeet-TDT v3"
+        case "qwen3_asr":   return "Qwen3-ASR"
+        case "whisperkit":  return "WhisperKit"
+        default:            return appState.config.transcription.engine
         }
     }
 

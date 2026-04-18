@@ -9,7 +9,10 @@ struct TranscriptionPanel: View {
         ScrollView {
             Form {
                 engineSection
-                if appState.config.transcription.engine == "qwen3_asr" {
+                ModelManagementSection()
+                if appState.config.transcription.engine == "parakeet_v3" {
+                    ParakeetSection()
+                } else if appState.config.transcription.engine == "qwen3_asr" {
                     Qwen3Section()
                 } else if appState.config.transcription.engine == "whisperkit" {
                     WhisperKitSection()
@@ -30,16 +33,407 @@ struct TranscriptionPanel: View {
                     appState.ipcClient?.sendEngineSwitch(newValue)
                 }
             )) {
-                Text("Qwen3-ASR (in-process)").tag("qwen3_asr")
+                Text("Parakeet-TDT v3 (multilingual, default)").tag("parakeet_v3")
+                Text("Qwen3-ASR (English only)").tag("qwen3_asr")
                 Text("WhisperKit (local server)").tag("whisperkit")
             }
             .pickerStyle(.inline)
-            .help("Qwen3-ASR runs fully in-process and handles long audio natively. WhisperKit needs a local server.")
+            .help("Parakeet is the new default: multilingual, tops the Open ASR leaderboard, runs fully in-process. Qwen3-ASR is English-only. WhisperKit needs a local server.")
         } header: {
             SettingsSectionHeader(
                 symbol: "cpu",
                 title: "Engine",
                 description: "Speech-to-text model. Switching restarts the service."
+            )
+        }
+    }
+}
+
+// MARK: - Model management
+
+struct ModelManagementSection: View {
+    @Environment(AppState.self) private var appState
+    @State private var removalTarget: EngineStatus? = nil
+
+    private var sortedEngines: [EngineStatus] {
+        appState.engines.sorted { a, b in
+            if a.active != b.active { return a.active && !b.active }
+            return a.id < b.id
+        }
+    }
+
+    var body: some View {
+        Section {
+            if appState.engines.isEmpty {
+                Text("Waiting for service…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(sortedEngines) { engine in
+                    EngineStatusRow(engine: engine) { engineToRemove in
+                        removalTarget = engineToRemove
+                    }
+                    if engine.id != sortedEngines.last?.id {
+                        Divider()
+                    }
+                }
+
+                if let message = statusMessage {
+                    HStack(spacing: Theme.Spacing.s) {
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(.secondary)
+                        Text(message)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.top, Theme.Spacing.s)
+                }
+            }
+        } header: {
+            SettingsSectionHeader(
+                symbol: "externaldrive.badge.checkmark",
+                title: "Model management",
+                description: "Each engine downloads on first use. Switching frees the previous model from memory; disk cache persists until you remove it."
+            )
+        }
+        .confirmationDialog(
+            removalTarget.map { "Remove \($0.name) cache?" } ?? "",
+            isPresented: Binding(
+                get: { removalTarget != nil },
+                set: { if !$0 { removalTarget = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(removalButtonLabel, role: .destructive) {
+                if let target = removalTarget {
+                    appState.ipcClient?.sendEngineRemoveCache(target.id)
+                }
+                removalTarget = nil
+            }
+            Button("Cancel", role: .cancel) { removalTarget = nil }
+        } message: {
+            Text("The weights will re-download on next use. This frees disk but not RAM.")
+        }
+    }
+
+    private var removalButtonLabel: String {
+        guard let mb = removalTarget?.sizeMb, mb > 0 else { return "Remove" }
+        return "Remove \(mb) MB"
+    }
+
+    private var statusMessage: String? {
+        switch appState.phase {
+        case .processing:
+            return appState.statusText.isEmpty ? nil : appState.statusText
+        case .error:
+            return appState.statusText
+        default:
+            return nil
+        }
+    }
+}
+
+struct EngineStatusRow: View {
+    let engine: EngineStatus
+    let onRequestRemove: (EngineStatus) -> Void
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.m) {
+            Image(systemName: iconName)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(iconColor)
+                .frame(width: 24)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: Theme.Spacing.xs) {
+                    Text(engine.name)
+                        .font(.system(size: 13, weight: .semibold))
+                    StatusPill(text: pillText, tone: pillTone)
+                }
+                Text(engine.description)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(detailLine)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: Theme.Spacing.s)
+
+            actionButton
+        }
+        .padding(.vertical, Theme.Spacing.xs)
+    }
+
+    private var iconName: String {
+        switch engine.id {
+        case "parakeet_v3": return "waveform.badge.mic"
+        case "qwen3_asr":   return "sparkle"
+        case "whisperkit":  return "server.rack"
+        default:            return "cpu"
+        }
+    }
+
+    private var iconColor: Color {
+        engine.active ? .accentColor : .secondary
+    }
+
+    private var pillText: String {
+        if engine.active { return "Active" }
+        if engine.downloaded { return "Downloaded" }
+        return "Not downloaded"
+    }
+
+    private var pillTone: Theme.Tone {
+        if engine.active { return .success }
+        if engine.downloaded { return .info }
+        return .neutral
+    }
+
+    private var detailLine: String {
+        var parts: [String] = []
+        if engine.downloaded, let mb = engine.sizeMb, mb > 0 {
+            parts.append(formatSize(mb: mb))
+        } else if !engine.downloaded {
+            parts.append("downloads on first use")
+        }
+        if engine.warmed { parts.append("warmed") }
+        if let repo = engine.hfRepo, !repo.isEmpty {
+            parts.append(repo)
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func formatSize(mb: Int) -> String {
+        if mb >= 1024 {
+            let gb = Double(mb) / 1024.0
+            return String(format: "%.1f GB", gb)
+        }
+        return "\(mb) MB"
+    }
+
+    @ViewBuilder
+    private var actionButton: some View {
+        if engine.active {
+            Label("In use", systemImage: "checkmark.circle.fill")
+                .labelStyle(.iconOnly)
+                .foregroundStyle(.green)
+                .help("This engine is currently loaded.")
+        } else if engine.downloaded {
+            HStack(spacing: Theme.Spacing.xs) {
+                Button("Use") {
+                    appState.config.transcription.engine = engine.id
+                    appState.ipcClient?.sendEngineSwitch(engine.id)
+                }
+                .buttonStyle(.bordered)
+                Button(role: .destructive) {
+                    onRequestRemove(engine)
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
+                .help("Remove this engine's weights from disk.")
+            }
+        } else if engine.cacheDir != nil {
+            Button("Use & download") {
+                appState.config.transcription.engine = engine.id
+                appState.ipcClient?.sendEngineSwitch(engine.id)
+            }
+            .buttonStyle(.bordered)
+            .help("Switches to this engine and downloads the model on first use.")
+        } else {
+            // WhisperKit: lives outside the HF cache; direct the user to install its CLI.
+            Button("Use") {
+                appState.config.transcription.engine = engine.id
+                appState.ipcClient?.sendEngineSwitch(engine.id)
+            }
+            .buttonStyle(.bordered)
+            .help("WhisperKit stores its own models. Install whisperkit-cli via Homebrew first.")
+        }
+    }
+}
+
+// MARK: - Parakeet-TDT
+
+struct ParakeetSection: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        Section {
+            LabeledContent("Model") {
+                DeferredTextField(
+                    label: "Model",
+                    initialValue: appState.config.parakeet.model
+                ) { value in
+                    appState.config.parakeet.model = value
+                    appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "model", value: value)
+                }
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 320)
+            }
+            .help("Hugging Face model ID. Use an mlx-community/parakeet-* checkpoint.")
+
+            RestartNote()
+
+            DisclosureGroup("Chunking") {
+                LabeledContent("Chunk duration") {
+                    HStack {
+                        Stepper("", value: Binding(
+                            get: { appState.config.parakeet.chunkDuration },
+                            set: { v in
+                                appState.config.parakeet.chunkDuration = v
+                                appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "chunk_duration", value: v)
+                            }
+                        ), in: 0...600, step: 15)
+                        .labelsHidden()
+                        Text(appState.config.parakeet.chunkDuration <= 0 ? "Off" : "\(Int(appState.config.parakeet.chunkDuration))s")
+                            .monoStat(width: 60)
+                    }
+                }
+                .help("Split long audio into overlapping windows. 0 disables chunking (requires local attention for very long audio). Default 120s.")
+
+                LabeledContent("Overlap") {
+                    HStack {
+                        Stepper("", value: Binding(
+                            get: { appState.config.parakeet.overlapDuration },
+                            set: { v in
+                                appState.config.parakeet.overlapDuration = v
+                                appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "overlap_duration", value: v)
+                            }
+                        ), in: 0...60, step: 5)
+                        .labelsHidden()
+                        Text("\(Int(appState.config.parakeet.overlapDuration))s")
+                            .monoStat(width: 60)
+                    }
+                }
+                .help("Overlap between consecutive chunks. Default 15s.")
+            }
+
+            DisclosureGroup("Decoding") {
+                Picker("Strategy", selection: Binding(
+                    get: { appState.config.parakeet.decoding },
+                    set: { v in
+                        appState.config.parakeet.decoding = v
+                        appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "decoding", value: v)
+                    }
+                )) {
+                    Text("Greedy (fast)").tag("greedy")
+                    Text("Beam (slower, slight quality gain)").tag("beam")
+                }
+                .help("Greedy picks the top token at each step. Beam explores multiple hypotheses.")
+
+                if appState.config.parakeet.decoding == "beam" {
+                    LabeledContent("Beam size") {
+                        HStack {
+                            Stepper("", value: Binding(
+                                get: { appState.config.parakeet.beamSize },
+                                set: { v in
+                                    appState.config.parakeet.beamSize = v
+                                    appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "beam_size", value: v)
+                                }
+                            ), in: 1...16, step: 1)
+                            .labelsHidden()
+                            Text("\(appState.config.parakeet.beamSize)")
+                                .monoStat(width: 44)
+                        }
+                    }
+
+                    LabeledContent("Length penalty") {
+                        HStack {
+                            Slider(value: Binding(
+                                get: { appState.config.parakeet.lengthPenalty },
+                                set: { v in
+                                    appState.config.parakeet.lengthPenalty = v
+                                    appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "length_penalty", value: v)
+                                }
+                            ), in: 0...1, step: 0.01)
+                            Text(String(format: "%.3f", appState.config.parakeet.lengthPenalty))
+                                .monoStat(width: 60)
+                        }
+                    }
+
+                    LabeledContent("Patience") {
+                        HStack {
+                            Slider(value: Binding(
+                                get: { appState.config.parakeet.patience },
+                                set: { v in
+                                    appState.config.parakeet.patience = v
+                                    appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "patience", value: v)
+                                }
+                            ), in: 1...10, step: 0.1)
+                            Text(String(format: "%.1f", appState.config.parakeet.patience))
+                                .monoStat(width: 44)
+                        }
+                    }
+
+                    LabeledContent("Duration reward") {
+                        HStack {
+                            Slider(value: Binding(
+                                get: { appState.config.parakeet.durationReward },
+                                set: { v in
+                                    appState.config.parakeet.durationReward = v
+                                    appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "duration_reward", value: v)
+                                }
+                            ), in: 0...1, step: 0.01)
+                            Text(String(format: "%.2f", appState.config.parakeet.durationReward))
+                                .monoStat(width: 44)
+                        }
+                    }
+                    .help("<0.5 favors token logprobs, >0.5 favors duration logprobs. Default 0.67.")
+                }
+
+                LabeledContent("Timeout") {
+                    HStack {
+                        Stepper("", value: Binding(
+                            get: { appState.config.parakeet.timeout },
+                            set: { v in
+                                appState.config.parakeet.timeout = v
+                                appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "timeout", value: v)
+                            }
+                        ), in: 0...600, step: 10)
+                        .labelsHidden()
+                        Text(appState.config.parakeet.timeout == 0 ? "Unlimited" : "\(Int(appState.config.parakeet.timeout))s")
+                            .monoStat(width: 70)
+                    }
+                }
+                .help("Maximum seconds to wait for transcription. 0 = no limit.")
+            }
+
+            DisclosureGroup("Advanced") {
+                Toggle("Local attention", isOn: Binding(
+                    get: { appState.config.parakeet.localAttention },
+                    set: { v in
+                        appState.config.parakeet.localAttention = v
+                        appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "local_attention", value: v)
+                    }
+                ))
+                .help("Reduces peak memory for very long unchunked audio. Leave off unless chunk duration is 0.")
+
+                if appState.config.parakeet.localAttention {
+                    LabeledContent("Context size") {
+                        HStack {
+                            Stepper("", value: Binding(
+                                get: { appState.config.parakeet.localAttentionContextSize },
+                                set: { v in
+                                    appState.config.parakeet.localAttentionContextSize = v
+                                    appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "local_attention_context_size", value: v)
+                                }
+                            ), in: 64...2048, step: 64)
+                            .labelsHidden()
+                            Text("\(appState.config.parakeet.localAttentionContextSize)")
+                                .monoStat(width: 60)
+                        }
+                    }
+                }
+            }
+        } header: {
+            SettingsSectionHeader(
+                symbol: "waveform.badge.mic",
+                title: "Parakeet-TDT v3",
+                description: "MLX-native, multilingual (EN + 24 European), chunked long audio."
             )
         }
     }

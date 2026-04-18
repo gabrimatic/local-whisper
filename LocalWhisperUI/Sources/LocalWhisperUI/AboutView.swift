@@ -112,9 +112,11 @@ struct AboutView: View {
             sectionLabel("Built on", icon: "shippingbox.fill")
             VStack(alignment: .leading, spacing: Theme.Spacing.m) {
                 creditCategory(title: "Speech", entries: [
-                    ("Qwen3-ASR",   "Alibaba Qwen", "https://github.com/QwenLM/Qwen3-ASR"),
-                    ("WhisperKit",  "argmaxinc",    "https://github.com/argmaxinc/WhisperKit"),
-                    ("Kokoro-82M",  "hexgrad",       "https://huggingface.co/hexgrad/Kokoro-82M"),
+                    ("Parakeet-TDT", "NVIDIA NeMo",  "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3"),
+                    ("parakeet-mlx", "senstella",    "https://github.com/senstella/parakeet-mlx"),
+                    ("Qwen3-ASR",    "Alibaba Qwen", "https://github.com/QwenLM/Qwen3-ASR"),
+                    ("WhisperKit",   "argmaxinc",    "https://github.com/argmaxinc/WhisperKit"),
+                    ("Kokoro-82M",   "hexgrad",      "https://huggingface.co/hexgrad/Kokoro-82M"),
                 ])
                 Divider().padding(.vertical, 2)
                 creditCategory(title: "Grammar", entries: [

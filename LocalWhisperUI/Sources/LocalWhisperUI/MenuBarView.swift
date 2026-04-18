@@ -8,8 +8,7 @@ struct MenuBarView: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
-        // Status line + active config subtitle. When the service is unreachable
-        // we surface that prominently so users don't think the UI is just stale.
+        // === STATUS ===
         if appState.connectionState != .connected {
             Text(connectionLabel)
                 .font(Theme.Typography.bodyEmphasized)
@@ -28,19 +27,40 @@ struct MenuBarView: View {
 
         Divider()
 
-        // Engine + grammar pickers (live in their own grouped submenus)
-        Picker(engineMenuTitle, selection: engineBinding) {
-            Text("Qwen3-ASR (in-process)").tag("qwen3_asr")
-            Text("WhisperKit (server)").tag("whisperkit")
+        // === RECENT ACTIONS ===
+        // Operating on the most recent transcription. Plain-English labels so
+        // there's no ambiguity about what "last" refers to.
+        Button("Retry last transcription") {
+            appState.ipcClient?.sendAction("retry")
         }
+        .disabled(!appState.hasHistory)
+        .keyboardShortcut("r", modifiers: .command)
+
+        Button("Copy last transcription") {
+            appState.ipcClient?.sendAction("copy")
+        }
+        .disabled(!appState.hasHistory)
+        .keyboardShortcut("c", modifiers: [.command, .shift])
+
+        Divider()
+
+        // === DICTATION (voice -> text) ===
+        // All the pieces that turn a recording into clean text.
+        Picker(transcriptionModelMenuTitle, selection: engineBinding) {
+            Text("Parakeet-TDT v3 (multilingual)").tag("parakeet_v3")
+            Text("Qwen3-ASR (English only)").tag("qwen3_asr")
+            Text("WhisperKit (local server)").tag("whisperkit")
+        }
+        .help("The AI model that converts your speech into text.")
 
         Picker(grammarMenuTitle, selection: grammarBinding) {
             Text("Apple Intelligence").tag("apple_intelligence")
             Text("Ollama").tag("ollama")
             Text("LM Studio").tag("lm_studio")
             Divider()
-            Text("Disabled").tag("none")
+            Text("Off").tag("none")
         }
+        .help("Cleans up punctuation, capitalization, and obvious mistakes after transcription.")
 
         Toggle(replacementsMenuTitle, isOn: Binding(
             get: { appState.config.replacements.enabled },
@@ -49,25 +69,26 @@ struct MenuBarView: View {
                 appState.ipcClient?.sendConfigUpdate(section: "replacements", key: "enabled", value: newValue)
             }
         ))
+        .help("Rewrites specific words after transcription (for example, \"open ai\" -> \"OpenAI\").")
 
         Divider()
 
-        // Quick actions
-        Button("Retry Last") {
-            appState.ipcClient?.sendAction("retry")
-        }
-        .disabled(!appState.hasHistory)
-        .keyboardShortcut("r", modifiers: .command)
-
-        Button("Copy Last") {
-            appState.ipcClient?.sendAction("copy")
-        }
-        .disabled(!appState.hasHistory)
-        .keyboardShortcut("c", modifiers: [.command, .shift])
+        // === READ ALOUD (text -> voice) ===
+        // A separate feature from dictation: it outputs voice instead of
+        // producing text. Given its own section so users don't confuse it with
+        // the transcription pipeline above.
+        Toggle(readAloudMenuTitle, isOn: Binding(
+            get: { appState.config.tts.enabled },
+            set: { newValue in
+                appState.config.tts.enabled = newValue
+                appState.ipcClient?.sendConfigUpdate(section: "tts", key: "enabled", value: newValue)
+            }
+        ))
+        .help("Select text in any app and press ⌥T to hear it spoken. First use downloads a local voice model (~170 MB).")
 
         Divider()
 
-        // Transcriptions submenu
+        // === HISTORY ===
         Menu(transcriptionsMenuTitle) {
             if appState.history.isEmpty {
                 Text("No transcriptions yet")
@@ -82,7 +103,7 @@ struct MenuBarView: View {
                 }
             }
             Divider()
-            Button("Open History Folder") {
+            Button("Open transcripts folder") {
                 NSWorkspace.shared.open(URL(fileURLWithPath: AppDirectories.text))
             }
         }
@@ -101,7 +122,7 @@ struct MenuBarView: View {
                 }
             }
             Divider()
-            Button("Open Audio Folder") {
+            Button("Open audio folder") {
                 NSWorkspace.shared.open(URL(fileURLWithPath: AppDirectories.audio))
             }
         }
@@ -117,24 +138,20 @@ struct MenuBarView: View {
         })
         .keyboardShortcut(",", modifiers: .command)
 
-        // System actions submenu groups the destructive / admin items together.
-        Menu("Service") {
-            Button("Restart") {
-                appState.ipcClient?.sendAction("restart")
-            }
-            .keyboardShortcut("r", modifiers: [.command, .shift])
+        Button("Check for updates…") {
+            appState.ipcClient?.sendAction("update")
+        }
+        .keyboardShortcut("u", modifiers: [.command, .shift])
 
-            Button("Check for Updates") {
-                appState.ipcClient?.sendAction("update")
-            }
-            .keyboardShortcut("u", modifiers: [.command, .shift])
+        Button("Restart background service") {
+            appState.ipcClient?.sendAction("restart")
+        }
+        .keyboardShortcut("r", modifiers: [.command, .shift])
+        .help("Relaunch the headless recording / transcription service in the background. Use if the app stops responding.")
 
-            Divider()
-
-            Button("Open Service Log") {
-                let path = (NSHomeDirectory() as NSString).appendingPathComponent(".whisper/service.log")
-                NSWorkspace.shared.open(URL(fileURLWithPath: path))
-            }
+        Button("Open service log") {
+            let path = (NSHomeDirectory() as NSString).appendingPathComponent(".whisper/service.log")
+            NSWorkspace.shared.open(URL(fileURLWithPath: path))
         }
 
         Divider()
@@ -210,9 +227,10 @@ struct MenuBarView: View {
 
     private func engineDisplayName(_ id: String) -> String {
         switch id {
-        case "qwen3_asr":  return "Qwen3-ASR"
-        case "whisperkit": return "WhisperKit"
-        default:           return id
+        case "parakeet_v3": return "Parakeet-TDT v3"
+        case "qwen3_asr":   return "Qwen3-ASR"
+        case "whisperkit":  return "WhisperKit"
+        default:            return id
         }
     }
 
@@ -226,38 +244,47 @@ struct MenuBarView: View {
         }
     }
 
-    private var engineMenuTitle: String {
-        "Engine: \(engineDisplayName(appState.config.transcription.engine))"
+    private var transcriptionModelMenuTitle: String {
+        // STT acronym spelled out in the label so users learn what this feature
+        // is. Model name follows so they also see what's actively loaded.
+        "Speech-to-text (STT): \(engineDisplayName(appState.config.transcription.engine))"
     }
 
     private var grammarMenuTitle: String {
-        guard appState.config.grammar.enabled else { return "Grammar: Disabled" }
-        return "Grammar: \(grammarBackendName)"
+        guard appState.config.grammar.enabled else { return "Grammar correction: Off" }
+        return "Grammar correction: \(grammarBackendName)"
     }
 
     private var replacementsMenuTitle: String {
         let count = appState.config.replacements.rules.count
-        if count == 0 { return "Replacements" }
-        return "Replacements (\(count) rule\(count == 1 ? "" : "s"))"
+        if count == 0 { return "Text replacements" }
+        return "Text replacements (\(count) rule\(count == 1 ? "" : "s"))"
+    }
+
+    private var readAloudMenuTitle: String {
+        // TTS acronym spelled out so the feature category is unambiguous.
+        // Shortcut inline so users know what triggers it.
+        "Text-to-speech (TTS) — ⌥T on selection"
     }
 
     private var transcriptionsMenuTitle: String {
         let count = appState.history.count
-        if count == 0 { return "Transcriptions" }
-        return "Transcriptions (\(count))"
+        if count == 0 { return "Saved transcriptions" }
+        return "Saved transcriptions (\(count))"
     }
 
     private var recordingsMenuTitle: String {
         let count = appState.historyWithAudio.count
-        if count == 0 { return "Recordings" }
-        return "Recordings (\(count))"
+        if count == 0 { return "Saved audio recordings" }
+        return "Saved audio recordings (\(count))"
     }
 
     private var accessibilityStatusLabel: String {
+        // Must NOT depend on durationSeconds / rmsLevel — see AppState.menuStatusLabel.
         switch appState.phase {
         case .idle: return "Local Whisper: Ready"
-        case .recording: return "Local Whisper: Recording, \(String(format: "%.0f", appState.durationSeconds)) seconds"
-        case .processing: return "Local Whisper: Processing transcription"
+        case .recording: return "Local Whisper: Recording"
+        case .processing: return "Local Whisper: Transcribing"
         case .done: return "Local Whisper: Transcription copied"
         case .error: return "Local Whisper: Error"
         case .speaking: return "Local Whisper: Speaking"

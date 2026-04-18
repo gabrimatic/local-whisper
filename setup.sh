@@ -248,54 +248,124 @@ mkdir -p "$MODEL_DIR"
 
 log_step "Downloading models (one-time)..."
 
-# Qwen3-ASR (transcription)
-if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
+# Transcription engine: only prepare the currently-selected one. Users who
+# switch engines later pay the download + warm-up on that switch's first call
+# (engines lazy-load). Warm-up compiles the MLX graph (kernels cached to disk);
+# it does not keep the model in RAM.
+ACTIVE_ENGINE=$("$VENV_DIR/bin/python3" -c "
+from whisper_voice.config import load_config
+print(load_config().transcription.engine)
+" 2>/dev/null || echo "parakeet_v3")
+
+case "$ACTIVE_ENGINE" in
+    parakeet_v3)
+        if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
+from parakeet_mlx import from_pretrained
+from_pretrained('mlx-community/parakeet-tdt-0.6b-v3')
+" 2>/dev/null; then
+            log_ok "Parakeet-TDT v3 model"
+        else
+            log_warn "Parakeet download failed (will retry on first use)"
+        fi
+
+        PARAKEET_WARM_SENTINEL="$MODEL_DIR/.parakeet_v3_warmed"
+        if [[ -f "$PARAKEET_WARM_SENTINEL" ]]; then
+            log_ok "Parakeet already warmed up"
+        else
+            log_info "Warming up Parakeet (compiling MLX graph, ~30s, one-time)..."
+            if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
+import numpy as np, tempfile, wave, os
+from parakeet_mlx import from_pretrained
+model = from_pretrained('mlx-community/parakeet-tdt-0.6b-v3')
+sr = int(model.preprocessor_config.sample_rate)
+silence = np.zeros(int(sr * 0.5), dtype=np.int16)
+with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+    path = f.name
+try:
+    with wave.open(path, 'wb') as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr); w.writeframes(silence.tobytes())
+    model.transcribe(path)
+finally:
+    try: os.unlink(path)
+    except OSError: pass
+" 2>/dev/null; then
+                touch "$PARAKEET_WARM_SENTINEL"
+                log_ok "Parakeet warmed up"
+            else
+                log_warn "Parakeet warm-up failed (first transcription may be slower)"
+            fi
+        fi
+        ;;
+
+    qwen3_asr)
+        if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
 from qwen3_asr_mlx import Qwen3ASR
 Qwen3ASR.from_pretrained('mlx-community/Qwen3-ASR-1.7B-bf16')
 " 2>/dev/null; then
-    log_ok "Qwen3-ASR model"
-else
-    log_warn "Qwen3-ASR download failed (will retry on first use)"
-fi
+            log_ok "Qwen3-ASR model"
+        else
+            log_warn "Qwen3-ASR download failed (will retry on first use)"
+        fi
 
-# Warm up Qwen3-ASR (compiles the MLX graph, 60-120s). Skip on re-runs so
-# repeat ./setup.sh invocations stay fast; remove the sentinel to force a rewarm.
-QWEN_WARM_SENTINEL="$MODEL_DIR/.qwen3_warmed"
-if [[ -f "$QWEN_WARM_SENTINEL" ]]; then
-    log_ok "Qwen3-ASR already warmed up"
-else
-    log_info "Warming up Qwen3-ASR (compiling MLX graph, 60-120s, one-time)..."
-    if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
+        QWEN_WARM_SENTINEL="$MODEL_DIR/.qwen3_warmed"
+        if [[ -f "$QWEN_WARM_SENTINEL" ]]; then
+            log_ok "Qwen3-ASR already warmed up"
+        else
+            log_info "Warming up Qwen3-ASR (compiling MLX graph, 60-120s, one-time)..."
+            if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
 from qwen3_asr_mlx import Qwen3ASR
 model = Qwen3ASR.from_pretrained('mlx-community/Qwen3-ASR-1.7B-bf16')
 model.warm_up()
 " 2>/dev/null; then
-        touch "$QWEN_WARM_SENTINEL"
-        log_ok "Qwen3-ASR warmed up"
-    else
-        log_warn "Warm-up failed (first transcription may be slower)"
-    fi
-fi
+                touch "$QWEN_WARM_SENTINEL"
+                log_ok "Qwen3-ASR warmed up"
+            else
+                log_warn "Warm-up failed (first transcription may be slower)"
+            fi
+        fi
+        ;;
 
-# Kokoro TTS dependencies
+    whisperkit)
+        log_info "WhisperKit engine selected. Install 'whisperkit-cli' via Homebrew; models download on first run."
+        ;;
+
+    *)
+        log_warn "Unknown engine '$ACTIVE_ENGINE'. Model download skipped."
+        ;;
+esac
+
+# Text-to-Speech (Kokoro): only prepare when the user has TTS enabled. Off by
+# default to keep fresh installs lean (~170 MB model + spaCy dict). Run
+# `./setup.sh` again after enabling TTS in Settings to download the assets.
+TTS_ENABLED=$("$VENV_DIR/bin/python3" -c "
+from whisper_voice.config import load_config
+print('true' if load_config().tts.enabled else 'false')
+" 2>/dev/null || echo "false")
+
+# espeak-ng is tiny and useful beyond TTS; install regardless so enabling TTS
+# later does not require another Homebrew run.
 if ! brew list espeak-ng &>/dev/null 2>&1; then
     brew install espeak-ng -q 2>/dev/null || log_warn "espeak-ng install failed (TTS may not work)"
 fi
-# Skip the spaCy download when the model is already available; on re-runs it
-# otherwise re-downloads unconditionally even though pip already has it.
-if ! "$VENV_DIR/bin/python3" -c "import en_core_web_sm" 2>/dev/null; then
-    "$VENV_DIR/bin/python3" -m spacy download en_core_web_sm -q 2>/dev/null \
-        || log_warn "spacy model download failed (TTS may not work)"
-fi
 
-# Kokoro TTS model
-if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
+if [ "$TTS_ENABLED" = "true" ]; then
+    # Skip the spaCy download when the model is already available; on re-runs it
+    # otherwise re-downloads unconditionally even though pip already has it.
+    if ! "$VENV_DIR/bin/python3" -c "import en_core_web_sm" 2>/dev/null; then
+        "$VENV_DIR/bin/python3" -m spacy download en_core_web_sm -q 2>/dev/null \
+            || log_warn "spacy model download failed (TTS may not work)"
+    fi
+
+    if HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
 from kokoro_mlx import KokoroTTS
 KokoroTTS.from_pretrained('mlx-community/Kokoro-82M-bf16')
 " 2>/dev/null; then
-    log_ok "Kokoro TTS model"
+        log_ok "Kokoro TTS model"
+    else
+        log_warn "Kokoro download failed (will retry on first use)"
+    fi
 else
-    log_warn "Kokoro download failed (will retry on first use)"
+    log_info "Text-to-speech is off. Turn it on in Settings -> Voice to download Kokoro (~170 MB)."
 fi
 
 # ============================================================================

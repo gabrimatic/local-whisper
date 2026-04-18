@@ -32,8 +32,38 @@ key = "alt_r"
 double_tap_threshold = 0.4
 
 [transcription]
-# Transcription engine: "qwen3_asr" (default) or "whisperkit"
-engine = "qwen3_asr"
+# Transcription engine: "parakeet_v3" (default, multilingual),
+# "qwen3_asr" (English only), or "whisperkit"
+engine = "parakeet_v3"
+
+[parakeet_v3]
+# Parakeet-TDT model from mlx-community. v3 is multilingual (EN + 24 EU),
+# tops the HuggingFace Open ASR Leaderboard.
+model = "mlx-community/parakeet-tdt-0.6b-v3"
+
+# Transcription timeout in seconds (0 = no limit)
+timeout = 0
+
+# Chunk duration (seconds) for long audio. 0 disables chunking (requires
+# local_attention for very long recordings). Default 120s matches upstream CLI.
+chunk_duration = 120.0
+
+# Overlap (seconds) between consecutive chunks. Default 15s.
+overlap_duration = 15.0
+
+# Decoding strategy: "greedy" or "beam" (beam uses more CPU, slight quality gain)
+decoding = "greedy"
+
+# Beam decoding parameters (only used when decoding = "beam")
+beam_size = 5
+length_penalty = 0.013
+patience = 3.5
+duration_reward = 0.67
+
+# Local attention reduces peak memory for long unchunked audio.
+# Leave false unless you disable chunking and need full-session context.
+local_attention = false
+local_attention_context_size = 256
 
 [qwen3_asr]
 # Model identifier from Hugging Face
@@ -207,8 +237,11 @@ rewrite = "ctrl+shift+r"
 prompt_engineer = "ctrl+shift+p"
 
 [tts]
-# Enable Text-to-Speech (select text in any app and press the shortcut to hear it read aloud)
-enabled = true
+# Text-to-Speech: select text in any app and press the shortcut to hear it read aloud.
+# Activating this downloads the Kokoro voice model (~170 MB) on first use and requires
+# espeak-ng (system) plus en_core_web_sm (spaCy). Run ./setup.sh while enabled to
+# pre-fetch everything.
+enabled = false
 
 provider = "kokoro"
 
@@ -257,7 +290,22 @@ enabled = true
 
 @dataclass
 class TranscriptionConfig:
-    engine: str = "qwen3_asr"
+    engine: str = "parakeet_v3"
+
+
+@dataclass
+class ParakeetConfig:
+    model: str = "mlx-community/parakeet-tdt-0.6b-v3"
+    timeout: int = 0
+    chunk_duration: float = 120.0
+    overlap_duration: float = 15.0
+    decoding: str = "greedy"  # "greedy" or "beam"
+    beam_size: int = 5
+    length_penalty: float = 0.013
+    patience: float = 3.5
+    duration_reward: float = 0.67
+    local_attention: bool = False
+    local_attention_context_size: int = 256
 
 
 @dataclass
@@ -383,7 +431,7 @@ class ShortcutsConfig:
 @dataclass
 class TTSConfig:
     """Text-to-Speech configuration."""
-    enabled: bool = True
+    enabled: bool = False
     provider: str = "kokoro"
     speak_shortcut: str = "alt+t"
 
@@ -420,6 +468,7 @@ class DictationConfig:
 class Config:
     hotkey: HotkeyConfig = field(default_factory=HotkeyConfig)
     transcription: TranscriptionConfig = field(default_factory=TranscriptionConfig)
+    parakeet: ParakeetConfig = field(default_factory=ParakeetConfig)
     qwen3_asr: Qwen3ASRConfig = field(default_factory=Qwen3ASRConfig)
     whisper: WhisperConfig = field(default_factory=WhisperConfig)
     grammar: GrammarConfig = field(default_factory=GrammarConfig)

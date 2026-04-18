@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Parakeet-TDT v3 is the new default transcription engine.** NVIDIA's Parakeet-TDT-0.6B-v3 tops the HuggingFace Open ASR Leaderboard and beats Whisper-large-v3 and every 1.1B Parakeet variant. It runs fully in-process via [parakeet-mlx](https://github.com/senstella/parakeet-mlx), supports English plus 24 European languages, and handles long audio through overlapping 120s chunks. Qwen3-ASR remains available for English-only workflows via `wh engine qwen3_asr`; WhisperKit remains available as a third option.
+- **Parakeet settings panel** in Transcription exposing model, chunking (`chunk_duration`, `overlap_duration`), decoding strategy (`greedy` / `beam`), beam tuning (`beam_size`, `length_penalty`, `patience`, `duration_reward`), timeout, and local-attention mode with adjustable context size.
+- **`setup.sh`, `wh doctor`, and `wh update` are now engine-aware.** Only the currently-selected transcription engine's model is downloaded and warmed. Fresh installs pull Parakeet-TDT v3 (~600 MB). Switching to Qwen3-ASR later lazy-loads that model on the engine's first call; neither engine holds RAM when the other is active. Warm-up compiles the MLX graph so first inference is fast. It does not pin the model in memory.
+- Dedicated warm-up sentinels at `~/.whisper/models/.parakeet_v3_warmed` and `~/.whisper/models/.qwen3_warmed` so re-running setup skips the one-time graph compile.
+
+### Changed
+
+- New installs default to `engine = "parakeet_v3"` in `config.toml`. Existing installs keep their current engine; switch anytime via Settings or `wh engine parakeet_v3`.
+- Menu bar engine submenu now lists Parakeet-TDT v3 first, followed by Qwen3-ASR (English) and WhisperKit.
+- **Text-to-Speech is opt-in.** Turn it on from the menu bar or Settings -> Voice; the first ⌥T then downloads the Kokoro-82M voice model (~170 MB) and loads the spaCy `en_core_web_sm` dictionary. `setup.sh`, `wh doctor`, and `wh update` skip the Kokoro model and spaCy dictionary while TTS is off and surface them as informational notes instead of failures. Run `./setup.sh` with TTS enabled to pre-fetch everything so the first speak is instant.
+
 ## [1.4.1] - 2026-04-18
 
 ### Fixed

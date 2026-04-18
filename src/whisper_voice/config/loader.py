@@ -22,6 +22,7 @@ from .schema import (
     KokoroTTSConfig,
     LMStudioConfig,
     OllamaConfig,
+    ParakeetConfig,
     Qwen3ASRConfig,
     ReplacementsConfig,
     ShortcutsConfig,
@@ -75,7 +76,7 @@ def _validate_config(config: Config):
     from ..engines import ENGINE_REGISTRY
     valid_engines = tuple(ENGINE_REGISTRY.keys())
     if valid_engines and config.transcription.engine not in valid_engines:
-        default_engine = "qwen3_asr" if "qwen3_asr" in valid_engines else valid_engines[0]
+        default_engine = "parakeet_v3" if "parakeet_v3" in valid_engines else valid_engines[0]
         print(
             f"Config warning: Invalid transcription engine '{config.transcription.engine}', using '{default_engine}'",
             file=sys.stderr,
@@ -94,6 +95,20 @@ def _validate_config(config: Config):
             file=sys.stderr,
         )
         config.grammar.backend = default_backend
+
+    # Parakeet validation
+    if config.parakeet.decoding not in ("greedy", "beam"):
+        print(
+            f"Config warning: Invalid parakeet_v3 decoding '{config.parakeet.decoding}', using 'greedy'",
+            file=sys.stderr,
+        )
+        config.parakeet.decoding = "greedy"
+    if config.parakeet.chunk_duration < 0:
+        config.parakeet.chunk_duration = 0.0
+    if config.parakeet.overlap_duration < 0:
+        config.parakeet.overlap_duration = 0.0
+    if config.parakeet.beam_size < 1:
+        config.parakeet.beam_size = 5
 
     # Hotkey validation
     valid_keys = {
@@ -214,6 +229,24 @@ def load_config() -> Config:
     if 'transcription' in data:
         config.transcription = TranscriptionConfig(
             engine=data['transcription'].get('engine', config.transcription.engine),
+        )
+
+    # Parakeet settings
+    if 'parakeet_v3' in data:
+        config.parakeet = ParakeetConfig(
+            model=data['parakeet_v3'].get('model', config.parakeet.model),
+            timeout=data['parakeet_v3'].get('timeout', config.parakeet.timeout),
+            chunk_duration=data['parakeet_v3'].get('chunk_duration', config.parakeet.chunk_duration),
+            overlap_duration=data['parakeet_v3'].get('overlap_duration', config.parakeet.overlap_duration),
+            decoding=data['parakeet_v3'].get('decoding', config.parakeet.decoding),
+            beam_size=data['parakeet_v3'].get('beam_size', config.parakeet.beam_size),
+            length_penalty=data['parakeet_v3'].get('length_penalty', config.parakeet.length_penalty),
+            patience=data['parakeet_v3'].get('patience', config.parakeet.patience),
+            duration_reward=data['parakeet_v3'].get('duration_reward', config.parakeet.duration_reward),
+            local_attention=data['parakeet_v3'].get('local_attention', config.parakeet.local_attention),
+            local_attention_context_size=data['parakeet_v3'].get(
+                'local_attention_context_size', config.parakeet.local_attention_context_size
+            ),
         )
 
     # Qwen3 ASR settings

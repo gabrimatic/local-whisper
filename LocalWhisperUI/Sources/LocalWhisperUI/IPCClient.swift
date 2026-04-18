@@ -172,6 +172,10 @@ final class IPCClient: @unchecked Sendable {
         send(EngineSwitchMessage(engine: engine))
     }
 
+    func sendEngineRemoveCache(_ engine: String) {
+        send(EngineRemoveCacheMessage(engine: engine))
+    }
+
     func sendBackendSwitch(_ backend: String) {
         send(BackendSwitchMessage(backend: backend))
     }

@@ -54,6 +54,10 @@ def _import_backend_registry():
 # ---------------------------------------------------------------------------
 
 class TestEngineRegistry:
+    def test_parakeet_v3_registered(self):
+        registry, _ = _import_engine_registry()
+        assert "parakeet_v3" in registry
+
     def test_qwen3_asr_registered(self):
         registry, _ = _import_engine_registry()
         assert "qwen3_asr" in registry
