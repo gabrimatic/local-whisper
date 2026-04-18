@@ -10,26 +10,25 @@ struct OverlayView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var rmsHistory: [Double] = Array(repeating: 0, count: WaveformConfig.barCount)
+    @State private var lastRMSSampleAt: CFTimeInterval = 0
 
-    // Stable pill dimensions: the capsule never changes size between phases,
-    // only the content inside cross-fades. Prevents the "freeze / shrink" the
-    // user sees when recording → processing → done resizes the pill on each step.
     private static let pillWidth: CGFloat = 290
     private static let pillHeight: CGFloat = 46
+    private static let rmsMinInterval: CFTimeInterval = 1.0 / 30.0
 
     var body: some View {
         ZStack {
             content
-                .id(appState.phase)
                 .transition(.opacity)
         }
         .frame(width: Self.pillWidth, height: Self.pillHeight)
+        .background(
+            OverlayShadow(colorScheme: colorScheme, reduceTransparency: reduceTransparency)
+        )
         .modifier(OverlayBackground(reduceTransparency: reduceTransparency))
         .overlay(
             Capsule().strokeBorder(strokeColor, lineWidth: 0.8)
         )
-        .compositingGroup()
-        .shadow(color: .black.opacity(reduceTransparency ? 0 : 0.18), radius: 18, x: 0, y: 8)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(pillAccessibilityLabel)
         .accessibilityValue(pillAccessibilityValue)
@@ -38,8 +37,11 @@ struct OverlayView: View {
             handleRMSSample(newValue)
         }
         .onChange(of: appState.phase) { _, newPhase in
-            if newPhase == .recording {
+            switch newPhase {
+            case .recording, .idle, .done:
                 rmsHistory = Array(repeating: 0, count: WaveformConfig.barCount)
+            default:
+                break
             }
         }
     }
@@ -188,10 +190,21 @@ struct OverlayView: View {
 
     private func handleRMSSample(_ rms: Double) {
         guard appState.phase == .recording else { return }
+        let now = CACurrentMediaTime()
+        if now - lastRMSSampleAt < Self.rmsMinInterval { return }
+        lastRMSSampleAt = now
         let normalized = normalize(rms)
-        rmsHistory.append(normalized)
-        if rmsHistory.count > WaveformConfig.barCount {
-            rmsHistory.removeFirst(rmsHistory.count - WaveformConfig.barCount)
+        var next = rmsHistory
+        next.append(normalized)
+        if next.count > WaveformConfig.barCount {
+            next.removeFirst(next.count - WaveformConfig.barCount)
+        }
+        if reduceMotion {
+            rmsHistory = next
+        } else {
+            withAnimation(.smooth(duration: 0.18)) {
+                rmsHistory = next
+            }
         }
     }
 
@@ -261,7 +274,6 @@ private struct WaveformView: View {
                             width: WaveformConfig.barWidth,
                             height: max(2, geo.size.height * CGFloat(value))
                         )
-                        .animation(isReducedMotion ? .none : .smooth(duration: 0.18), value: value)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
@@ -310,6 +322,23 @@ private struct OverlayBackground: ViewModifier {
             content.background(.ultraThickMaterial, in: .capsule)
         } else {
             content.glassEffect(.regular.interactive(false), in: .capsule)
+        }
+    }
+}
+
+private struct OverlayShadow: View {
+    let colorScheme: ColorScheme
+    let reduceTransparency: Bool
+
+    var body: some View {
+        if reduceTransparency {
+            Color.clear
+        } else {
+            Capsule()
+                .fill(Color.black.opacity(colorScheme == .dark ? 0.28 : 0.08))
+                .blur(radius: colorScheme == .dark ? 14 : 10)
+                .offset(y: colorScheme == .dark ? 4 : 3)
+                .allowsHitTesting(false)
         }
     }
 }

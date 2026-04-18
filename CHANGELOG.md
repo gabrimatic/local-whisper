@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Overlay no longer freezes mid-transcription.** The waveform stacked 28 overlapping animations per RMS sample, which could back up the SwiftUI render pipeline until the pill stopped animating entirely. RMS updates are now throttled to 30 Hz and drive a single animation transaction. The phase transition (recording → processing → done) no longer tears down the view subtree, so in-flight animations and state survive the handover cleanly.
+- **Service can no longer stall on a slow overlay.** The IPC sender used `sendall()` with no total-time cap; if the Swift UI was briefly busy, the pipeline thread could block indefinitely on the socket. Writes now use `MSG_DONTWAIT` with a 5-second cap and drop snapshot updates rather than queue them under contention. A stalled consumer drops the connection and reconnects instead of freezing the service.
+- **Transcription heartbeat.** Long transcriptions sent exactly one "Transcribing…" state update and then nothing until completion. A 2-second heartbeat now keeps the overlay and service visibly in sync for any recording length.
+
+### Changed
+
+- **Overlay shadow redesign.** The drop shadow is now a crisp capsule-shaped halo that matches the pill exactly and adapts to light/dark mode. Light mode uses a subtle 8% black halo; dark mode uses a stronger 28%. The previous shadow was too heavy on white backgrounds and read as rectangular instead of rounded.
+
 ## [1.4.0] - 2026-04-18
 
 ### Added

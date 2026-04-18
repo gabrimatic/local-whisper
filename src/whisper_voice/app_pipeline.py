@@ -29,6 +29,7 @@ _TRANSCRIBE_WATCHDOG_SECONDS = 20 * 60
 _GRAMMAR_WATCHDOG_SECONDS = 90
 _PASTE_WATCHDOG_SECONDS = 8
 _MIN_CLIP_SECONDS = 0.5
+_TRANSCRIBE_HEARTBEAT_SECONDS = 2.0
 
 
 class PipelineMixin:
@@ -304,6 +305,17 @@ class PipelineMixin:
         self._current_status = "Transcribing..."
         self._send_state_update()
         log("Transcribing (this may take a moment)...")
+        stop_heartbeat = threading.Event()
+
+        def _heartbeat():
+            while not stop_heartbeat.wait(_TRANSCRIBE_HEARTBEAT_SECONDS):
+                try:
+                    self._send_state_update()
+                except Exception:
+                    pass
+
+        hb_thread = threading.Thread(target=_heartbeat, daemon=True, name="transcribe-heartbeat")
+        hb_thread.start()
         try:
             result = run_with_timeout(
                 self.transcriber.transcribe,
@@ -313,6 +325,8 @@ class PipelineMixin:
             )
         except Exception as e:
             return None, f"Transcription crashed: {e}"
+        finally:
+            stop_heartbeat.set()
         if isinstance(result, TimedOut):
             # Force reload: abandoned worker left MLX state mid-mutation.
             try:

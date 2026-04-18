@@ -11,6 +11,7 @@ import os
 import select
 import socket
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Optional
@@ -19,6 +20,8 @@ from .utils import log
 
 SOCKET_PATH = str(Path.home() / ".whisper" / "ipc.sock")
 _SEND_READY_TIMEOUT = 2.0
+_SEND_TOTAL_TIMEOUT = 5.0
+_SEND_LOCK_ACQUIRE_TIMEOUT = 0.5
 
 
 class IPCServer:
@@ -27,6 +30,7 @@ class IPCServer:
     def __init__(self):
         self._client: Optional[socket.socket] = None
         self._client_lock = threading.Lock()
+        self._send_lock = threading.Lock()
         self._message_handler: Optional[Callable[[dict], None]] = None
         self._on_connect: Optional[Callable[[], None]] = None
         self._server: Optional[socket.socket] = None
@@ -42,30 +46,59 @@ class IPCServer:
         self._on_connect = callback
 
     def send(self, msg: dict):
-        """Thread-safe send. Drops the client on failure."""
-        with self._client_lock:
-            client = self._client
-        if client is None:
+        """Thread-safe send. Drops the client on timeout or failure.
+
+        State updates are snapshots, not a log — if another thread is already
+        writing, we drop rather than queue. Writes are non-blocking with a
+        total-time cap so a stalled consumer can never freeze the caller.
+        """
+        if not self._send_lock.acquire(timeout=_SEND_LOCK_ACQUIRE_TIMEOUT):
             return
         try:
-            data = (json.dumps(msg) + "\n").encode("utf-8")
-            # select() on the read side here — a full kernel send buffer
-            # (Swift not draining) is the one failure we need to bound.
-            # settimeout() would mutate the socket's blocking flag and
-            # break the concurrent recv() in _read_loop.
-            _, writable, _ = select.select([], [client], [], _SEND_READY_TIMEOUT)
-            if not writable:
-                raise TimeoutError("Swift client not draining")
-            client.sendall(data)
-        except Exception as e:
-            log(f"IPC send error: {e}", "WARN")
             with self._client_lock:
-                if self._client is client:
-                    self._client = None
+                client = self._client
+            if client is None:
+                return
+            data = (json.dumps(msg) + "\n").encode("utf-8")
+            try:
+                self._write_with_timeout(client, data)
+            except Exception as e:
+                log(f"IPC send error: {e}", "WARN")
+                with self._client_lock:
+                    if self._client is client:
+                        self._client = None
                 try:
                     client.close()
                 except Exception:
                     pass
+        finally:
+            self._send_lock.release()
+
+    def _write_with_timeout(self, client: socket.socket, data: bytes):
+        """Non-blocking chunked write. Raises TimeoutError past the total cap.
+
+        Uses MSG_DONTWAIT per-call instead of mutating the socket's blocking
+        flag — the concurrent recv() in _read_loop shares this socket and must
+        stay blocking.
+        """
+        deadline = time.monotonic() + _SEND_TOTAL_TIMEOUT
+        view = memoryview(data)
+        sent = 0
+        while sent < len(view):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("Swift client not draining (total timeout)")
+            try:
+                n = client.send(view[sent:], socket.MSG_DONTWAIT)
+                if n == 0:
+                    raise ConnectionError("socket closed mid-send")
+                sent += n
+            except BlockingIOError:
+                _, writable, _ = select.select(
+                    [], [client], [], min(_SEND_READY_TIMEOUT, remaining)
+                )
+                if not writable:
+                    raise TimeoutError("Swift client not draining")
 
     def start(self):
         """Start the IPC server in a background daemon thread."""
