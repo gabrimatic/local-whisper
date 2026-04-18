@@ -18,21 +18,24 @@ class CommandsMixin:
     # ------------------------------------------------------------------
 
     def _handle_command(self, request: dict, send: callable):
-        """Handle a CLI command from the command socket."""
-        cmd_type = request.get("type")
+        """Handle a CLI command from the command socket.
+
+        Requests use the ``action`` key (same vocabulary as responses).
+        """
+        action = request.get("action")
         stop_event = request.get("_stop_event", threading.Event())
 
-        if cmd_type == "whisper":
+        if action == "whisper":
             self._cmd_whisper(request, send, stop_event)
-        elif cmd_type == "listen":
+        elif action == "listen":
             self._cmd_listen(request, send, stop_event)
-        elif cmd_type == "transcribe":
+        elif action == "transcribe":
             self._cmd_transcribe(request, send, stop_event)
-        elif cmd_type == "stop":
+        elif action == "stop":
             # Stop is handled by the disconnect watcher in cmd_server
             pass
         else:
-            send({"type": "error", "message": f"Unknown command: {cmd_type}"})
+            send({"type": "error", "message": f"Unknown command: {action}"})
 
     def _cmd_whisper(self, request: dict, send: callable, stop_event: threading.Event):
         """Speak text aloud via TTS."""
@@ -139,22 +142,34 @@ class CommandsMixin:
                 send({"type": "error", "message": "No speech detected"})
                 return
 
-            # Grammar
-            final_text = raw_text
+            # Preserve the untouched transcription for the response payload so
+            # `raw_text` is actually raw (pre-dictation, pre-grammar, pre-
+            # replacements). The user is dictating into a shell, so dictation
+            # commands do apply on the processed text — --raw only suppresses
+            # grammar correction, matching historical CLI semantics.
+            original_raw = raw_text
+            processed = self._apply_dictation_commands(raw_text)
+
+            final_text = processed
             if not skip_grammar:
                 self._check_grammar_connection()
-                final_text = self._apply_grammar(raw_text)
+                final_text = self._apply_grammar(processed)
 
-            # Replacements
             final_text = self._apply_replacements(final_text)
 
-            send({"type": "done", "text": final_text, "raw_text": raw_text, "success": True})
+            send({"type": "done", "text": final_text, "raw_text": original_raw, "success": True})
 
         except Exception as e:
             send({"type": "error", "message": str(e)})
         finally:
             if self.recorder.recording:
                 self.recorder.stop()
+            # Re-arm the pre-recording monitor. self.recorder.start() stops it when the
+            # CLI 'listen' begins; without this call it stays off until the next restart.
+            try:
+                self.recorder.start_monitoring()
+            except Exception:
+                pass
             with self._state_lock:
                 self._busy = False
 
@@ -195,15 +210,19 @@ class CommandsMixin:
                 send({"type": "error", "message": "No speech detected"})
                 return
 
-            raw_text = cleaned
-            final_text = raw_text
+            # `wh transcribe` points at an arbitrary audio file, so the speaker
+            # is almost certainly not dictating with voice commands in mind.
+            # Running dictation would turn a literal "period" into a ".". Skip
+            # the dictation pass entirely and only run grammar + replacements.
+            original_raw = cleaned
+            final_text = original_raw
             if not skip_grammar:
                 self._check_grammar_connection()
-                final_text = self._apply_grammar(raw_text)
+                final_text = self._apply_grammar(original_raw)
 
             final_text = self._apply_replacements(final_text)
 
-            send({"type": "done", "text": final_text, "raw_text": raw_text, "success": True})
+            send({"type": "done", "text": final_text, "raw_text": original_raw, "success": True})
 
         except Exception as e:
             send({"type": "error", "message": str(e)})

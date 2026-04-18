@@ -8,15 +8,43 @@ Handles persistence of audio recordings and transcriptions.
 
 import glob
 import os
+import shutil
 import threading
+import time
 import wave
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 
 from .config import get_config
 from .utils import log
+
+_LOW_SPACE_LOCK = threading.Lock()
+
+_MIN_FREE_BYTES = 200 * 1024 * 1024
+_LOW_SPACE_WARNED: dict = {"last_ts": 0.0}
+
+
+def _has_free_space(path: Path, required_bytes: int = _MIN_FREE_BYTES) -> bool:
+    """True when path's filesystem has at least required_bytes free. Fails safe."""
+    try:
+        free = shutil.disk_usage(str(path)).free
+    except OSError:
+        return True
+    if free >= required_bytes:
+        return True
+    now = time.time()
+    with _LOW_SPACE_LOCK:
+        if now - _LOW_SPACE_WARNED["last_ts"] > 60:
+            log(
+                f"Low disk space: {free / 1024 / 1024:.0f} MB free at {path} "
+                f"(need {required_bytes / 1024 / 1024:.0f} MB)",
+                "ERR",
+            )
+            _LOW_SPACE_WARNED["last_ts"] = now
+    return False
 
 
 class Backup:
@@ -72,7 +100,7 @@ class Backup:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         return self._history_dir / f"{ts}.txt"
 
-    def save_audio(self, data: np.ndarray) -> Path:
+    def save_audio(self, data: np.ndarray) -> Optional[Path]:
         """Save audio data to WAV file.
 
         Writes to last_recording.wav (for retry) AND a timestamped copy in
@@ -80,6 +108,8 @@ class Backup:
         history_limit recordings and prunes older ones.
         """
         config = get_config()
+        if not _has_free_space(self._dir):
+            return None
         # Clean up stale segment files from previous long recordings
         for seg_file in glob.glob(os.path.join(self._dir, "last_recording_[0-9]*.wav")):
             try:
@@ -174,7 +204,7 @@ class Backup:
             except Exception as e:
                 log(f"Save history failed: {e}", "ERR")
 
-    def save_processed_audio(self, data: np.ndarray) -> Path:
+    def save_processed_audio(self, data: np.ndarray) -> Optional[Path]:
         """Save processed audio for transcription (separate from raw backup)."""
         config = get_config()
         with self._lock:
@@ -192,9 +222,11 @@ class Backup:
                 log(f"Save processed audio failed: {e}", "ERR")
                 return None
 
-    def save_audio_segment(self, data: np.ndarray, index: int) -> Path:
-        """Save a segment of a long recording. Returns path."""
+    def save_audio_segment(self, data: np.ndarray, index: int) -> Optional[Path]:
+        """Save a segment of a long recording. Returns path or None on failure."""
         config = get_config()
+        if not _has_free_space(self._dir):
+            return None
         path = self._dir / f"last_recording_{index}.wav"
         with self._lock:
             try:

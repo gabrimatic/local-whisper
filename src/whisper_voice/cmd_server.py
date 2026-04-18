@@ -158,7 +158,9 @@ class CommandServer:
                 send_response({"type": "error", "message": "Invalid JSON"})
                 return
 
-            # Monitor for client disconnect during long operations
+            # Monitor for client disconnect during long operations.
+            # Inline frames use the same {"action": "<name>"} shape as the
+            # initial request, with "stop" signalling cancel.
             def _watch_disconnect():
                 client.settimeout(None)
                 try:
@@ -166,14 +168,13 @@ class CommandServer:
                         data = client.recv(4096)
                         if not data:
                             break
-                        # Check for inline stop command
                         for part in data.split(b"\n"):
                             part = part.strip()
                             if not part:
                                 continue
                             try:
                                 msg = json.loads(part.decode("utf-8"))
-                                if msg.get("type") == "stop":
+                                if msg.get("action") == "stop":
                                     stop_event.set()
                                     return
                             except Exception:

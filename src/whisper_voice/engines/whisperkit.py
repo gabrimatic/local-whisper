@@ -94,6 +94,12 @@ class WhisperKitEngine(TranscriptionEngine):
 
         for i in range(STARTUP_TIMEOUT):
             time.sleep(1)
+            # Fail fast if the subprocess exited during startup.
+            if self._process.poll() is not None:
+                rc = self._process.returncode
+                self._process = None
+                log(f"WhisperKit process exited during startup (code={rc})", "ERR")
+                return False
             if self.running():
                 log("Whisper server ready", "OK")
                 return True
@@ -225,40 +231,25 @@ class WhisperKitEngine(TranscriptionEngine):
             return None, str(e)[:30]
 
     def close(self) -> None:
-        """Clean up resources and kill WhisperKit server."""
         try:
             self._session.close()
         except Exception:
             pass
 
+        try:
+            atexit.unregister(self.close)
+        except Exception:
+            pass
+
+        if self._process is None:
+            return
+
         log("Killing WhisperKit server...", "INFO")
-
-        killed_via_pid = False
-
-        # Kill the tracked process if we started it
-        if self._process is not None:
-            if self._process.poll() is None:
-                try:
-                    self._process.kill()
-                    self._process.wait(timeout=3)
-                    log("WhisperKit server killed", "OK")
-                    killed_via_pid = True
-                except Exception as e:
-                    log(f"Failed to kill tracked process: {e}", "WARN")
-            else:
-                # Process already exited on its own
-                killed_via_pid = True
-            self._process = None
-
-        # Fall back to pkill only when we have no tracked PID (server was
-        # already running before this app started, i.e. an orphan process).
-        if not killed_via_pid:
+        if self._process.poll() is None:
             try:
-                result = subprocess.run(
-                    ['pkill', '-f', 'whisperkit-cli serve'],
-                    timeout=2, capture_output=True
-                )
-                if result.returncode == 0:
-                    log("WhisperKit server killed via pkill (orphan cleanup)", "OK")
-            except Exception:
-                pass
+                self._process.kill()
+                self._process.wait(timeout=3)
+                log("WhisperKit server killed", "OK")
+            except Exception as e:
+                log(f"Failed to kill tracked process: {e}", "WARN")
+        self._process = None

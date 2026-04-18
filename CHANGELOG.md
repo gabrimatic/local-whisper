@@ -4,13 +4,50 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [1.3.1] - 2026-03-08
+## [Unreleased]
+
+### Added
+
+- **Settings auto-fetch**: opening Advanced Settings now probes Ollama and LM Studio immediately for their model lists and shows an Apple Intelligence availability row. No more manual "Fetch Models" tap before the Model picker populates. Per-URL caching prevents network storms on tab switching; changing a Check URL clears the cache and re-probes.
+- **Crash-recovery pipeline**: the service writes a marker at `~/.whisper/processing.marker` before heavy work and clears it on completion. On boot the service replays any interrupted transcription in the background and surfaces a `Recovered transcription` notification. A forced restart, panic, or power loss no longer silently drops a recording.
+- **Chunked long-session pipeline**: recordings longer than five minutes run through a dedicated pipeline that transcribes, grammar-corrects and persists each VAD segment to `~/.whisper/current_session.jsonl` before the next segment. If the service crashes mid-lecture, whatever chunks completed are committed as a `[Interrupted]`-tagged history entry on the next boot instead of vanishing.
+- **Pipeline watchdog**: per-stage timeouts (transcribe 20 min, grammar 90 s, paste 8 s) prevent a single wedged backend from freezing the service. On a transcription timeout the engine is force-reloaded to clear any half-committed MLX/decoder state.
+- **LaunchAgent self-healing**: the plist now uses `KeepAlive={SuccessfulExit=false}` with a 10-second `ThrottleInterval` and 30-second `ExitTimeOut`, plus a separate `service.err.log`. Crashes auto-restart; clean stops don't. User-error exits (mic permission denied) exit 0 so launchd does not hot-loop.
+- **Sleep/wake resilience**: the Swift app observes `NSWorkspace.didWakeNotification` and sends a `resync_audio` IPC action on wake. The service also runs a 60-second audio-monitor heartbeat so a dead CoreAudio stream from sleep/wake or a mic swap is reaped and rebuilt without user action.
+- **Quieter-voice support**: VAD now adds a 210 ms trailing-edge hangover so soft word tails aren't clipped, and normalization adds an adaptive second-stage gain (up to +16 dB total, clip-guarded) for recordings that the primary 10 dB cap can't raise to a usable level.
+- **Low-confidence transcription retry**: when Qwen3-ASR returns an empty result on a short clip, the engine retries once with `temperature=0.2`, `top_p=0.95` before returning "No speech" — avoiding the common case where greedy decoding gets stuck on valid audio.
+- **Expanded `wh status`**: shows uptime, RSS, and any pending recovery work (interrupted transcriptions, partial long sessions) so users can see why the service just did something at boot.
+- **Voice dictation commands**: speak "new line", "new paragraph", "period", "comma", "question mark", "exclamation mark", "colon", "semicolon", "dash", "scratch that", and more, and Local Whisper replaces the phrase with the literal punctuation or whitespace. Runs before grammar correction so the grammar pass sees well-punctuated sentences. Toggle in `~/.whisper/config.toml` under `[dictation]`; add custom commands under `[dictation.commands]`.
+- **`wh export`** writes the full transcription history to Markdown, plain text, or JSON in one command. Defaults: `~/Desktop/local-whisper-history.md`. Supports `--format`, `--out`, and `--limit`.
+- **`wh stats`** prints local usage statistics: total sessions, total words and characters, average words per session, counts for today/7d/30d, first and last session timestamps, top words (stopwords filtered), and top replacement rules triggered.
+- **`wh doctor --report [PATH]`** writes a shareable diagnostic report (macOS version, architecture, Python version, install method, service state, configured engine and backend, installed package versions, last 60 log lines). Safe to paste into a GitHub issue; never includes config contents, recorded audio, or transcription text.
+- **`wh replace import <file>`** bulk-imports vocabulary rules from CSV, TSV, TOML-style (`"spoken" = "replacement"`), or arrow-style (`spoken -> replacement`) files. Duplicate keys in the input are surfaced in the summary.
 
 ### Fixed
 
-- Microphone permission check now retries up to three times after startup, handling the race condition where macOS TCC has not yet propagated the permission granted during setup.
-- Microphone permission error message now correctly instructs users to enable Python, not the terminal app.
-- `wh doctor --fix` now correctly installs the Apple Intelligence SDK on macOS 15 and later, not only on macOS 26+.
+- Toggling "Enable grammar correction" in Settings now actually loads or unloads the backend in-process instead of only writing the flag to config and leaving the model dangling.
+- `⌥T` text-to-speech no longer clobbers the clipboard when it falls back to Cmd+C for text selection. The prior clipboard contents are saved and restored.
+- Dead icon constants (`ICON_*`, `OVERLAY_WAVE_FRAMES`, `ANIM_INTERVAL_*`) and the dead `hide_dock_icon()` helper in `utils.py` removed. Asset imports no longer hard-crash the entire CLI if a single bundled PNG is missing.
+- WhisperKit engine no longer accumulates `atexit` handlers across engine switches, and now fails fast if the server subprocess dies during startup instead of polling a dead PID for five minutes.
+- Kokoro TTS model load is serialized through a dedicated lock so two callers cannot both pay the download cost in parallel on first use.
+- Transcription engine and grammar backend validation in the config loader now derives valid values from the live registries. Registering a new engine or backend works with a single registry edit.
+- `wh listen` now re-arms the pre-recording monitor stream when it finishes, so a subsequent hotkey capture still gets the configured pre-buffer.
+- `wh update` aborts cleanly when `git pull` or `pip install` fails and prints the exact rollback command (`git reset --hard <sha>`) so the service never restarts against half-applied changes.
+- `wh config show` piped into another command now exits non-zero when the config file is missing instead of silently succeeding.
+- `wh uninstall` waits up to two seconds for graceful SIGTERM shutdown before escalating to SIGKILL, and surfaces the source-install venv path so users know exactly what remains to clean up.
+- `wh doctor --fix` reports a real failure if `launchctl load` returns non-zero instead of printing "loaded" regardless.
+- Ollama model list fetch in Advanced settings now uses a 5-second timeout so a stopped Ollama server no longer hangs the button indefinitely.
+- About tab no longer force-unwraps credit URLs; a malformed string silently no-ops instead of crashing.
+- `DeferredTextField`, `DeferredIntTextField`, and `DeferredTextEditor` now pick up external `config_snapshot` updates when the field is unfocused, so settings no longer appear stale after a backend or engine switch.
+- `DeferredIntTextField` resets to the last committed value when the user leaves a non-parseable value in the field (previously it stayed diverged from the service indefinitely).
+- `audio_processor._istft` uses an explicit `raise` instead of `assert` so its STFT overlap invariant holds under `python -O`.
+
+### Changed
+
+- Command socket protocol requests now use the `action` key (`{"action": "listen", ...}`) to match response framing and documentation. Both the CLI client and the service were updated in lockstep, so a normal `wh update` (which pulls code, upgrades deps, and restarts the service) moves both sides at once. Direct socket clients that used the previous `type` key must be updated.
+- Apple Intelligence backend is now installed on macOS 15 and later (was gated on macOS 26+). The `.glassEffect` Swift UI still requires macOS 26.
+- `./setup.sh` skips the Qwen3-ASR warm-up and the spaCy `en_core_web_sm` download when a sentinel or the already-installed module is detected, so re-running setup no longer repeats a two-minute warm-up or re-downloads models that are already present.
+- Swift compiler warnings are surfaced to stderr on successful builds (previously they were deleted with the build log).
 
 ---
 

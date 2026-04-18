@@ -10,7 +10,6 @@ import sys
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
-
 # ---------------------------------------------------------------------------
 # Import helper
 # ---------------------------------------------------------------------------
@@ -22,7 +21,6 @@ def _import_utils():
             del sys.modules[mod]
 
     stubs = {
-        "rumps": None,
         "sounddevice": None,
         "AppKit": None,
         "Foundation": None,

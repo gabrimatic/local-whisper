@@ -52,7 +52,7 @@ BACKEND_REGISTRY: Dict[str, BackendInfo] = {
     "apple_intelligence": BackendInfo(
         id="apple_intelligence",
         name="Apple Intelligence",
-        description="On-device, macOS 26+",
+        description="On-device Foundation Models, macOS 15+",
         factory=_create_apple_intelligence,
     ),
     "ollama": BackendInfo(

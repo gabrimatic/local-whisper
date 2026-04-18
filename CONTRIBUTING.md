@@ -28,30 +28,57 @@ Python runs as a headless LaunchAgent service. Swift owns all UI (menu bar, over
 
 ```
 src/whisper_voice/
-├── app.py              # Headless service, state machine, IPC, hotkeys
-├── cli.py              # wh CLI controller
-├── ipc_server.py       # IPC server (Swift UI communication)
-├── cmd_server.py       # Command server (CLI commands)
-├── audio.py            # Recording and pre-buffer
-├── audio_processor.py  # VAD, noise reduction, normalization
-├── backup.py           # History persistence
-├── config.py           # Config management
-├── grammar.py          # Grammar backend factory
-├── transcriber.py      # Engine routing
-├── utils.py            # Helpers
-├── shortcuts.py        # Text transformation shortcuts
-├── key_interceptor.py  # CGEvent tap
-├── tts_processor.py    # TTS shortcut handler (⌥T)
+├── app.py                 # Headless service coordinator (7-mixin composition)
+├── app_ipc.py             # IPCMixin: Swift socket push/pull, resync_audio routing
+├── app_recording.py       # RecordingMixin: hotkey state machine
+├── app_pipeline.py        # PipelineMixin: transcribe + grammar + replacements
+├── app_commands.py        # CommandsMixin: wh whisper/listen/transcribe
+├── app_switching.py       # SwitchingMixin: engine/backend switch with rollback
+├── app_audio_health.py    # AudioHealthMixin: monitor heartbeat + post-wake resync
+├── app_recovery.py        # RecoveryMixin: replay interrupted runs on startup
+├── ipc_server.py          # Unix socket server for the Swift UI
+├── cmd_server.py          # Unix socket server for the CLI
+├── audio.py               # Recording + locked pre-buffer monitor stream
+├── audio_processor.py     # VAD (+ hangover), noise reduction, adaptive gain
+├── backup.py              # History persistence + disk-space guard
+├── grammar.py             # Grammar backend factory wrapper
+├── transcriber.py         # Engine routing (+ reload() for timeout recovery)
+├── recovery.py            # processing.marker lifecycle
+├── watchdog.py            # run_with_timeout per-stage wrapper
+├── long_session.py        # Chunked long-session pipeline + JSONL persistence
+├── dictation_commands.py  # "new line" / "period" / "scratch that" replacer
+├── history_export.py      # wh export: Markdown / TXT / JSON renderers
+├── stats.py               # wh stats: usage aggregation (raw-text trigger counts)
+├── utils.py               # Helpers, logging, notifications
+├── shortcuts.py           # Text transformation shortcuts
+├── key_interceptor.py     # CGEvent tap
+├── tts_processor.py       # TTS shortcut handler (⌥T)
+├── cli/                   # wh CLI package
+│   ├── main.py            # Dispatcher and top-level commands
+│   ├── lifecycle.py       # status (+uptime/RSS/pending)/start/stop
+│   ├── build.py           # build/restart
+│   ├── settings.py        # engine/backend/replace (incl. `replace import`)
+│   ├── editor.py          # interactive config TUI
+│   ├── client.py          # command socket client
+│   ├── doctor.py          # doctor / doctor --fix / doctor --report / update
+│   ├── doctor_report.py   # redacted markdown report renderer
+│   ├── history.py         # cmd_export / cmd_stats
+│   └── constants.py       # shared constants
+├── config/                # Config package (loader, schema, mutations)
+│   ├── schema.py          # 17 dataclasses + DEFAULT_CONFIG TOML
+│   ├── loader.py          # load_config, get_config, registry-driven validation
+│   ├── toml_helpers.py    # TOML section read/write primitives
+│   └── mutations.py       # add/remove replacement, update field
 ├── tts/
-│   ├── base.py         # TTSProvider base
-│   └── kokoro_tts.py   # Kokoro provider (MLX)
+│   ├── base.py            # TTSProvider base
+│   └── kokoro_tts.py      # Kokoro provider (MLX)
 ├── engines/
-│   ├── base.py         # TranscriptionEngine base
-│   ├── qwen3_asr.py    # Qwen3-ASR (default, MLX)
-│   └── whisperkit.py   # WhisperKit (alternative)
+│   ├── base.py            # TranscriptionEngine base
+│   ├── qwen3_asr.py       # Qwen3-ASR (default, MLX, low-confidence retry)
+│   └── whisperkit.py      # WhisperKit (alternative)
 └── backends/
-    ├── base.py         # Backend base
-    ├── modes.py        # Transformation modes
+    ├── base.py            # Backend base
+    ├── modes.py           # Transformation modes
     ├── ollama/
     ├── lm_studio/
     └── apple_intelligence/
@@ -59,19 +86,24 @@ src/whisper_voice/
 
 ```
 LocalWhisperUI/Sources/LocalWhisperUI/
-├── AppMain.swift               # Menu bar + settings scenes
-├── AppState.swift              # Observable state, IPC message handling
-├── IPCClient.swift             # Unix socket connection
-├── IPCMessages.swift           # Codable message types
-├── MenuBarView.swift           # Menu bar dropdown
-├── OverlayWindowController.swift  # Floating overlay panel
-├── OverlayView.swift           # Recording/processing/speaking pill
-├── GeneralSettingsView.swift   # Engine, grammar, TTS, UI toggles
-├── AdvancedSettingsView.swift   # Audio, engine params, shortcuts
-├── AboutView.swift             # Version and credits
-├── SettingsView.swift          # Tab container
-├── SharedViews.swift           # Reusable components
-└── Constants.swift             # App-wide constants
+├── AppMain.swift                        # @main entry, sleep/wake observer, onboarding presenter
+├── AppState.swift                       # Observable state, IPC message handling
+├── IPCClient.swift                      # Unix socket connection
+├── IPCMessages.swift                    # Codable message types (incl. DictationConfig)
+├── MenuBarView.swift                    # Menu bar dropdown
+├── OverlayWindowController.swift        # Floating overlay panel
+├── OverlayView.swift                    # Recording/processing/speaking pill
+├── OnboardingView.swift                 # 4-step first-launch tutorial + presenter
+├── GeneralSettingsView.swift            # Engine, grammar, dictation, TTS, UI toggles
+├── AdvancedSettingsView.swift           # Shell for Advanced tab + auto-fetch hook
+├── AdvancedSettingsView+Audio.swift     # VAD, noise reduction, pre-buffer
+├── AdvancedSettingsView+Transcription.swift  # WhisperKit + Qwen3 params
+├── AdvancedSettingsView+Grammar.swift   # Ollama + LM Studio auto-fetch, AI status
+├── AdvancedSettingsView+IO.swift        # Shortcuts, TTS, storage
+├── AboutView.swift                      # Version, credits, Replay Tutorial
+├── SettingsView.swift                   # Tab container
+├── SharedViews.swift                    # DeferredTextField/Editor helpers
+└── Constants.swift                      # App-wide constants
 ```
 
 Key constraint: **lazy loading**. Backends, engines, and models initialize only when selected. Non-selected components stay completely uninitialized. If your change touches initialization paths, verify startup memory footprint hasn't increased.
@@ -104,7 +136,9 @@ See `tts/kokoro_tts.py` for the reference implementation.
 ## Testing
 
 ```bash
-python tests/test_flow.py   # end-to-end (requires a grammar backend)
+pytest tests/                           # full unit + integration suite
+pytest tests/test_flow.py -v            # end-to-end (requires a grammar backend)
+pytest -m integration -v                # only live-service integration tests
 ```
 
 Manual verification flow:

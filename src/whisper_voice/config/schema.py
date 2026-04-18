@@ -39,14 +39,8 @@ engine = "qwen3_asr"
 # Model identifier from Hugging Face
 model = "mlx-community/Qwen3-ASR-1.7B-bf16"
 
-# Language code (en, fa, es, fr, de, etc.) or "auto" for detection
-language = "auto"
-
 # Transcription timeout in seconds (0 = no limit)
 timeout = 0
-
-# MLX prefill step size (higher = faster on Apple Silicon, default 4096)
-prefill_step_size = 4096
 
 [whisper]
 # WhisperKit server URL
@@ -244,6 +238,20 @@ enabled = false
 # "open ai" = "OpenAI"
 # "chat gpt" = "ChatGPT"
 # "eye phone" = "iPhone"
+
+[dictation]
+# Voice dictation commands (say "new line", "period", "comma", etc. and the
+# spoken phrase is replaced with the literal punctuation or whitespace).
+# Defaults: new line, new paragraph, period, comma, question mark,
+# exclamation mark, colon, semicolon, dash, hyphen, ellipsis, open/close paren,
+# open/close quote, scratch that, strike that.
+enabled = true
+
+# Custom overrides and additions. The value is the literal replacement,
+# so use \\n for newline, "" to drop a filler word.
+[dictation.commands]
+# "next bullet" = "\\n- "
+# "smiley" = " :)"
 """
 
 
@@ -255,15 +263,14 @@ class TranscriptionConfig:
 @dataclass
 class Qwen3ASRConfig:
     model: str = "mlx-community/Qwen3-ASR-1.7B-bf16"
-    language: str = "auto"
     timeout: int = 0
-    prefill_step_size: int = 4096
     temperature: float = 0.0
     top_p: float = 1.0
     top_k: int = 0
     repetition_context_size: int = 100
     repetition_penalty: float = 1.2
     chunk_duration: float = 1200.0
+    max_tokens: int = 0
 
 
 @dataclass
@@ -396,6 +403,20 @@ class ReplacementsConfig:
 
 
 @dataclass
+class DictationConfig:
+    """Voice dictation command configuration.
+
+    When enabled, spoken phrases like "new line", "period", "comma", etc.
+    are replaced with the corresponding punctuation or whitespace before
+    grammar correction runs. The full default set lives in
+    ``dictation_commands.DEFAULT_COMMANDS``; entries in ``commands`` here
+    add to or override those defaults.
+    """
+    enabled: bool = True
+    commands: dict = field(default_factory=dict)
+
+
+@dataclass
 class Config:
     hotkey: HotkeyConfig = field(default_factory=HotkeyConfig)
     transcription: TranscriptionConfig = field(default_factory=TranscriptionConfig)
@@ -413,3 +434,4 @@ class Config:
     tts: TTSConfig = field(default_factory=TTSConfig)
     kokoro_tts: KokoroTTSConfig = field(default_factory=KokoroTTSConfig)
     replacements: ReplacementsConfig = field(default_factory=ReplacementsConfig)
+    dictation: DictationConfig = field(default_factory=DictationConfig)

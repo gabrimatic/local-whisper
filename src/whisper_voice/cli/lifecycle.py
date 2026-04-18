@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from whisper_voice.config import _find_in_section, _replace_in_section
+
 from .constants import (
     C_BOLD,
     C_DIM,
@@ -25,58 +27,48 @@ from .constants import (
     get_install_method,
 )
 
-# Import TOML helpers from config (avoids duplication)
-try:
-    from whisper_voice.config import _find_in_section, _replace_in_section
-except ImportError:
-    # Fallback stubs used if config import fails (e.g., during install before venv)
-    def _find_in_section(content, section, key):  # type: ignore[misc]
-        return None
-
-    def _replace_in_section(content, section, key, new_value):  # type: ignore[misc]
-        return content
-
 
 def _is_running() -> tuple:
-    """Check if the service is running. Returns (is_running, pid_or_None)."""
+    """Return (is_running, pid_or_None)."""
     if not os.path.exists(LOCK_FILE):
         return False, None
     try:
         lf = open(LOCK_FILE, "r+")
         fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        # Got lock - service is not running (stale lock)
         fcntl.flock(lf, fcntl.LOCK_UN)
         lf.close()
         return False, None
     except FileNotFoundError:
         return False, None
     except OSError:
-        # Lock held - service is running, find PID
-        pid = _find_pid()
-        return True, pid
+        return True, _find_pid()
 
 
 def _find_pid() -> Optional[int]:
-    """Find the service PID."""
+    """Return the service PID, or None. Matches only `wh _run` so sibling
+    CLI invocations (e.g. a concurrent `wh status`) are never mistaken
+    for the long-lived service."""
     my_pid = os.getpid()
-    for pattern in ["wh _run", "whisper_voice", "/bin/wh"]:
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "wh _run"],
+            capture_output=True, text=True,
+        )
+    except Exception:
+        return None
+    if result.returncode != 0:
+        return None
+    for p in result.stdout.strip().split():
         try:
-            result = subprocess.run(
-                ["pgrep", "-f", pattern],
-                capture_output=True, text=True
-            )
-            if result.returncode == 0:
-                for p in result.stdout.strip().split():
-                    pid = int(p)
-                    if pid != my_pid:
-                        return pid
-        except Exception:
-            pass
+            pid = int(p)
+        except ValueError:
+            continue
+        if pid != my_pid:
+            return pid
     return None
 
 
 def _cleanup_lock():
-    """Remove stale lock file after service stops."""
     try:
         os.unlink(LOCK_FILE)
     except OSError:
@@ -84,12 +76,10 @@ def _cleanup_lock():
 
 
 def _get_config_path() -> Path:
-    """Return the config file path."""
     return Path.home() / ".whisper" / "config.toml"
 
 
 def _read_config_backend() -> Optional[str]:
-    """Read the current backend from config.toml."""
     config_file = _get_config_path()
     if not config_file.exists():
         return None
@@ -133,7 +123,6 @@ def _write_config_backend(new_backend: str) -> bool:
             content = config_file.read_text()
             new_content = _replace_in_section(content, "grammar", "backend", f'"{new_backend}"')
             if new_content == content:
-                # Key not found - add it
                 if "[grammar]" in new_content:
                     new_content = new_content.replace(
                         "[grammar]",
@@ -142,7 +131,6 @@ def _write_config_backend(new_backend: str) -> bool:
                     )
                 else:
                     new_content += f'\n[grammar]\nbackend = "{new_backend}"\n'
-            # Update enabled flag in [grammar] section only
             enabled_val = "false" if new_backend == "none" else "true"
             new_content = _replace_in_section(new_content, "grammar", "enabled", enabled_val)
             config_file.write_text(new_content)
@@ -190,7 +178,6 @@ def _write_config_engine(engine_id: str) -> bool:
             content = config_file.read_text()
             new_content = _replace_in_section(content, "transcription", "engine", f'"{engine_id}"')
             if new_content == content:
-                # Key not found - add it
                 if "[transcription]" in new_content:
                     new_content = new_content.replace(
                         "[transcription]",
@@ -219,7 +206,7 @@ def _list_engines() -> dict:
 
 
 def cmd_status():
-    """Show service status."""
+    """Show service status, uptime, RSS, and pending recovery."""
     running, pid = _is_running()
     backend = _read_config_backend_status() or "unknown"
     engine = _read_config_engine() or "unknown"
@@ -227,13 +214,111 @@ def cmd_status():
 
     if running:
         pid_str = str(pid) if pid else "unknown"
-        print(f"  {C_GREEN}{C_BOLD}Running{C_RESET}  pid {C_DIM}{pid_str}{C_RESET}")
+        uptime = _process_uptime(pid) if pid else None
+        rss_mb = _process_rss_mb(pid) if pid else None
+        extras = []
+        if uptime is not None:
+            extras.append(f"up {_format_uptime(uptime)}")
+        if rss_mb is not None:
+            extras.append(f"{rss_mb:.0f} MB RSS")
+        extras_str = f"  {C_DIM}{' · '.join(extras)}{C_RESET}" if extras else ""
+        print(f"  {C_GREEN}{C_BOLD}Running{C_RESET}  pid {C_DIM}{pid_str}{C_RESET}{extras_str}")
     else:
         print(f"  {C_DIM}Stopped{C_RESET}")
 
     print(f"  {C_DIM}engine: {C_RESET} {engine}")
     print(f"  {C_DIM}backend:{C_RESET} {backend}")
     print(f"  {C_DIM}config: {C_RESET} {config_path}")
+
+    pending = _pending_work_summary()
+    if pending:
+        print(f"  {C_YELLOW}pending:{C_RESET} {pending}")
+
+
+def _process_uptime(pid: int) -> Optional[float]:
+    """Return wall-clock uptime in seconds for the given pid, or None."""
+    try:
+        out = subprocess.run(
+            ["ps", "-o", "etime=", "-p", str(pid)],
+            capture_output=True, text=True, timeout=2,
+        )
+        if out.returncode != 0:
+            return None
+        etime = out.stdout.strip()
+        if not etime:
+            return None
+        return _parse_etime(etime)
+    except Exception:
+        return None
+
+
+def _parse_etime(etime: str) -> Optional[float]:
+    """Parse ps etime `[[DD-]hh:]mm:ss` into seconds."""
+    days = 0
+    if "-" in etime:
+        d, etime = etime.split("-", 1)
+        days = int(d)
+    parts = etime.split(":")
+    try:
+        parts = [int(p) for p in parts]
+    except ValueError:
+        return None
+    if len(parts) == 2:
+        minutes, seconds = parts
+        hours = 0
+    elif len(parts) == 3:
+        hours, minutes, seconds = parts
+    else:
+        return None
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
+
+
+def _format_uptime(seconds: float) -> str:
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}m"
+    if seconds < 86400:
+        hours = seconds / 3600
+        return f"{hours:.1f}h"
+    return f"{seconds / 86400:.1f}d"
+
+
+def _process_rss_mb(pid: int) -> Optional[float]:
+    """Return RSS in megabytes for the given pid, or None on error."""
+    try:
+        out = subprocess.run(
+            ["ps", "-o", "rss=", "-p", str(pid)],
+            capture_output=True, text=True, timeout=2,
+        )
+        if out.returncode != 0:
+            return None
+        rss_kb = out.stdout.strip()
+        if not rss_kb:
+            return None
+        return int(rss_kb) / 1024.0
+    except Exception:
+        return None
+
+
+def _pending_work_summary() -> Optional[str]:
+    """Report interrupted pipelines waiting to be recovered on next boot."""
+    home = Path.home() / ".whisper"
+    parts = []
+    marker = home / "processing.marker"
+    if marker.exists():
+        parts.append("1 interrupted transcription")
+    session = home / "current_session.jsonl"
+    if session.exists():
+        try:
+            chunks = sum(
+                1 for line in session.read_text(encoding="utf-8").splitlines()
+                if '"type": "chunk"' in line
+            )
+            parts.append(f"{chunks} chunks from a long session")
+        except OSError:
+            parts.append("partial long session")
+    return "; ".join(parts) if parts else None
 
 
 def cmd_start():

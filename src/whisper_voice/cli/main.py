@@ -28,6 +28,7 @@ from .constants import (
 )
 from .doctor import cmd_doctor, cmd_update
 from .editor import cmd_config
+from .history import cmd_export, cmd_stats
 from .lifecycle import (
     _cleanup_lock,
     _get_config_path,
@@ -52,21 +53,25 @@ def _print_help():
             ("wh log",             "Tail service log"),
         ]),
         ("Voice", [
-            ("wh whisper \"text\"",  "Speak text aloud via Kokoro TTS"),
-            ("wh listen [secs]",   "Record from mic, output transcription"),
-            ("wh transcribe <file>", "Transcribe an audio file"),
+            ("wh whisper \"text\" [--voice N]", "Speak text aloud via Kokoro TTS (accepts stdin)"),
+            ("wh listen [secs] [--raw]", "Record from mic, output transcription (0 = until Ctrl+C)"),
+            ("wh transcribe <file> [--raw]", "Transcribe an audio file"),
         ]),
         ("Settings", [
             ("wh engine [name]",   "Show or switch transcription engine"),
             ("wh backend [name]",  "Show or switch grammar backend"),
-            ("wh replace",         "Manage text replacement rules"),
-            ("wh config [edit|path]", "Interactive config editor, open in $EDITOR, or print path"),
+            ("wh replace [add|remove|on|off|import FILE]", "Manage replacement rules"),
+            ("wh config [show|edit|path]", "Interactive config editor, open in $EDITOR, or print path"),
+        ]),
+        ("History", [
+            ("wh stats",           "Show usage statistics"),
+            ("wh export [opts]",   "Export transcription history (md/txt/json)"),
         ]),
         ("Maintenance", [
             ("wh install",         "Run full setup (deps, models, service)"),
             ("wh version",         "Show version and install method"),
             ("wh update",          "Update code, deps, models, and restart"),
-            ("wh doctor [--fix]",  "Check system health, auto-repair"),
+            ("wh doctor [--fix|--report [PATH]]", "Check system health, auto-repair, or write report"),
             ("wh build",           "Rebuild Swift UI"),
             ("wh uninstall",       "Completely remove Local Whisper"),
         ]),
@@ -139,18 +144,24 @@ def cmd_uninstall():
     print(f"  {C_BOLD}Uninstalling Local Whisper...{C_RESET}")
     print()
 
-    # Stop running service
+    # Stop running service. Wait briefly for graceful exit before escalating.
     running, pid = _is_running()
     if running and pid:
         try:
             os.kill(pid, signal.SIGTERM)
-            time.sleep(1)
+        except ProcessLookupError:
+            pass
+        for _ in range(20):
+            time.sleep(0.1)
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+        else:
             try:
                 os.kill(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-        except ProcessLookupError:
-            pass
     _cleanup_lock()
     subprocess.run(["pkill", "-9", "-f", "whisperkit-cli serve"], capture_output=True)
     print(f"  {C_GREEN}✓{C_RESET}  Service stopped")
@@ -192,7 +203,12 @@ def cmd_uninstall():
 
     print()
     print(f"  {C_BOLD}Done.{C_RESET} Local Whisper fully removed.")
-    print(f"  {C_DIM}Project folder and venv not deleted - remove manually if needed.{C_RESET}")
+    # Surface the source-install venv path explicitly so users know what to clean up.
+    project_root = Path(__file__).resolve().parents[3]
+    venv_dir = project_root / ".venv"
+    if venv_dir.exists():
+        print(f"  {C_DIM}Source-install venv preserved at {venv_dir}.{C_RESET}")
+        print(f"  {C_DIM}To remove it: rm -rf {venv_dir}{C_RESET}")
     print(f"  {C_DIM}Open a new shell for alias removal to take effect.{C_RESET}")
 
 
@@ -262,6 +278,10 @@ def cli_main():
         cmd_update()
     elif cmd == "doctor":
         cmd_doctor(rest)
+    elif cmd == "export":
+        cmd_export(rest)
+    elif cmd == "stats":
+        cmd_stats(rest)
     elif cmd == "install":
         cmd_install()
     elif cmd == "uninstall":

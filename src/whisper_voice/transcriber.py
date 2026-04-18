@@ -78,6 +78,15 @@ class Transcriber:
         log("Reloading transcription engine...", "INFO")
         return self._engine.start()
 
+    def reload(self) -> bool:
+        """Force close + start. Use after an abandoned transcription to reset MLX state."""
+        log(f"Forcing {self._engine.name} reload after pipeline abandonment", "WARN")
+        try:
+            self._engine.close()
+        except Exception as e:
+            log(f"Close during reload failed: {e}", "WARN")
+        return self._engine.start()
+
     def close(self) -> None:
         """Release all engine resources."""
         self._engine.close()

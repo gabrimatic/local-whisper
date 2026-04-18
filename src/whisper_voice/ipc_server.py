@@ -8,6 +8,7 @@ Accepts one Swift client at a time. All messages are newline-delimited JSON.
 
 import json
 import os
+import select
 import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -17,6 +18,7 @@ from typing import Callable, Optional
 from .utils import log
 
 SOCKET_PATH = str(Path.home() / ".whisper" / "ipc.sock")
+_SEND_READY_TIMEOUT = 2.0
 
 
 class IPCServer:
@@ -40,18 +42,30 @@ class IPCServer:
         self._on_connect = callback
 
     def send(self, msg: dict):
-        """Send a JSON message to the connected client (thread-safe). Silently drops if no client."""
+        """Thread-safe send. Drops the client on failure."""
         with self._client_lock:
             client = self._client
         if client is None:
             return
         try:
             data = (json.dumps(msg) + "\n").encode("utf-8")
+            # select() on the read side here — a full kernel send buffer
+            # (Swift not draining) is the one failure we need to bound.
+            # settimeout() would mutate the socket's blocking flag and
+            # break the concurrent recv() in _read_loop.
+            _, writable, _ = select.select([], [client], [], _SEND_READY_TIMEOUT)
+            if not writable:
+                raise TimeoutError("Swift client not draining")
             client.sendall(data)
         except Exception as e:
             log(f"IPC send error: {e}", "WARN")
             with self._client_lock:
-                self._client = None
+                if self._client is client:
+                    self._client = None
+                try:
+                    client.close()
+                except Exception:
+                    pass
 
     def start(self):
         """Start the IPC server in a background daemon thread."""
@@ -121,7 +135,6 @@ class IPCServer:
                         pass
                 self._client = client
 
-            # Notify the app that a client has connected
             if self._on_connect is not None:
                 try:
                     threading.Thread(target=self._on_connect, daemon=True).start()

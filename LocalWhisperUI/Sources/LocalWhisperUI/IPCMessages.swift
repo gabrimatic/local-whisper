@@ -29,9 +29,7 @@ struct TranscriptionConfig: Codable, Sendable {
 
 struct Qwen3ASRConfig: Codable, Sendable {
     var model: String
-    var language: String
     var timeout: Double
-    var prefillStepSize: Int
     var temperature: Double
     var topP: Double
     var topK: Int
@@ -40,8 +38,7 @@ struct Qwen3ASRConfig: Codable, Sendable {
     var chunkDuration: Double
 
     enum CodingKeys: String, CodingKey {
-        case model, language, timeout, temperature
-        case prefillStepSize = "prefill_step_size"
+        case model, timeout, temperature
         case topP = "top_p"
         case topK = "top_k"
         case repetitionContextSize = "repetition_context_size"
@@ -209,6 +206,11 @@ struct ReplacementsConfig: Codable, Sendable {
     var rules: [String: String]
 }
 
+struct DictationConfig: Codable, Sendable {
+    var enabled: Bool
+    var commands: [String: String]
+}
+
 struct AppConfig: Codable, Sendable {
     var hotkey: HotkeyConfig
     var transcription: TranscriptionConfig
@@ -225,20 +227,47 @@ struct AppConfig: Codable, Sendable {
     var tts: TTSConfig
     var kokoroTts: KokoroTTSConfig
     var replacements: ReplacementsConfig
+    var dictation: DictationConfig
 
     enum CodingKeys: String, CodingKey {
-        case hotkey, transcription, whisper, grammar, ollama, audio, ui, backup, shortcuts, tts, replacements
+        case hotkey, transcription, whisper, grammar, ollama, audio, ui, backup, shortcuts, tts, replacements, dictation
         case qwen3Asr = "qwen3_asr"
         case appleIntelligence = "apple_intelligence"
         case lmStudio = "lm_studio"
         case kokoroTts = "kokoro_tts"
     }
 
+    init(
+        hotkey: HotkeyConfig, transcription: TranscriptionConfig, qwen3Asr: Qwen3ASRConfig,
+        whisper: WhisperConfig, grammar: GrammarConfig, ollama: OllamaConfig,
+        appleIntelligence: AppleIntelligenceConfig, lmStudio: LMStudioConfig,
+        audio: AudioConfig, ui: UIConfig, backup: BackupConfig, shortcuts: ShortcutsConfig,
+        tts: TTSConfig, kokoroTts: KokoroTTSConfig, replacements: ReplacementsConfig,
+        dictation: DictationConfig
+    ) {
+        self.hotkey = hotkey
+        self.transcription = transcription
+        self.qwen3Asr = qwen3Asr
+        self.whisper = whisper
+        self.grammar = grammar
+        self.ollama = ollama
+        self.appleIntelligence = appleIntelligence
+        self.lmStudio = lmStudio
+        self.audio = audio
+        self.ui = ui
+        self.backup = backup
+        self.shortcuts = shortcuts
+        self.tts = tts
+        self.kokoroTts = kokoroTts
+        self.replacements = replacements
+        self.dictation = dictation
+    }
+
     static var defaultConfig: AppConfig {
         AppConfig(
             hotkey: HotkeyConfig(key: "alt_r", doubleTapThreshold: 0.4),
             transcription: TranscriptionConfig(engine: "qwen3_asr"),
-            qwen3Asr: Qwen3ASRConfig(model: "mlx-community/Qwen3-ASR-1.7B-bf16", language: "auto", timeout: 0, prefillStepSize: 4096, temperature: 0.0, topP: 1.0, topK: 0, repetitionContextSize: 100, repetitionPenalty: 1.2, chunkDuration: 1200.0),
+            qwen3Asr: Qwen3ASRConfig(model: "mlx-community/Qwen3-ASR-1.7B-bf16", timeout: 0, temperature: 0.0, topP: 1.0, topK: 0, repetitionContextSize: 100, repetitionPenalty: 1.2, chunkDuration: 1200.0),
             whisper: WhisperConfig(
                 url: "http://localhost:50060/v1/audio/transcriptions",
                 checkUrl: "http://localhost:50060/",
@@ -287,7 +316,8 @@ struct AppConfig: Codable, Sendable {
             ),
             tts: TTSConfig(enabled: true, provider: "kokoro", speakShortcut: "alt+t"),
             kokoroTts: KokoroTTSConfig(model: "mlx-community/Kokoro-82M-bf16", voice: "af_sky"),
-            replacements: ReplacementsConfig(enabled: false, rules: [:])
+            replacements: ReplacementsConfig(enabled: false, rules: [:]),
+            dictation: DictationConfig(enabled: true, commands: [:])
         )
     }
 }

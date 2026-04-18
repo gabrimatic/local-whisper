@@ -57,10 +57,9 @@ class RecordingMixin:
             self._show_accessibility_guide()
 
     def _on_key_press(self, key):
-        """Handle key press events for double-tap / single-tap detection."""
+        """Handle key press for double-tap / single-tap detection."""
         stop_keys = {self._record_key, keyboard.Key.space}
 
-        # Stop recording on record key, Esc, or Space
         if self.recorder.recording:
             if key == keyboard.Key.esc:
                 self._cancel_recording()
@@ -71,7 +70,7 @@ class RecordingMixin:
         if key != self._record_key:
             return
 
-        # Ignore key repeat events
+        # Ignore key-repeat spam.
         if self._key_pressed:
             return
         self._key_pressed = True
@@ -251,6 +250,12 @@ class RecordingMixin:
 
             log(f"Recorded {dur:.1f}s", "OK")
             self._busy = True
+
+        # Flip the pill to "Processing…" immediately so users get instant
+        # feedback. Without this, the overlay sits on the last recording
+        # frame until _process spawns and sends its first state_update.
+        self._current_status = "Processing..."
+        self._send_state_update(phase="processing", status_text="Processing...")
 
         # Start processing outside the lock
         threading.Thread(target=self._process, args=(audio,), daemon=True).start()

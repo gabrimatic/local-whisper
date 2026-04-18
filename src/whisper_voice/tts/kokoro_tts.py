@@ -31,6 +31,9 @@ class KokoroTTSProvider(TTSProvider):
         self._model = None
         self._lock = threading.Lock()
         self._speak_lock = threading.Lock()
+        # Separate lock for the actual model load. Held across the expensive
+        # from_pretrained() call so only one thread pays the download cost.
+        self._load_lock = threading.Lock()
 
     @property
     def name(self) -> str:
@@ -54,28 +57,33 @@ class KokoroTTSProvider(TTSProvider):
             _clear_runtime_cache()
 
     def _load_model(self, model_id: str) -> bool:
-        """Load model lazily (thread-safe). Returns True on success."""
-        with self._lock:
-            if self._model is not None and self._model_id == model_id:
-                return True
+        """Load model lazily (thread-safe). Returns True on success.
 
-        try:
-            log(f"Loading Kokoro model: {model_id}...", "INFO")
-            from kokoro_mlx import KokoroTTS
-            model = KokoroTTS.from_pretrained(model_id)
+        The load lock serializes concurrent callers so two threads never pay the
+        download/load cost in parallel. Once one thread finishes, other waiters
+        see the cached model and return immediately.
+        """
+        with self._load_lock:
             with self._lock:
-                if self._model is not None and self._model_id != model_id:
-                    self._release_model_locked()
-                self._model = model
-                self._model_id = model_id
-            log("Kokoro model loaded", "OK")
-            return True
-        except ImportError:
-            log("kokoro-mlx not available — run: pip install git+https://github.com/gabrimatic/kokoro-mlx", "ERR")
-            return False
-        except Exception as e:
-            log(f"Failed to load Kokoro model: {e}", "ERR")
-            return False
+                if self._model is not None and self._model_id == model_id:
+                    return True
+            try:
+                log(f"Loading Kokoro model: {model_id}...", "INFO")
+                from kokoro_mlx import KokoroTTS
+                model = KokoroTTS.from_pretrained(model_id)
+                with self._lock:
+                    if self._model is not None and self._model_id != model_id:
+                        self._release_model_locked()
+                    self._model = model
+                    self._model_id = model_id
+                log("Kokoro model loaded", "OK")
+                return True
+            except ImportError:
+                log("kokoro-mlx not available — run: pip install git+https://github.com/gabrimatic/kokoro-mlx", "ERR")
+                return False
+            except Exception as e:
+                log(f"Failed to load Kokoro model: {e}", "ERR")
+                return False
 
     def speak(
         self,
@@ -95,6 +103,8 @@ class KokoroTTSProvider(TTSProvider):
 
         with self._lock:
             model = self._model
+        if model is None:
+            return
 
         with self._speak_lock:
             try:

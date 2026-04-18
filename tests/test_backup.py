@@ -14,8 +14,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
-import pytest
-
 
 # ---------------------------------------------------------------------------
 # Config stubs
@@ -64,7 +62,6 @@ def _make_backup(tmp_path, history_limit=100):
     )
 
     stubs = {
-        "rumps": None,
         "sounddevice": None,
         "AppKit": None,
         "Foundation": None,

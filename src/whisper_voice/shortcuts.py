@@ -21,13 +21,12 @@ from ApplicationServices import (
 )
 
 from .backends.modes import get_mode
-from .utils import log, play_sound
+from .utils import CLIPBOARD_TIMEOUT, log, play_sound
 
 if TYPE_CHECKING:
     from .grammar import Grammar
 
 
-CLIPBOARD_TIMEOUT = 5
 CLIPBOARD_DELAY = 0.15
 MODIFIER_RELEASE_DELAY = 0.3  # Delay before Cmd+C to let user release modifier keys
 STATUS_DISPLAY_DURATION = 1.5

@@ -9,9 +9,9 @@ or macOS frameworks involved.
 """
 
 import sys
-import pytest
 from unittest.mock import patch
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # Import helper
@@ -23,7 +23,6 @@ def _import_modes():
             del sys.modules[mod]
 
     stubs = {
-        "rumps": None,
         "sounddevice": None,
         "AppKit": None,
         "Foundation": None,
@@ -32,13 +31,13 @@ def _import_modes():
     with patch.dict("sys.modules", stubs):
         from whisper_voice.backends.modes import (
             MODE_REGISTRY,
-            get_mode,
-            get_all_modes,
-            get_mode_ollama_prompt,
-            get_mode_lm_studio_messages,
-            get_mode_apple_intelligence_input,
-            ModeNotFoundError,
             Mode,
+            ModeNotFoundError,
+            get_all_modes,
+            get_mode,
+            get_mode_apple_intelligence_input,
+            get_mode_lm_studio_messages,
+            get_mode_ollama_prompt,
         )
     return (
         MODE_REGISTRY,

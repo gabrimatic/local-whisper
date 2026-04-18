@@ -16,6 +16,7 @@ from .schema import (
     AudioConfig,
     BackupConfig,
     Config,
+    DictationConfig,
     GrammarConfig,
     HotkeyConfig,
     KokoroTTSConfig,
@@ -69,17 +70,30 @@ def _validate_config(config: Config):
         print(f"Config warning: Invalid lm_studio check_url '{config.lm_studio.check_url}', using default", file=sys.stderr)
         config.lm_studio.check_url = "http://localhost:1234/"
 
-    # Transcription engine validation
-    if config.transcription.engine not in ("qwen3_asr", "whisperkit"):
-        print(f"Config warning: Invalid transcription engine '{config.transcription.engine}', using 'qwen3_asr'", file=sys.stderr)
-        config.transcription.engine = "qwen3_asr"
+    # Transcription engine validation — derive from the live registry so adding an
+    # engine in engines/__init__.py alone enables it without touching the validator.
+    from ..engines import ENGINE_REGISTRY
+    valid_engines = tuple(ENGINE_REGISTRY.keys())
+    if valid_engines and config.transcription.engine not in valid_engines:
+        default_engine = "qwen3_asr" if "qwen3_asr" in valid_engines else valid_engines[0]
+        print(
+            f"Config warning: Invalid transcription engine '{config.transcription.engine}', using '{default_engine}'",
+            file=sys.stderr,
+        )
+        config.transcription.engine = default_engine
 
-    # Grammar backend validation
+    # Grammar backend validation — same pattern against BACKEND_REGISTRY.
+    from ..backends import BACKEND_REGISTRY
+    valid_backends = tuple(BACKEND_REGISTRY.keys())
     if config.grammar.backend == "none":
         config.grammar.enabled = False
-    elif config.grammar.enabled and config.grammar.backend not in _schema.GRAMMAR_BACKENDS:
-        print(f"Config warning: Invalid grammar backend '{config.grammar.backend}', using 'apple_intelligence'", file=sys.stderr)
-        config.grammar.backend = "apple_intelligence"
+    elif config.grammar.enabled and valid_backends and config.grammar.backend not in valid_backends:
+        default_backend = "apple_intelligence" if "apple_intelligence" in valid_backends else valid_backends[0]
+        print(
+            f"Config warning: Invalid grammar backend '{config.grammar.backend}', using '{default_backend}'",
+            file=sys.stderr,
+        )
+        config.grammar.backend = default_backend
 
     # Hotkey validation
     valid_keys = {
@@ -168,9 +182,15 @@ def load_config() -> Config:
     except OSError:
         pass
 
-    # Create default config if it doesn't exist
     if not _schema.CONFIG_FILE.exists():
         _schema.CONFIG_FILE.write_text(_schema.DEFAULT_CONFIG, encoding='utf-8')
+
+    # Fix up legacy 0o644 configs written before we tightened perms.
+    try:
+        if (_schema.CONFIG_FILE.stat().st_mode & 0o777) != 0o600:
+            _schema.CONFIG_FILE.chmod(0o600)
+    except OSError:
+        pass
 
     # Load and parse config
     data = {}
@@ -200,15 +220,14 @@ def load_config() -> Config:
     if 'qwen3_asr' in data:
         config.qwen3_asr = Qwen3ASRConfig(
             model=data['qwen3_asr'].get('model', config.qwen3_asr.model),
-            language=data['qwen3_asr'].get('language', config.qwen3_asr.language),
             timeout=data['qwen3_asr'].get('timeout', config.qwen3_asr.timeout),
-            prefill_step_size=data['qwen3_asr'].get('prefill_step_size', config.qwen3_asr.prefill_step_size),
             temperature=data['qwen3_asr'].get('temperature', config.qwen3_asr.temperature),
             top_p=data['qwen3_asr'].get('top_p', config.qwen3_asr.top_p),
             top_k=data['qwen3_asr'].get('top_k', config.qwen3_asr.top_k),
             repetition_context_size=data['qwen3_asr'].get('repetition_context_size', config.qwen3_asr.repetition_context_size),
             repetition_penalty=data['qwen3_asr'].get('repetition_penalty', config.qwen3_asr.repetition_penalty),
             chunk_duration=data['qwen3_asr'].get('chunk_duration', config.qwen3_asr.chunk_duration),
+            max_tokens=data['qwen3_asr'].get('max_tokens', config.qwen3_asr.max_tokens),
         )
 
     # Whisper settings
@@ -332,6 +351,18 @@ def load_config() -> Config:
         config.replacements = ReplacementsConfig(
             enabled=data['replacements'].get('enabled', config.replacements.enabled),
             rules=rules,
+        )
+
+    # Dictation commands
+    if 'dictation' in data:
+        commands = data['dictation'].get('commands', {})
+        if isinstance(commands, dict):
+            commands = {str(k): str(v) for k, v in commands.items()}
+        else:
+            commands = {}
+        config.dictation = DictationConfig(
+            enabled=data['dictation'].get('enabled', config.dictation.enabled),
+            commands=commands,
         )
 
     # Validate and sanitize config values

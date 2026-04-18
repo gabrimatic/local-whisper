@@ -21,7 +21,6 @@ def _cmd_connect():
 def _cmd_send_recv(request: dict) -> dict:
     """Send a command and wait for the final response. Returns the last message."""
     import json
-    import socket as _socket
 
     running, _ = _is_running()
     if not running:
@@ -42,7 +41,7 @@ def _cmd_send_recv(request: dict) -> dict:
         if not stop_sent:
             stop_sent = True
             try:
-                sock.sendall((json.dumps({"type": "stop"}) + "\n").encode())
+                sock.sendall((json.dumps({"action": "stop"}) + "\n").encode())
             except Exception:
                 pass
 
@@ -53,15 +52,15 @@ def _cmd_send_recv(request: dict) -> dict:
         data = (json.dumps(request) + "\n").encode()
         sock.sendall(data)
 
-        # Read responses until we get a terminal one (done/error)
+        # 2h cap guards against a catatonic service while still allowing
+        # long Qwen3-ASR runs (docs: up to 20 min native). Ctrl+C remains
+        # the primary escape — the signal handler sends `stop` and the
+        # service responds, unblocking recv().
+        sock.settimeout(2 * 60 * 60)
         buf = b""
         last_response = None
-        sock.settimeout(300)  # 5 min max for long operations
         while True:
-            try:
-                chunk = sock.recv(4096)
-            except _socket.timeout:
-                break
+            chunk = sock.recv(4096)
             if not chunk:
                 break
             buf += chunk
@@ -78,11 +77,8 @@ def _cmd_send_recv(request: dict) -> dict:
                 msg_type = msg.get("type")
                 if msg_type in ("done", "error"):
                     return msg
-                # "started" messages: continue waiting
-                if msg_type == "started":
-                    action = msg.get("action", "")
-                    if action == "listen":
-                        print("Recording... (Ctrl+C to stop)", file=sys.stderr)
+                if msg_type == "started" and msg.get("action") == "listen":
+                    print("Recording... (Ctrl+C to stop)", file=sys.stderr)
 
         return last_response or {"type": "error", "message": "Connection closed unexpectedly"}
     finally:
@@ -117,7 +113,7 @@ def cmd_whisper(args: list):
         print(f"{C_DIM}Usage: wh whisper \"text\" [--voice NAME]{C_RESET}", file=sys.stderr)
         sys.exit(1)
 
-    request = {"type": "whisper", "text": text}
+    request = {"action": "whisper", "text": text}
     if voice:
         request["voice"] = voice
 
@@ -142,7 +138,7 @@ def cmd_listen(args: list):
                 print(f"{C_DIM}Usage: wh listen [seconds] [--raw]{C_RESET}", file=sys.stderr)
                 sys.exit(1)
 
-    request = {"type": "listen", "max_duration": max_duration, "raw": raw}
+    request = {"action": "listen", "max_duration": max_duration, "raw": raw}
     result = _cmd_send_recv(request)
 
     if result.get("type") == "error":
@@ -175,7 +171,7 @@ def cmd_transcribe(args: list):
     # Resolve to absolute path
     file_path = str(Path(file_path).resolve())
 
-    request = {"type": "transcribe", "path": file_path, "raw": raw}
+    request = {"action": "transcribe", "path": file_path, "raw": raw}
     result = _cmd_send_recv(request)
 
     if result.get("type") == "error":

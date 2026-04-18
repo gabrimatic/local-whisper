@@ -62,12 +62,12 @@ engine = "whisperkit"
 
 [qwen3_asr]
 model = "mlx-community/Qwen3-ASR-1.7B-8bit"
-prefill_step_size = 2048
+repetition_context_size = 50
 """
         config, _ = _load_config_from(tmp_path, toml)
         assert config.transcription.engine == "whisperkit"
         assert config.qwen3_asr.model == "mlx-community/Qwen3-ASR-1.7B-8bit"
-        assert config.qwen3_asr.prefill_step_size == 2048
+        assert config.qwen3_asr.repetition_context_size == 50
 
     def test_invalid_toml_returns_defaults(self, tmp_path):
         """Corrupt TOML must not crash; should fall back to defaults."""
@@ -94,9 +94,13 @@ class TestDefaultValues:
         config, _ = _load_config_from(tmp_path, toml_content="")
         assert "bf16" in config.qwen3_asr.model
 
-    def test_prefill_step_size_default(self, tmp_path):
+    def test_repetition_context_size_default(self, tmp_path):
         config, _ = _load_config_from(tmp_path, toml_content="")
-        assert config.qwen3_asr.prefill_step_size == 4096
+        assert config.qwen3_asr.repetition_context_size == 100
+
+    def test_max_tokens_default(self, tmp_path):
+        config, _ = _load_config_from(tmp_path, toml_content="")
+        assert config.qwen3_asr.max_tokens == 0
 
     def test_grammar_disabled_by_default(self, tmp_path):
         config, _ = _load_config_from(tmp_path, toml_content="")
@@ -176,7 +180,7 @@ class TestValidation:
 
 class TestUpdateConfigField:
     def test_update_string_field(self, tmp_path):
-        toml = "[qwen3_asr]\nmodel = \"mlx-community/Qwen3-ASR-1.7B-bf16\"\nlanguage = \"auto\"\ntimeout = 0\nprefill_step_size = 4096\n"
+        toml = "[qwen3_asr]\nmodel = \"mlx-community/Qwen3-ASR-1.7B-bf16\"\ntimeout = 0\n"
         cfg_file = tmp_path / "config.toml"
         cfg_file.write_text(toml, encoding="utf-8")
 
@@ -191,9 +195,9 @@ class TestUpdateConfigField:
         schema_mod.CONFIG_FILE = cfg_file
         loader_mod._config = None
 
-        cfg_mod.update_config_field("qwen3_asr", "language", "en")
+        cfg_mod.update_config_field("qwen3_asr", "model", "mlx-community/Qwen3-ASR-1.7B-8bit")
         written = cfg_file.read_text(encoding="utf-8")
-        assert 'language = "en"' in written
+        assert 'model = "mlx-community/Qwen3-ASR-1.7B-8bit"' in written
 
     def test_update_bool_field(self, tmp_path):
         toml = "[grammar]\nbackend = \"apple_intelligence\"\nenabled = false\n"
@@ -217,7 +221,7 @@ class TestUpdateConfigField:
         assert "enabled = true" in written
 
     def test_update_int_field(self, tmp_path):
-        toml = "[qwen3_asr]\nmodel = \"m\"\nlanguage = \"auto\"\ntimeout = 0\nprefill_step_size = 4096\n"
+        toml = "[qwen3_asr]\nmodel = \"m\"\ntimeout = 0\nrepetition_context_size = 100\n"
         cfg_file = tmp_path / "config.toml"
         cfg_file.write_text(toml, encoding="utf-8")
 
@@ -233,9 +237,9 @@ class TestUpdateConfigField:
         loader_mod._config = None
         loader_mod.load_config()
 
-        cfg_mod.update_config_field("qwen3_asr", "prefill_step_size", 8192)
+        cfg_mod.update_config_field("qwen3_asr", "repetition_context_size", 200)
         written = cfg_file.read_text(encoding="utf-8")
-        assert "prefill_step_size = 8192" in written
+        assert "repetition_context_size = 200" in written
 
 
 # ---------------------------------------------------------------------------

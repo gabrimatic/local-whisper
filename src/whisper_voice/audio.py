@@ -23,6 +23,7 @@ class Recorder:
         self._chunks_lock = threading.Lock()
         self._stream = None
         self._state_lock = threading.Lock()
+        self._monitor_lock = threading.Lock()
         self._start_time = None
         self._current_rms: float = 0.0
 
@@ -50,25 +51,37 @@ class Recorder:
         return self._current_rms
 
     def start_monitoring(self):
-        """Start pre-recording monitor (lightweight, always-on when ready)."""
+        """Start the pre-recording monitor. Rebuilds a dead stream silently."""
         config = get_config()
         if config.audio.pre_buffer <= 0:
             return
-        try:
-            self._monitor_stream = sd.InputStream(
-                samplerate=config.audio.sample_rate,
-                channels=1,
-                dtype=np.float32,
-                callback=self._monitor_callback,
-                blocksize=512
-            )
-            self._monitor_stream.start()
-        except Exception as e:
-            log(f"Monitor stream warning: {e}", "WARN")
-            self._monitor_stream = None
+        with self._monitor_lock:
+            if self._monitor_stream is not None:
+                try:
+                    if self._monitor_stream.active:
+                        return
+                except Exception:
+                    pass
+                self._silent_close_monitor()
+            try:
+                self._monitor_stream = sd.InputStream(
+                    samplerate=config.audio.sample_rate,
+                    channels=1,
+                    dtype=np.float32,
+                    callback=self._monitor_callback,
+                    blocksize=512
+                )
+                self._monitor_stream.start()
+            except Exception as e:
+                log(f"Monitor stream warning: {e}", "WARN")
+                self._monitor_stream = None
 
     def stop_monitoring(self):
         """Stop the pre-recording monitor."""
+        with self._monitor_lock:
+            self._silent_close_monitor()
+
+    def _silent_close_monitor(self):
         if self._monitor_stream:
             try:
                 self._monitor_stream.stop()
@@ -76,6 +89,26 @@ class Recorder:
             except Exception:
                 pass
             self._monitor_stream = None
+
+    def heartbeat_monitoring(self):
+        """Restart the monitor stream if it died."""
+        config = get_config()
+        if config.audio.pre_buffer <= 0:
+            return
+        if self.recording:
+            return
+        with self._monitor_lock:
+            alive = False
+            if self._monitor_stream is not None:
+                try:
+                    alive = bool(self._monitor_stream.active)
+                except Exception:
+                    alive = False
+            if alive:
+                return
+            log("Audio monitor stream dead — restarting", "WARN")
+            self._silent_close_monitor()
+        self.start_monitoring()
 
     def _monitor_callback(self, data, frames, time_info, status):
         """Fill ring buffer with latest audio."""
@@ -107,8 +140,14 @@ class Recorder:
                 self.stop_monitoring()
                 with self._chunks_lock:
                     if config.audio.pre_buffer > 0 and len(self._pre_buffer) > 0:
-                        pre = np.roll(self._pre_buffer, -self._pre_buffer_pos)
-                        self._chunks = [pre.copy()]
+                        # Reassemble the ring buffer in one allocation instead of
+                        # np.roll + .copy (which allocates twice).
+                        buf_size = len(self._pre_buffer)
+                        pos = self._pre_buffer_pos
+                        pre = np.empty(buf_size, dtype=np.float32)
+                        pre[:buf_size - pos] = self._pre_buffer[pos:]
+                        pre[buf_size - pos:] = self._pre_buffer[:pos]
+                        self._chunks = [pre]
                     else:
                         self._chunks = []
                 self._start_time = time.time()

@@ -80,14 +80,16 @@ Switch via Settings, `wh engine <name>`, or config.
 
 ### Qwen3-ASR (default)
 
-In-process via [qwen3-asr-mlx](https://github.com/gabrimatic/qwen3-asr-mlx). No server, no network. Long audio native.
+In-process via [qwen3-asr-mlx](https://github.com/gabrimatic/qwen3-asr-mlx). No server, no network. Long audio native. English-only.
 
 | Setting | Default | Notes |
 |---------|---------|-------|
 | `model` | `mlx-community/Qwen3-ASR-1.7B-bf16` | Downloaded by `setup.sh` |
-| `language` | `auto` | Force with `en`, `fa`, etc. |
 | `timeout` | `0` | No limit |
-| `prefill_step_size` | `4096` | Higher = faster on Apple Silicon |
+| `repetition_penalty` | `1.2` | Higher suppresses repetition loops |
+| `repetition_context_size` | `100` | Tokens considered for repetition penalty |
+| `chunk_duration` | `1200` | Seconds per internal chunk for very long audio |
+| `max_tokens` | `0` | `0` = auto-scale from duration. Cap for faster short-clip decode. |
 
 ### WhisperKit (alternative)
 
@@ -197,6 +199,7 @@ wh replace          # Show text replacement rules
 wh replace add "gonna" "going to"
 wh replace remove "gonna"
 wh replace on|off   # Enable or disable replacements
+wh replace import rules.csv   # Bulk-import rules (CSV, TSV, "a"="b", or a -> b)
 
 wh whisper "text"   # Speak text aloud via Kokoro TTS
 wh whisper --voice af_bella "text"
@@ -209,16 +212,42 @@ wh listen --raw     # Raw transcription, no grammar
 wh transcribe recording.wav
 wh transcribe --raw audio.wav
 
+wh stats            # Show usage statistics computed from history
+wh export           # Export history to ~/Desktop/local-whisper-history.md
+wh export --format json --out ~/Downloads/history.json
+wh export --format txt --limit 50
+
 wh config           # Interactive config editor (static summary when piped)
 wh config edit      # Open config.toml in $EDITOR
 wh config path      # Print config file path
 wh doctor           # Check system health
 wh doctor --fix     # Auto-repair issues
+wh doctor --report  # Write a shareable diagnostic report
 wh log              # Tail service log
 wh update           # Pull, upgrade deps, warm up models, rebuild, restart
 wh version          # Show version
 wh uninstall        # Completely remove Local Whisper
 ```
+
+### Voice Dictation Commands
+
+Speak these phrases anywhere in a dictation and Local Whisper replaces them with the literal punctuation or whitespace:
+
+| Spoken | Inserted |
+|--------|----------|
+| "new line" | newline |
+| "new paragraph" | blank line |
+| "period" | . |
+| "comma" | , |
+| "question mark" | ? |
+| "exclamation mark" | ! |
+| "colon" | : |
+| "semicolon" | ; |
+| "dash" | ` - ` (space, hyphen, space) |
+| "open paren" / "close paren" | ( / ) |
+| "scratch that" | deletes the current sentence fragment |
+
+Custom commands go under `[dictation.commands]` in `~/.whisper/config.toml`. The pass runs before grammar correction, so grammar sees well-punctuated sentences.
 
 ### Menu Bar
 
@@ -228,20 +257,33 @@ wh uninstall        # Completely remove Local Whisper
 
 | Item | What it does |
 |------|-------------|
-| Status | Current state |
+| Status | Current state with active engine and backend subtitle |
+| Engine | Switch transcription engine in-place |
 | Grammar | Switch grammar backend in-place |
 | Replacements | Toggle, shows rule count |
 | Retry Last / Copy Last | Re-transcribe or re-copy |
-| Transcriptions | Last 20, click to copy |
+| Transcriptions | Recent entries, click to copy |
 | Recordings | Audio files, click to reveal in Finder |
-| Settings... | Full GUI |
-| Restart Service | Restart background service |
-| Check for Updates | Pull, rebuild, restart |
-| Quit | Exit |
+| Settings… | Full sidebar settings window |
+| Service | Restart, Check for Updates, Open Service Log |
+| Quit Local Whisper | Exit |
 
 ### Settings
 
-Three tabs: General (engine, grammar, TTS, shortcuts, UI), Advanced (audio, params, backends), About.
+Sidebar layout with focused panels:
+
+| Panel | Covers |
+|-------|--------|
+| Recording | Trigger key, double-tap window, audio cleanup, duration limits |
+| Transcription | Engine picker plus per-engine sampling and decoding parameters |
+| Grammar | Master toggle, backend picker, per-backend connection and limits |
+| Voice | Text-to-speech voice and shortcut, dictation command help |
+| Vocabulary | Searchable replacement editor with import / export |
+| Output | Overlay, sounds, notifications, paste-at-cursor, history limit |
+| Shortcuts | Proofread / rewrite / prompt-engineer keybindings, full cheatsheet |
+| Activity | Sessions, words, 30-day chart, top words, top replacement triggers |
+| Advanced | Storage paths, service log, doctor, restart, update |
+| About | Version, credits, replay tutorial |
 
 <p align="center">
   <img src="assets/settings.png" width="480" alt="Settings window">
@@ -269,15 +311,14 @@ engine = "qwen3_asr"      # "qwen3_asr" (default) or "whisperkit"
 
 [qwen3_asr]
 model = "mlx-community/Qwen3-ASR-1.7B-bf16"
-language = "auto"          # "en", "fa", etc. or "auto"
 timeout = 0                # 0 = no limit
-prefill_step_size = 4096   # higher = faster on Apple Silicon
 temperature = 0.0
 top_p = 1.0
 top_k = 0
 repetition_context_size = 100
 repetition_penalty = 1.2
 chunk_duration = 1200.0    # max chunk length in seconds
+max_tokens = 0             # 0 = auto from duration
 
 [whisper]
 model = "whisper-large-v3-v20240930"
@@ -394,13 +435,25 @@ Python (LaunchAgent, headless)
   ├── Recording, transcription, grammar, replacements, clipboard, hotkeys
   ├── Text-to-Speech (Kokoro-82M, in-process)
   ├── IPC server at ~/.whisper/ipc.sock (Swift UI communication)
-  └── Command server at ~/.whisper/cmd.sock (CLI commands)
+  ├── Command server at ~/.whisper/cmd.sock (CLI commands)
+  ├── Pipeline watchdog (per-stage timeouts, skip-don't-freeze)
+  └── Crash recovery (~/.whisper/processing.marker + current_session.jsonl)
 
 Swift (subprocess, all UI)
   ├── Menu bar with grammar submenus and transcription history
   ├── Floating overlay pill (recording, processing, speaking states)
-  └── Settings window (General, Advanced, About)
+  ├── NSWorkspace sleep/wake observer → resync_audio IPC
+  └── Settings window (auto-fetches Ollama / LM Studio models on open)
 ```
+
+The LaunchAgent uses `KeepAlive={SuccessfulExit=false}` with
+`ThrottleInterval=10` so real crashes auto-restart while clean stops
+(`wh stop`, `wh restart`, user-error exits) don't relaunch. Recordings
+longer than five minutes take the chunked pipeline: each VAD segment is
+transcribed, grammar-corrected, and persisted to
+`~/.whisper/current_session.jsonl` before the next chunk runs, so a
+crash mid-lecture recovers the completed chunks on next boot instead of
+losing everything.
 
 <details>
 <summary><strong>Data flow</strong></summary>
@@ -534,7 +587,7 @@ pip install -e .
 
 wh build              # Build Swift UI (one-time)
 wh                    # Run the service
-python tests/test_flow.py  # Run tests (requires a grammar backend)
+pytest tests/              # Run the full test suite
 ```
 
 ### Adding an Engine or Grammar Backend
@@ -558,21 +611,26 @@ local-whisper/
 │   ├── Package.swift
 │   └── Sources/LocalWhisperUI/
 │       ├── AppMain.swift            # @main entry point
-│       ├── AppState.swift           # Observable state, IPC handler
-│       ├── IPCClient.swift          # Unix socket client
+│       ├── AppState.swift           # Observable state, IPC handler, ConnectionState
+│       ├── IPCClient.swift          # Unix socket client + connection-state publishing
 │       ├── IPCMessages.swift        # Codable message types
-│       ├── MenuBarView.swift        # Menu bar dropdown
+│       ├── Theme.swift              # Typography, spacing, radii, tones, accents
+│       ├── MenuBarView.swift        # Menu bar dropdown (status + connection state)
 │       ├── OverlayWindowController.swift
-│       ├── OverlayView.swift        # Floating pill overlay
-│       ├── GeneralSettingsView.swift
-│       ├── AdvancedSettingsView.swift       # struct shell + @State + body
-│       ├── AdvancedSettingsView+Audio.swift
-│       ├── AdvancedSettingsView+Transcription.swift
-│       ├── AdvancedSettingsView+Grammar.swift
-│       ├── AdvancedSettingsView+IO.swift
-│       ├── SettingsView.swift
-│       ├── SharedViews.swift
-│       ├── AboutView.swift
+│       ├── OverlayView.swift        # Floating pill: waveform + state
+│       ├── OnboardingView.swift     # First-launch + replay tutorial
+│       ├── SettingsView.swift       # Sidebar root + section enum
+│       ├── RecordingPanel.swift     # Trigger key + audio cleanup
+│       ├── TranscriptionPanel.swift # Engine picker + per-engine params
+│       ├── GrammarPanel.swift       # Backend picker + Ollama / LM Studio / AI
+│       ├── VoicePanel.swift         # TTS + dictation commands
+│       ├── VocabularyPanel.swift    # Replacements editor (search, import / export)
+│       ├── OutputPanel.swift        # Overlay, sounds, notifications, paste, history
+│       ├── ShortcutsPanel.swift     # Text-transform keybindings + cheatsheet
+│       ├── ActivityPanel.swift      # Usage stats with 30-day chart
+│       ├── AdvancedPanel.swift      # Live status, storage, diagnostics, service control
+│       ├── AboutView.swift          # Hero, credits, links, replay tutorial
+│       ├── SharedViews.swift        # DeferredText fields, StatusPill, InlineNotice, headers
 │       └── Constants.swift
 └── src/whisper_voice/
     ├── app.py              # App class + service_main (imports mixins)
