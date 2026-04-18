@@ -98,8 +98,8 @@ print('yes' if ok else 'no')
 
 echo ""
 echo -e "${BOLD}╭────────────────────────────────────────╮${NC}"
-echo -e "${BOLD}│${NC}  ${CYAN}Local Whisper${NC} · Setup               ${BOLD}│${NC}"
-echo -e "${BOLD}│${NC}  ${DIM}Transcription · Grammar · TTS${NC}        ${BOLD}│${NC}"
+echo -e "${BOLD}│${NC}  ${CYAN}Local Whisper${NC} · Setup                 ${BOLD}│${NC}"
+echo -e "${BOLD}│${NC}  ${DIM}Transcription · Grammar · TTS${NC}         ${BOLD}│${NC}"
 echo -e "${BOLD}╰────────────────────────────────────────╯${NC}"
 
 # ============================================================================

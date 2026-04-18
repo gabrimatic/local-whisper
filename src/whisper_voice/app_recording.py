@@ -251,6 +251,12 @@ class RecordingMixin:
             log(f"Recorded {dur:.1f}s", "OK")
             self._busy = True
 
+        # Flip the pill to "Processing…" immediately so users get instant
+        # feedback. Without this, the overlay sits on the last recording
+        # frame until _process spawns and sends its first state_update.
+        self._current_status = "Processing..."
+        self._send_state_update(phase="processing", status_text="Processing...")
+
         # Start processing outside the lock
         threading.Thread(target=self._process, args=(audio,), daemon=True).start()
 

@@ -1,125 +1,237 @@
 import SwiftUI
 import AppKit
 
-// MARK: - About tab
+// MARK: - About panel
 
 struct AboutView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var version: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
     }
 
+    private var build: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
+    }
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 0) {
-                VStack(spacing: 10) {
-                    Image(systemName: "waveform.badge.mic")
-                        .font(.system(size: 56))
-                        .foregroundStyle(.primary)
-                        .symbolRenderingMode(.hierarchical)
-                        .symbolEffect(.breathe)
-                        .padding(.top, 32)
-
-                    Text("Local Whisper")
-                        .font(.system(size: 22, weight: .semibold))
-
-                    Text("Version \(version)")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                        .fixedSize()
-
-                    Text("100% local voice transcription for macOS.\nNo cloud, no tracking, no internet required.")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(3)
-                        .padding(.horizontal, 32)
-                        .padding(.top, 4)
-                }
-
-                Divider().padding(.vertical, 20)
-
-                VStack(spacing: 8) {
-                    HStack(spacing: 6) {
-                        Text("Soroush Yousefpour")
-                            .font(.system(size: 13))
-                        Button("gabrimatic.info") {
-                            openExternal("https://gabrimatic.info")
-                        }
-                        .buttonStyle(.link)
-                        .font(.system(size: 13))
-                    }
-
-                    Button("GitHub") {
-                        openExternal("https://github.com/gabrimatic/local-whisper")
-                    }
-                    .buttonStyle(.link)
-                    .font(.system(size: 13))
-                }
-
-                Divider().padding(.vertical, 20)
-
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Credits")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.bottom, 10)
-
-                    creditRow(category: "Speech", name: "Qwen3-ASR by Alibaba Qwen Team", url: "https://github.com/QwenLM/Qwen3-ASR")
-                    creditRow(category: "Speech", name: "WhisperKit by Argmax", url: "https://github.com/argmaxinc/WhisperKit")
-                    creditRow(category: "Speech", name: "Kokoro-82M by Kokoro Team", url: "https://github.com/remsky/Kokoro-FastAPI")
-                    creditRow(category: "Grammar", name: "Apple Foundation Models", url: "https://developer.apple.com/documentation/foundationmodels")
-                    creditRow(category: "LLM", name: "Ollama", url: "https://ollama.com")
-                    creditRow(category: "LLM", name: "LM Studio", url: "https://lmstudio.ai")
-                }
-                .frame(maxWidth: 400, alignment: .leading)
-
-                Divider().padding(.vertical, 20)
-
-                HStack(spacing: 16) {
-                    Button("Open Config File") {
-                        NSWorkspace.shared.selectFile(AppDirectories.config, inFileViewerRootedAtPath: "")
-                    }
-                    .buttonStyle(.link)
-
-                    Button("Open Backup Folder") {
-                        NSWorkspace.shared.open(URL(fileURLWithPath: AppDirectories.whisper))
-                    }
-                    .buttonStyle(.link)
-
-                    Button("Replay Tutorial") {
-                        replayOnboarding()
-                    }
-                    .buttonStyle(.link)
-                }
-                .padding(.bottom, 32)
+            VStack(spacing: Theme.Spacing.xl) {
+                hero
+                actionRow
+                creditsCard
+                authorCard
+                tutorialCard
             }
+            .padding(Theme.Spacing.xxl)
+            .frame(maxWidth: 640)
             .frame(maxWidth: .infinity)
         }
     }
 
-    private func creditRow(category: String, name: String, url: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text(category)
-                .font(.system(size: 11))
+    // MARK: - Hero
+
+    private var hero: some View {
+        VStack(spacing: Theme.Spacing.m) {
+            ZStack {
+                Circle()
+                    .fill(LinearGradient(
+                        colors: [Color.accentColor.opacity(0.30), Color.accentColor.opacity(0.05)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ))
+                    .frame(width: 120, height: 120)
+                Image(systemName: "waveform.badge.mic")
+                    .font(.system(size: 56, weight: .regular))
+                    .foregroundStyle(.primary)
+                    .symbolRenderingMode(.hierarchical)
+                    .modifier(BreatheIfMotionAllowed(reduceMotion: reduceMotion))
+            }
+            .accessibilityHidden(true)
+
+            VStack(spacing: Theme.Spacing.xs) {
+                Text("Local Whisper")
+                    .font(Theme.Typography.title)
+                Text(versionLine)
+                    .font(Theme.Typography.mono)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+
+            Text("100% local voice transcription for macOS.\nNo cloud, no tracking, no internet required.")
+                .font(Theme.Typography.body)
                 .foregroundStyle(.secondary)
-                .frame(width: 56, alignment: .leading)
-            Button(name) {
-                openExternal(url)
+                .multilineTextAlignment(.center)
+                .lineSpacing(3)
+                .padding(.horizontal, Theme.Spacing.l)
+        }
+    }
+
+    private var versionLine: String {
+        if build.isEmpty || build == version {
+            return "Version \(version)"
+        }
+        return "Version \(version) (\(build))"
+    }
+
+    // MARK: - Action row
+
+    private var actionRow: some View {
+        HStack(spacing: Theme.Spacing.m) {
+            Button {
+                openExternal("https://github.com/gabrimatic/local-whisper")
+            } label: {
+                Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+
+            Button {
+                openExternal("https://github.com/gabrimatic/local-whisper/releases")
+            } label: {
+                Label("Releases", systemImage: "tag")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+
+            Button {
+                openExternal("https://gabrimatic.info")
+            } label: {
+                Label("Website", systemImage: "globe")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+        }
+    }
+
+    // MARK: - Credits
+
+    private var creditsCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionLabel("Built on", icon: "shippingbox.fill")
+            VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+                creditCategory(title: "Speech", entries: [
+                    ("Qwen3-ASR",   "Alibaba Qwen", "https://github.com/QwenLM/Qwen3-ASR"),
+                    ("WhisperKit",  "argmaxinc",    "https://github.com/argmaxinc/WhisperKit"),
+                    ("Kokoro-82M",  "hexgrad",       "https://huggingface.co/hexgrad/Kokoro-82M"),
+                ])
+                Divider().padding(.vertical, 2)
+                creditCategory(title: "Grammar", entries: [
+                    ("Apple Foundation Models", "developer.apple.com", "https://developer.apple.com/documentation/foundationmodels"),
+                    ("Ollama",    "ollama.com",   "https://ollama.com"),
+                    ("LM Studio", "lmstudio.ai",  "https://lmstudio.ai"),
+                ])
+            }
+        }
+        .padding(Theme.Spacing.l + 2)
+        .cardSurface()
+    }
+
+    private func sectionLabel(_ text: String, icon: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .foregroundStyle(.secondary)
+                .symbolRenderingMode(.hierarchical)
+            Text(text)
+                .font(Theme.Typography.captionEmphasized)
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+        }
+        .padding(.bottom, Theme.Spacing.m)
+    }
+
+    private func creditCategory(title: String, entries: [(String, String, String)]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(Theme.Typography.captionEmphasized)
+                .foregroundStyle(.primary)
+            ForEach(entries, id: \.0) { (name, attribution, url) in
+                HStack(spacing: Theme.Spacing.s) {
+                    Text(name)
+                        .font(Theme.Typography.body)
+                    Text("·").foregroundStyle(.tertiary)
+                    Text(attribution)
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        openExternal(url)
+                    } label: {
+                        Image(systemName: "arrow.up.forward.app")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(url)
+                    .accessibilityLabel("Open \(name) website")
+                }
+            }
+        }
+    }
+
+    // MARK: - Author
+
+    private var authorCard: some View {
+        HStack(spacing: Theme.Spacing.l - 2) {
+            Image(systemName: "person.crop.circle")
+                .font(.system(size: 36))
+                .foregroundStyle(.secondary)
+                .symbolRenderingMode(.hierarchical)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Made by Soroush Yousefpour")
+                    .font(Theme.Typography.bodyEmphasized)
+                Text("MIT-licensed. Sole author. No telemetry.")
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("gabrimatic.info") {
+                openExternal("https://gabrimatic.info")
             }
             .buttonStyle(.link)
-            .font(.system(size: 12))
         }
-        .padding(.vertical, 3)
+        .padding(Theme.Spacing.l)
+        .cardSurface()
+    }
+
+    // MARK: - Tutorial
+
+    private var tutorialCard: some View {
+        HStack(spacing: Theme.Spacing.m) {
+            Image(systemName: "play.circle.fill")
+                .font(.title2)
+                .foregroundStyle(Color.accentColor)
+                .symbolRenderingMode(.hierarchical)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Replay tutorial")
+                    .font(Theme.Typography.bodyEmphasized)
+                Text("Walk through onboarding again at any time.")
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Replay") {
+                OnboardingPresenter.shared.present(with: appState)
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(Theme.Spacing.l - 2)
+        .tintedCard(.accentColor)
     }
 
     private func openExternal(_ string: String) {
         guard let url = URL(string: string) else { return }
         NSWorkspace.shared.open(url)
     }
+}
 
-    private func replayOnboarding() {
-        OnboardingPresenter.shared.present(with: appState, title: "Local Whisper tutorial")
+private struct BreatheIfMotionAllowed: ViewModifier {
+    let reduceMotion: Bool
+    func body(content: Content) -> some View {
+        if reduceMotion {
+            content
+        } else {
+            content.symbolEffect(.breathe)
+        }
     }
 }

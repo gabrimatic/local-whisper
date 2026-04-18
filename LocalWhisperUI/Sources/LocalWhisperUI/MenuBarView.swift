@@ -2,18 +2,37 @@ import SwiftUI
 import AppKit
 import UserNotifications
 
-// MARK: - Menu bar content
+// MARK: - Menu bar dropdown
 
 struct MenuBarView: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
-        Text(appState.menuStatusLabel)
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(statusColor)
-            .accessibilityLabel(accessibilityStatusLabel)
+        // Status line + active config subtitle. When the service is unreachable
+        // we surface that prominently so users don't think the UI is just stale.
+        if appState.connectionState != .connected {
+            Text(connectionLabel)
+                .font(Theme.Typography.bodyEmphasized)
+                .foregroundStyle(connectionTone)
+                .accessibilityLabel("Local Whisper service: \(connectionLabel)")
+        } else {
+            Text(appState.menuStatusLabel)
+                .font(Theme.Typography.bodyEmphasized)
+                .foregroundStyle(statusColor)
+                .accessibilityLabel(accessibilityStatusLabel)
+        }
+
+        Text(activeConfigSubtitle)
+            .font(Theme.Typography.caption)
+            .foregroundStyle(.secondary)
 
         Divider()
+
+        // Engine + grammar pickers (live in their own grouped submenus)
+        Picker(engineMenuTitle, selection: engineBinding) {
+            Text("Qwen3-ASR (in-process)").tag("qwen3_asr")
+            Text("WhisperKit (server)").tag("whisperkit")
+        }
 
         Picker(grammarMenuTitle, selection: grammarBinding) {
             Text("Apple Intelligence").tag("apple_intelligence")
@@ -33,6 +52,7 @@ struct MenuBarView: View {
 
         Divider()
 
+        // Quick actions
         Button("Retry Last") {
             appState.ipcClient?.sendAction("retry")
         }
@@ -47,19 +67,17 @@ struct MenuBarView: View {
 
         Divider()
 
-        Menu("Transcriptions") {
+        // Transcriptions submenu
+        Menu(transcriptionsMenuTitle) {
             if appState.history.isEmpty {
                 Text("No transcriptions yet")
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(Array(appState.history.prefix(min(20, appState.config.backup.historyLimit)))) { entry in
-                    Button(action: {
-                        let pasteboard = NSPasteboard.general
-                        pasteboard.clearContents()
-                        pasteboard.setString(entry.text, forType: .string)
-                        showCopiedNotification()
-                    }) {
-                        Text("\(timeAgo(entry.timestamp))  \(String(entry.text.prefix(50)))")
+                    Button {
+                        copyEntry(entry.text)
+                    } label: {
+                        Text("\(timeAgo(entry.timestamp))  \(truncated(entry.text, limit: 60))")
                     }
                 }
             }
@@ -69,15 +87,15 @@ struct MenuBarView: View {
             }
         }
 
-        Menu("Recordings") {
+        Menu(recordingsMenuTitle) {
             if appState.historyWithAudio.isEmpty {
                 Text("No recordings yet")
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(Array(appState.historyWithAudio.prefix(min(20, appState.config.backup.historyLimit)))) { entry in
-                    Button(action: {
+                    Button {
                         appState.ipcClient?.sendAction("reveal", id: entry.id)
-                    }) {
+                    } label: {
                         Text("\(timeAgo(entry.timestamp))  \(audioFilename(entry.audioPath ?? ""))")
                     }
                 }
@@ -90,40 +108,49 @@ struct MenuBarView: View {
 
         Divider()
 
+        // Settings
         SettingsLink {
-            Text("Settings...")
+            Text("Settings…")
         }
         .simultaneousGesture(TapGesture().onEnded {
             NSApp.activate(ignoringOtherApps: true)
         })
         .keyboardShortcut(",", modifiers: .command)
 
-        Button("Restart Service") {
-            appState.ipcClient?.sendAction("restart")
-        }
-        .keyboardShortcut("r", modifiers: [.command, .shift])
+        // System actions submenu groups the destructive / admin items together.
+        Menu("Service") {
+            Button("Restart") {
+                appState.ipcClient?.sendAction("restart")
+            }
+            .keyboardShortcut("r", modifiers: [.command, .shift])
 
-        Button("Check for Updates") {
-            appState.ipcClient?.sendAction("update")
+            Button("Check for Updates") {
+                appState.ipcClient?.sendAction("update")
+            }
+            .keyboardShortcut("u", modifiers: [.command, .shift])
+
+            Divider()
+
+            Button("Open Service Log") {
+                let path = (NSHomeDirectory() as NSString).appendingPathComponent(".whisper/service.log")
+                NSWorkspace.shared.open(URL(fileURLWithPath: path))
+            }
         }
-        .keyboardShortcut("u", modifiers: [.command, .shift])
 
         Divider()
 
-        Button("Quit") {
+        Button("Quit Local Whisper") {
             appState.ipcClient?.sendAction("quit")
             NSApplication.shared.terminate(nil)
         }
         .keyboardShortcut("q", modifiers: .command)
     }
 
-    // MARK: - Grammar binding
+    // MARK: - Bindings
 
     private var grammarBinding: Binding<String> {
         Binding(
-            get: {
-                appState.config.grammar.enabled ? appState.config.grammar.backend : "none"
-            },
+            get: { appState.config.grammar.enabled ? appState.config.grammar.backend : "none" },
             set: { newValue in
                 if newValue == "none" {
                     appState.config.grammar.enabled = false
@@ -136,33 +163,94 @@ struct MenuBarView: View {
         )
     }
 
-    // MARK: - Helpers
+    private var engineBinding: Binding<String> {
+        Binding(
+            get: { appState.config.transcription.engine },
+            set: { newValue in
+                appState.config.transcription.engine = newValue
+                appState.ipcClient?.sendEngineSwitch(newValue)
+            }
+        )
+    }
+
+    // MARK: - Labels
 
     private var statusColor: Color {
         switch appState.phase {
         case .idle: return .secondary
-        case .recording: return .primary
+        case .recording: return .red
         case .processing: return .secondary
         case .done: return .green
         case .error: return .orange
-        case .speaking: return .primary
+        case .speaking: return .accentColor
         }
+    }
+
+    private var connectionLabel: String {
+        switch appState.connectionState {
+        case .connecting:   return "Connecting to service…"
+        case .connected:    return appState.menuStatusLabel
+        case .disconnected: return "Service not running"
+        }
+    }
+
+    private var connectionTone: Color {
+        switch appState.connectionState {
+        case .connecting:   return .secondary
+        case .connected:    return .primary
+        case .disconnected: return .orange
+        }
+    }
+
+    private var activeConfigSubtitle: String {
+        let engineName = engineDisplayName(appState.config.transcription.engine)
+        let backendName = grammarBackendName
+        return "\(engineName) · \(backendName)"
+    }
+
+    private func engineDisplayName(_ id: String) -> String {
+        switch id {
+        case "qwen3_asr":  return "Qwen3-ASR"
+        case "whisperkit": return "WhisperKit"
+        default:           return id
+        }
+    }
+
+    private var grammarBackendName: String {
+        guard appState.config.grammar.enabled else { return "Grammar off" }
+        switch appState.config.grammar.backend {
+        case "apple_intelligence": return "Apple Intelligence"
+        case "ollama":             return "Ollama"
+        case "lm_studio":          return "LM Studio"
+        default:                   return appState.config.grammar.backend
+        }
+    }
+
+    private var engineMenuTitle: String {
+        "Engine: \(engineDisplayName(appState.config.transcription.engine))"
     }
 
     private var grammarMenuTitle: String {
         guard appState.config.grammar.enabled else { return "Grammar: Disabled" }
-        switch appState.config.grammar.backend {
-        case "apple_intelligence": return "Grammar: Apple Intelligence"
-        case "ollama": return "Grammar: Ollama"
-        case "lm_studio": return "Grammar: LM Studio"
-        default: return "Grammar"
-        }
+        return "Grammar: \(grammarBackendName)"
     }
 
     private var replacementsMenuTitle: String {
         let count = appState.config.replacements.rules.count
         if count == 0 { return "Replacements" }
         return "Replacements (\(count) rule\(count == 1 ? "" : "s"))"
+    }
+
+    private var transcriptionsMenuTitle: String {
+        let count = appState.history.count
+        if count == 0 { return "Transcriptions" }
+        return "Transcriptions (\(count))"
+    }
+
+    private var recordingsMenuTitle: String {
+        let count = appState.historyWithAudio.count
+        if count == 0 { return "Recordings" }
+        return "Recordings (\(count))"
     }
 
     private var accessibilityStatusLabel: String {
@@ -174,6 +262,15 @@ struct MenuBarView: View {
         case .error: return "Local Whisper: Error"
         case .speaking: return "Local Whisper: Speaking"
         }
+    }
+
+    // MARK: - Actions
+
+    private func copyEntry(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        showCopiedNotification()
     }
 
     private func showCopiedNotification() {
@@ -203,6 +300,12 @@ struct MenuBarView: View {
     }
 
     private func audioFilename(_ path: String) -> String {
-        return URL(fileURLWithPath: path).lastPathComponent
+        URL(fileURLWithPath: path).lastPathComponent
+    }
+
+    private func truncated(_ s: String, limit: Int) -> String {
+        let collapsed = s.replacingOccurrences(of: "\n", with: " ")
+        if collapsed.count <= limit { return collapsed }
+        return collapsed.prefix(limit).trimmingCharacters(in: .whitespaces) + "…"
     }
 }

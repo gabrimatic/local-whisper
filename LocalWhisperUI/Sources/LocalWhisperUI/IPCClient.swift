@@ -80,11 +80,15 @@ final class IPCClient: @unchecked Sendable {
             case .ready:
                 self.reconnectDelay = 0.5
                 self.buffer = Data()
+                self.publishConnectionState(.connected)
                 self.receiveNext()
             case .failed, .cancelled:
+                self.publishConnectionState(.disconnected)
                 if self.isRunning {
                     self.scheduleReconnect()
                 }
+            case .preparing, .setup, .waiting:
+                self.publishConnectionState(.connecting)
             default:
                 break
             }
@@ -182,5 +186,13 @@ final class IPCClient: @unchecked Sendable {
 
     func sendReplacementRemove(spoken: String) {
         send(ReplacementRemoveMessage(spoken: spoken))
+    }
+
+    // MARK: - Connection state plumbing
+
+    private func publishConnectionState(_ state: ConnectionState) {
+        Task { @MainActor [weak appState] in
+            appState?.connectionState = state
+        }
     }
 }

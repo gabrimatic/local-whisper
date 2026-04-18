@@ -257,20 +257,33 @@ Custom commands go under `[dictation.commands]` in `~/.whisper/config.toml`. The
 
 | Item | What it does |
 |------|-------------|
-| Status | Current state |
+| Status | Current state with active engine and backend subtitle |
+| Engine | Switch transcription engine in-place |
 | Grammar | Switch grammar backend in-place |
 | Replacements | Toggle, shows rule count |
 | Retry Last / Copy Last | Re-transcribe or re-copy |
-| Transcriptions | Last 100, click to copy |
+| Transcriptions | Recent entries, click to copy |
 | Recordings | Audio files, click to reveal in Finder |
-| Settings... | Full GUI |
-| Restart Service | Restart background service |
-| Check for Updates | Pull, rebuild, restart |
-| Quit | Exit |
+| Settings… | Full sidebar settings window |
+| Service | Restart, Check for Updates, Open Service Log |
+| Quit Local Whisper | Exit |
 
 ### Settings
 
-Three tabs: General (engine, grammar, TTS, shortcuts, UI), Advanced (audio, params, backends), About.
+Sidebar layout with focused panels:
+
+| Panel | Covers |
+|-------|--------|
+| Recording | Trigger key, double-tap window, audio cleanup, duration limits |
+| Transcription | Engine picker plus per-engine sampling and decoding parameters |
+| Grammar | Master toggle, backend picker, per-backend connection and limits |
+| Voice | Text-to-speech voice and shortcut, dictation command help |
+| Vocabulary | Searchable replacement editor with import / export |
+| Output | Overlay, sounds, notifications, paste-at-cursor, history limit |
+| Shortcuts | Proofread / rewrite / prompt-engineer keybindings, full cheatsheet |
+| Activity | Sessions, words, 30-day chart, top words, top replacement triggers |
+| Advanced | Storage paths, service log, doctor, restart, update |
+| About | Version, credits, replay tutorial |
 
 <p align="center">
   <img src="assets/settings.png" width="480" alt="Settings window">
@@ -598,21 +611,26 @@ local-whisper/
 │   ├── Package.swift
 │   └── Sources/LocalWhisperUI/
 │       ├── AppMain.swift            # @main entry point
-│       ├── AppState.swift           # Observable state, IPC handler
-│       ├── IPCClient.swift          # Unix socket client
+│       ├── AppState.swift           # Observable state, IPC handler, ConnectionState
+│       ├── IPCClient.swift          # Unix socket client + connection-state publishing
 │       ├── IPCMessages.swift        # Codable message types
-│       ├── MenuBarView.swift        # Menu bar dropdown
+│       ├── Theme.swift              # Typography, spacing, radii, tones, accents
+│       ├── MenuBarView.swift        # Menu bar dropdown (status + connection state)
 │       ├── OverlayWindowController.swift
-│       ├── OverlayView.swift        # Floating pill overlay
-│       ├── GeneralSettingsView.swift
-│       ├── AdvancedSettingsView.swift       # struct shell + @State + body
-│       ├── AdvancedSettingsView+Audio.swift
-│       ├── AdvancedSettingsView+Transcription.swift
-│       ├── AdvancedSettingsView+Grammar.swift
-│       ├── AdvancedSettingsView+IO.swift
-│       ├── SettingsView.swift
-│       ├── SharedViews.swift
-│       ├── AboutView.swift
+│       ├── OverlayView.swift        # Floating pill: waveform + state
+│       ├── OnboardingView.swift     # First-launch + replay tutorial
+│       ├── SettingsView.swift       # Sidebar root + section enum
+│       ├── RecordingPanel.swift     # Trigger key + audio cleanup
+│       ├── TranscriptionPanel.swift # Engine picker + per-engine params
+│       ├── GrammarPanel.swift       # Backend picker + Ollama / LM Studio / AI
+│       ├── VoicePanel.swift         # TTS + dictation commands
+│       ├── VocabularyPanel.swift    # Replacements editor (search, import / export)
+│       ├── OutputPanel.swift        # Overlay, sounds, notifications, paste, history
+│       ├── ShortcutsPanel.swift     # Text-transform keybindings + cheatsheet
+│       ├── ActivityPanel.swift      # Usage stats with 30-day chart
+│       ├── AdvancedPanel.swift      # Live status, storage, diagnostics, service control
+│       ├── AboutView.swift          # Hero, credits, links, replay tutorial
+│       ├── SharedViews.swift        # DeferredText fields, StatusPill, InlineNotice, headers
 │       └── Constants.swift
 └── src/whisper_voice/
     ├── app.py              # App class + service_main (imports mixins)

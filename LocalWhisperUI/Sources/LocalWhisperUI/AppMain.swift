@@ -59,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 @main
 struct LocalWhisperUIApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var appState: AppState { sharedAppState }
 
     var body: some Scene {
@@ -67,7 +68,7 @@ struct LocalWhisperUIApp: App {
                 .environment(appState)
         } label: {
             Image(systemName: appState.menuBarIconName)
-                .symbolEffect(.bounce, value: appState.phase)
+                .modifier(MenuBarBounce(value: appState.phase, reduceMotion: reduceMotion))
         }
         .menuBarExtraStyle(.menu)
 
@@ -75,7 +76,19 @@ struct LocalWhisperUIApp: App {
             SettingsView()
                 .environment(appState)
         }
-        .defaultSize(width: 580, height: 620)
+        .defaultSize(width: 880, height: 640)
         .windowResizability(.contentMinSize)
+    }
+}
+
+private struct MenuBarBounce<V: Equatable>: ViewModifier {
+    let value: V
+    let reduceMotion: Bool
+    func body(content: Content) -> some View {
+        if reduceMotion {
+            content
+        } else {
+            content.symbolEffect(.bounce, value: value)
+        }
     }
 }
