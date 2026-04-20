@@ -698,10 +698,12 @@ local-whisper/
     │   ├── base.py         # TTSProvider base
     │   └── kokoro_tts.py   # Kokoro provider (MLX)
     ├── engines/
-    │   ├── base.py         # TranscriptionEngine base
-    │   ├── parakeet.py     # Parakeet-TDT v3 (MLX, default)
-    │   ├── qwen3_asr.py    # Qwen3-ASR (MLX)
-    │   └── whisperkit.py   # WhisperKit (localhost)
+    │   ├── base.py             # TranscriptionEngine base
+    │   ├── parakeet.py         # Parakeet-TDT v3 (MLX, default)
+    │   ├── qwen3_asr.py        # Qwen3-ASR (MLX)
+    │   ├── whisperkit.py       # WhisperKit (localhost)
+    │   ├── status.py           # Cache status + on-disk size reporting
+    │   └── download_progress.py # HF preflight + inline progress bar IPC
     └── backends/
         ├── base.py         # Backend base
         ├── modes.py        # Transformation modes

@@ -40,6 +40,15 @@ class TTSProvider(ABC):
         """Reload model if the model_id changed."""
         ...
 
+    def ensure_loaded(self, model_id: str) -> bool:
+        """Eagerly load weights so the first speak() is instant.
+
+        Default is a no-op — providers that lazy-load override this so the
+        Settings panel can surface a real progress bar when the user flips
+        TTS on instead of stalling the first ⌥T press.
+        """
+        return True
+
     @abstractmethod
     def close(self) -> None:
         """Release resources."""

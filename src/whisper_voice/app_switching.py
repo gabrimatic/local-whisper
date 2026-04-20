@@ -4,10 +4,16 @@
 
 import threading
 import time
+from pathlib import Path
 
 from .backends import BACKEND_REGISTRY
 from .config import get_config
 from .engines import ENGINE_REGISTRY
+from .engines.download_progress import (
+    DownloadWatcher,
+    expected_size_bytes,
+    kokoro_cache_path,
+)
 from .engines.status import (
     engine_model_status,
     remove_engine_cache,
@@ -60,11 +66,12 @@ class SwitchingMixin:
     def _switch_engine(self, engine_name: str):
         """Switch transcription engine in-process with rollback on failure.
 
-        Phases (each broadcast to Swift via state_update.status_text):
-          1. "Unloading <old>..."   — free the previous model from RAM
-          2. "Downloading <new>..." — only if HF cache is empty
-          3. "Warming up <new>..."  — compile MLX graph for first-fast inference
-          4. "Ready"
+        Two signals run in parallel:
+          - `state_update.status_text` narrates the step in the menu bar
+            ("Unloading <old>…", "Downloading <new>…" / "Loading <new>…",
+            "Ready").
+          - `download_progress` streams bytes + percent to the Settings panel
+            so the card shows a real inline progress bar during HF pulls.
         """
         if self._busy:
             log("Cannot switch engine while processing", "WARN")
@@ -77,11 +84,25 @@ class SwitchingMixin:
         old_transcriber = self.transcriber
         old_name = _engine_display_name(self.config.transcription.engine)
         new_name = _engine_display_name(engine_name)
-        needs_download = not engine_model_status(engine_name).get("downloaded", False)
+        status = engine_model_status(engine_name)
+        needs_download = not status.get("downloaded", False)
+        cache_dir = status.get("cache_dir")
+        hf_repo = status.get("hf_repo")
 
         def _status(text: str, phase: str = "processing"):
             self._current_status = text
             self._send_state_update(phase, status_text=text)
+
+        # Spin up an inline-progress watcher so the Settings panel can show a
+        # real bar. Skipped for engines like WhisperKit whose weights live
+        # outside the HF cache.
+        watcher: 'DownloadWatcher | None' = None
+        if cache_dir and hf_repo:
+            total = expected_size_bytes(hf_repo) if needs_download else 0
+            watcher = DownloadWatcher(
+                engine_name, Path(cache_dir), total, self.ipc.send
+            )
+            watcher.start()
 
         try:
             # Phase 1: free the old engine before loading the new one so peak RAM stays low.
@@ -92,17 +113,22 @@ class SwitchingMixin:
                 except Exception as e:
                     log(f"Unload warning: {e}", "WARN")
 
-            # Phase 2 + 3: engine.start() downloads if needed, then warms up.
-            # Phase messaging is best-effort: we cannot wrap HF's download stream
-            # with a real progress bar without rewriting the loader, but users at
-            # least see that "downloading ~620 MB" is the current step.
+            # Phase 2 + 3: engine.start() downloads if needed then warms up.
+            # HF doesn't expose a clean "download done" hook, so we label the
+            # whole phase "downloading" when the cache is empty (the progress
+            # bar itself is authoritative via disk polling) and "warming" when
+            # the cache is already populated and only the MLX graph compile
+            # remains. The menu bar status line still narrates both steps.
             if needs_download:
                 _status(f"Downloading {new_name} model...")
+                if watcher is not None:
+                    watcher.set_phase("downloading")
             else:
                 _status(f"Loading {new_name}...")
+                if watcher is not None:
+                    watcher.set_phase("warming")
 
             new_transcriber = Transcriber(engine_id=engine_name)
-            _status(f"Warming up {new_name}...")
             ok = new_transcriber.start()
             if not ok:
                 raise RuntimeError(f"{new_name} failed to start")
@@ -110,6 +136,9 @@ class SwitchingMixin:
             update_config_field("transcription", "engine", engine_name)
             self.config = get_config()
             self.transcriber = new_transcriber
+            if watcher is not None:
+                watcher.finish()
+                watcher = None
             self._send_config_snapshot()
             self._send_engines_status()
             self._current_status = "Ready"
@@ -120,6 +149,9 @@ class SwitchingMixin:
             error_msg = str(e)
             log(f"Engine switch failed: {error_msg}", "ERR")
             friendly = _friendly_download_error(error_msg, new_name)
+            if watcher is not None:
+                watcher.finish(error=friendly)
+                watcher = None
             self._send_state_error(friendly)
 
             # Rollback: the old engine was unloaded — bring it back so the user
@@ -301,6 +333,47 @@ class SwitchingMixin:
         )
         log(f"TTS enabled ({self.config.tts.speak_shortcut})", "OK")
         self._send_config_snapshot()
+
+        # Preload Kokoro eagerly with inline progress reporting so the first
+        # ⌥T press is instant and the Voice panel can show a real bar during
+        # the ~170 MB download instead of silently blocking the keystroke.
+        threading.Thread(
+            target=self._preload_kokoro_model, daemon=True
+        ).start()
+
+    def _preload_kokoro_model(self):
+        """Download + load Kokoro now so Settings shows progress and first-speak is instant."""
+        processor = self._tts_processor
+        if processor is None:
+            return
+        model_id = self.config.kokoro_tts.model
+        cache_path = kokoro_cache_path(model_id)
+        downloaded = cache_path.is_dir() and any(cache_path.iterdir())
+        total = expected_size_bytes(model_id) if not downloaded else 0
+        watcher = DownloadWatcher(
+            "kokoro_tts", cache_path, total, self.ipc.send
+        )
+        watcher.start()
+        try:
+            watcher.set_phase("downloading" if not downloaded else "warming")
+            provider = processor.get_provider()
+            if provider is None:
+                watcher.finish(error="Kokoro provider unavailable")
+                return
+            # refresh() drops a mismatched model without loading; ensure_loaded
+            # forces the real load so the download actually runs here.
+            provider.refresh(model_id)
+            watcher.set_phase("warming")
+            ok = provider.ensure_loaded(model_id)
+            if not ok:
+                watcher.finish(error="Kokoro model failed to load")
+                return
+            watcher.finish()
+            log("Kokoro preload complete", "OK")
+        except Exception as e:
+            friendly = _friendly_download_error(str(e), "Kokoro")
+            log(f"Kokoro preload failed: {e}", "ERR")
+            watcher.finish(error=friendly)
 
     def _disable_tts(self):
         """Tear down the TTS processor and unbind its shortcut."""

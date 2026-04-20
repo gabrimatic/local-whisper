@@ -45,6 +45,11 @@ class KokoroTTSProvider(TTSProvider):
     def running(self) -> bool:
         return True
 
+    def ensure_loaded(self, model_id: str) -> bool:
+        """Force a synchronous load so the download progress bar in Settings
+        can track real bytes. Safe to call repeatedly."""
+        return self._load_model(model_id)
+
     def refresh(self, model_id: str) -> None:
         """Unload model if model_id changed so it is reloaded on next speak()."""
         released = False

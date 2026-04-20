@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Inline download progress bars.** Switching to an un-downloaded engine or turning on Text-to-Speech now shows a real progress bar with megabytes, total, and percent under the triggering section, driven by an actual byte count polled from the HF cache directory. No modal dialogs and no overlay takeover — the bar lives inside the card that started the download.
+- **Merged "Speech-to-text model" panel.** Transcription settings now show one card per engine that acts as both the picker and the status readout. Active card is accent-tinted with an "In use" marker; inactive cards offer Use, Use & download, or trash in place. The previous separate engine picker has been retired. Per-engine tuning knobs render below the active card.
+- **Eager Kokoro preload.** Flipping Text-to-Speech on immediately downloads the Kokoro voice model with visible progress instead of deferring to the first ⌥T press. First speak after enabling is instant.
+
+### Fixed
+
+- **Engine switching now works even when a model is not yet on disk.** The LaunchAgent plist no longer hard-pins `HF_HUB_OFFLINE=1`, and the running service clears any stale value on startup, so switching to a fresh engine mid-session can actually download its weights. Previous versions failed with a generic "Switch failed" on the first attempt.
+- **Text-to-Speech toggle no longer only flips the config.** Turning TTS off from the menu bar or Settings tears down the processor and unbinds ⌥T; turning it on now spins them up without a service restart. Toggle state in the UI matches reality.
+- **Clearer error messages** when a download fails: offline / network failures surface as "needs internet" or "network error" instead of raw exception text.
+
 ## [1.5.0] - 2026-04-18
 
 ### Added

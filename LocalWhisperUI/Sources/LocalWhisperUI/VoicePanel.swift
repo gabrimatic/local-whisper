@@ -34,8 +34,12 @@ struct VoicePanel: View {
             if !appState.config.tts.enabled {
                 InlineNotice(
                     kind: .info,
-                    text: "Activating Read selected text aloud downloads Kokoro-82M (~170 MB) on the first ⌥T press and uses espeak-ng plus the spaCy en_core_web_sm dictionary. Run ./setup.sh while enabled to pre-fetch everything."
+                    text: "Activating Read selected text aloud downloads Kokoro-82M (~170 MB) and uses espeak-ng plus the spaCy en_core_web_sm dictionary. The download starts the moment you flip this toggle on."
                 )
+            }
+
+            if let progress = appState.downloadStates["kokoro_tts"] {
+                DownloadProgressBar(progress: progress)
             }
 
             if appState.config.tts.enabled {

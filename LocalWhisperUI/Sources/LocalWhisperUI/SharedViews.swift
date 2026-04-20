@@ -248,6 +248,101 @@ extension Text {
     }
 }
 
+// MARK: - Download progress bar (inline, shown under sections that download)
+
+struct DownloadProgressBar: View {
+    let progress: DownloadProgress
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: Theme.Spacing.s) {
+                Text(phaseLabel)
+                    .font(Theme.Typography.captionEmphasized)
+                    .foregroundStyle(tone.color)
+                Spacer(minLength: Theme.Spacing.s)
+                Text(byteLabel)
+                    .font(Theme.Typography.mono)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+
+            if isIndeterminate {
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .tint(tone.color)
+            } else {
+                ProgressView(value: clampedValue, total: 1.0)
+                    .progressViewStyle(.linear)
+                    .tint(tone.color)
+            }
+
+            if let error = progress.error, !error.isEmpty {
+                Text(error)
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Tone.danger.color)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private var clampedValue: Double {
+        min(max(progress.percent, 0.0), 1.0)
+    }
+
+    private var isIndeterminate: Bool {
+        progress.phase == "preparing" || progress.phase == "warming" || progress.total <= 0
+    }
+
+    private var tone: Theme.Tone {
+        switch progress.phase {
+        case "error":    return .danger
+        case "ready":    return .success
+        case "warming":  return .info
+        default:         return .info
+        }
+    }
+
+    private var phaseLabel: String {
+        switch progress.phase {
+        case "preparing":   return "Preparing download…"
+        case "downloading": return "Downloading…"
+        case "warming":     return "Warming up…"
+        case "ready":       return "Ready"
+        case "error":       return "Download failed"
+        default:            return progress.phase.capitalized
+        }
+    }
+
+    private var byteLabel: String {
+        let percentText: String
+        if progress.total > 0 && progress.phase == "downloading" {
+            percentText = " · \(Int(clampedValue * 100)) %"
+        } else {
+            percentText = ""
+        }
+        if progress.total > 0 {
+            return "\(formatMB(progress.bytes)) / \(formatMB(progress.total))\(percentText)"
+        }
+        if progress.bytes > 0 {
+            return formatMB(progress.bytes)
+        }
+        return ""
+    }
+
+    private func formatMB(_ bytes: Int64) -> String {
+        let mb = Double(bytes) / (1024.0 * 1024.0)
+        if mb >= 1024 {
+            let gb = mb / 1024.0
+            return String(format: "%.2f GB", gb)
+        }
+        if mb >= 100 {
+            return String(format: "%.0f MB", mb)
+        }
+        return String(format: "%.1f MB", mb)
+    }
+}
+
 // MARK: - Hover highlight (subtle background change on cursor hover)
 
 struct HoverHighlight: ViewModifier {

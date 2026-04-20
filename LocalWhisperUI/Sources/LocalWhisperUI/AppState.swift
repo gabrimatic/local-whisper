@@ -21,6 +21,10 @@ final class AppState {
     var config: AppConfig = .defaultConfig
     var engines: [EngineStatus] = []
     var connectionState: ConnectionState = .connecting
+    // Keyed by target id: "parakeet_v3", "qwen3_asr", "kokoro_tts". Progress
+    // rows listen on this so the bar sits under the section that triggered
+    // the download, not in the overlay.
+    var downloadStates: [String: DownloadProgress] = [:]
 
     // Called whenever phase changes. Set by OverlayWindowController.
     var onPhaseChange: ((AppPhase) -> Void)?
@@ -82,6 +86,20 @@ final class AppState {
             self.engines = engines.sorted { a, b in
                 if a.active != b.active { return a.active && !b.active }
                 return a.id < b.id
+            }
+
+        case .downloadProgress(let progress):
+            // Keep terminal states ("ready"/"error") around briefly so the UI
+            // can flash the outcome — the panel clears them after the card
+            // animates the change.
+            if progress.phase == "ready" {
+                downloadStates[progress.target] = progress
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    self?.downloadStates.removeValue(forKey: progress.target)
+                }
+            } else {
+                downloadStates[progress.target] = progress
             }
 
         case .notification(let title, let body):

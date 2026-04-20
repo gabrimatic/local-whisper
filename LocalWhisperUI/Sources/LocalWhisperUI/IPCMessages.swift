@@ -403,6 +403,17 @@ struct HistoryEntry: Codable, Identifiable, Sendable {
     }
 }
 
+// MARK: - Download progress
+
+struct DownloadProgress: Codable, Sendable {
+    var target: String
+    var bytes: Int64
+    var total: Int64
+    var percent: Double
+    var phase: String
+    var error: String?
+}
+
 // MARK: - Incoming messages
 
 enum IncomingMessage: Sendable {
@@ -410,6 +421,7 @@ enum IncomingMessage: Sendable {
     case stateUpdate(phase: AppPhase, durationSeconds: Double, rmsLevel: Double, text: String?, statusText: String?)
     case historyUpdate([HistoryEntry])
     case enginesStatus([EngineStatus])
+    case downloadProgress(DownloadProgress)
     case notification(title: String, body: String)
 }
 
@@ -425,7 +437,34 @@ private struct RawIncoming: Decodable {
     var engines: [String: EngineStatus]?
 }
 
+// Separate struct so the `phase` field on download_progress — which uses its
+// own vocabulary ("preparing"/"downloading"/"warming"/"ready"/"error") —
+// doesn't collide with AppPhase decoding on state_update.
+private struct RawDownloadProgress: Decodable {
+    var target: String?
+    var bytes: Int64?
+    var total: Int64?
+    var percent: Double?
+    var phase: String?
+    var error: String?
+}
+
 func decodeIncomingMessage(_ data: Data) throws -> IncomingMessage {
+    // Peek at `type` before full decode. download_progress uses its own phase
+    // vocabulary that would collide with AppPhase decoding on RawIncoming.
+    struct TypePeek: Decodable { var type: String }
+    let typeOnly = try JSONDecoder().decode(TypePeek.self, from: data)
+    if typeOnly.type == "download_progress" {
+        let dp = try JSONDecoder().decode(RawDownloadProgress.self, from: data)
+        return .downloadProgress(DownloadProgress(
+            target: dp.target ?? "",
+            bytes: dp.bytes ?? 0,
+            total: dp.total ?? 0,
+            percent: dp.percent ?? 0,
+            phase: dp.phase ?? "",
+            error: dp.error
+        ))
+    }
     let raw = try JSONDecoder().decode(RawIncoming.self, from: data)
     switch raw.type {
     case "config_snapshot":
