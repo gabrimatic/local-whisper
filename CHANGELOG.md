@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Fresh installs now get ffmpeg.** Parakeet-TDT (the default transcription engine since 1.5.0) shells out to `ffmpeg` for audio decoding, but `setup.sh` only installed `espeak-ng`. A clean machine would hit a cryptic "ffmpeg not installed" error on the first transcription. `setup.sh`, the Homebrew formula, and `wh doctor --fix` now install ffmpeg alongside espeak-ng.
 - **Overlay pill is now visible over fullscreen apps.** The pill's window level was too low for an accessory app, so fullscreen windows sometimes occluded it — switching spaces was the only way to see the recording state. The overlay now sits at the screen-saver level while still keeping the menu bar accessible.
 - **Overlay no longer drifts to the left edge on certain displays.** Positioning now picks the screen under the cursor (falling back to the main screen, then the first screen) and skips the move entirely if the chosen display reports a degenerate frame during sleep/wake or hot-plug. The one-off "pill jumped to the left side" glitch traced to `NSScreen.main` returning a secondary display on the logical left of the primary.
 

@@ -162,7 +162,25 @@ def cmd_doctor(args: list):
         elif install_method != INSTALL_BREW:
             core_ok = False
 
-    # 4. espeak-ng
+    # 4. ffmpeg (required by parakeet-mlx for audio decoding)
+    ffmpeg_found = shutil.which("ffmpeg") is not None
+    if ffmpeg_found:
+        _doctor_pass("ffmpeg")
+    else:
+        hint = "Run: brew install ffmpeg" if not fix else ""
+        _doctor_fail("ffmpeg not installed", hint)
+        if fix:
+            _doctor_fixing("brew install ffmpeg")
+            result = subprocess.run(["brew", "install", "ffmpeg"], capture_output=True)
+            if result.returncode == 0:
+                _doctor_pass("ffmpeg installed")
+            else:
+                _doctor_fail("brew install ffmpeg failed")
+                core_ok = False
+        else:
+            core_ok = False
+
+    # 5. espeak-ng
     espeak_found = shutil.which("espeak-ng") is not None
     if not espeak_found:
         # Check via brew even if not on PATH
@@ -187,7 +205,7 @@ def cmd_doctor(args: list):
         else:
             core_ok = False
 
-    # 5. spaCy model (only required when TTS is enabled)
+    # 6. spaCy model (only required when TTS is enabled)
     try:
         from whisper_voice.config import load_config
         tts_enabled = load_config().tts.enabled
@@ -225,7 +243,7 @@ def cmd_doctor(args: list):
     else:
         _doctor_info("spaCy model (TTS disabled, not required)")
 
-    # 6. Active transcription model only. Users who switch engines later
+    # 7. Active transcription model only. Users who switch engines later
     # download + warm on that engine's first call (lazy-loaded).
     try:
         from whisper_voice.config import load_config
@@ -277,7 +295,7 @@ def cmd_doctor(args: list):
     else:
         _doctor_info(f"Active engine '{active_engine}' manages its own model")
 
-    # 7. Kokoro TTS model (only required when TTS is enabled)
+    # 8. Kokoro TTS model (only required when TTS is enabled)
     if tts_enabled:
         kokoro_model_dir = MODEL_DIR / "models--mlx-community--Kokoro-82M-bf16"
         if kokoro_model_dir.is_dir():
@@ -308,7 +326,7 @@ def cmd_doctor(args: list):
     else:
         _doctor_info("Kokoro TTS model (TTS disabled, not required)")
 
-    # 8. Config file
+    # 9. Config file
     config_path = _get_config_path()
     if config_path.exists():
         _doctor_pass("Config file")
@@ -328,7 +346,7 @@ def cmd_doctor(args: list):
         else:
             core_ok = False
 
-    # 9. Swift UI binary
+    # 10. Swift UI binary
     from .build import _homebrew_ui_binary
     from .constants import LAUNCHAGENT_PLIST
     ui_app = Path.home() / ".whisper" / "LocalWhisperUI.app"
@@ -346,7 +364,7 @@ def cmd_doctor(args: list):
             else:
                 _doctor_warn("Swift UI build failed (service works without it)")
 
-    # 10. LaunchAgent / Homebrew service
+    # 11. LaunchAgent / Homebrew service
     if install_method == INSTALL_BREW:
         brew_plist = Path.home() / "Library" / "LaunchAgents" / "homebrew.mxcl.local-whisper.plist"
         if brew_plist.exists():
@@ -383,7 +401,7 @@ def cmd_doctor(args: list):
         _doctor_fail("LaunchAgent not installed", "Run ./setup.sh to install")
         core_ok = False
 
-    # 11. Accessibility permission
+    # 12. Accessibility permission
     try:
         from whisper_voice.utils import check_accessibility_trusted
         if check_accessibility_trusted():
@@ -395,7 +413,7 @@ def cmd_doctor(args: list):
     except Exception:
         _doctor_warn("Could not check Accessibility permission")
 
-    # 12. Microphone permission
+    # 13. Microphone permission
     try:
         from whisper_voice.utils import check_microphone_permission
         mic_ok, _ = check_microphone_permission()
@@ -408,7 +426,7 @@ def cmd_doctor(args: list):
     except Exception:
         _doctor_warn("Could not check Microphone permission")
 
-    # 13. Service status
+    # 14. Service status
     running, pid = _is_running()
     if running:
         pid_str = str(pid) if pid else "unknown"
@@ -435,7 +453,7 @@ def cmd_doctor(args: list):
     print(f"  {C_BOLD}Optional{C_RESET}")
     print()
 
-    # 14. Ollama
+    # 15. Ollama
     if shutil.which("ollama"):
         try:
             import requests
@@ -446,7 +464,7 @@ def cmd_doctor(args: list):
     else:
         _doctor_info("Ollama not installed")
 
-    # 15. LM Studio
+    # 16. LM Studio
     if shutil.which("lms"):
         try:
             import requests
@@ -457,7 +475,7 @@ def cmd_doctor(args: list):
     else:
         _doctor_info("LM Studio not installed")
 
-    # 16. Apple Intelligence
+    # 17. Apple Intelligence
     try:
         import apple_fm_sdk as fm
         try:
@@ -470,7 +488,7 @@ def cmd_doctor(args: list):
     except ImportError:
         _doctor_info("Apple Intelligence SDK not installed (optional, macOS 15+)")
 
-    # 17. WhisperKit
+    # 18. WhisperKit
     if shutil.which("whisperkit-cli"):
         _doctor_info("WhisperKit CLI installed")
     else:

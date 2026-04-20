@@ -340,6 +340,13 @@ from whisper_voice.config import load_config
 print('true' if load_config().tts.enabled else 'false')
 " 2>/dev/null || echo "false")
 
+# ffmpeg is a hard requirement for Parakeet-TDT (our default engine): its
+# audio loader shells out to `ffmpeg` for every transcribe call. Install
+# unconditionally so a fresh machine can transcribe immediately.
+if ! command -v ffmpeg &>/dev/null; then
+    brew install ffmpeg -q 2>/dev/null || log_warn "ffmpeg install failed (transcription will not work)"
+fi
+
 # espeak-ng is tiny and useful beyond TTS; install regardless so enabling TTS
 # later does not require another Homebrew run.
 if ! brew list espeak-ng &>/dev/null 2>&1; then
