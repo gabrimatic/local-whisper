@@ -62,7 +62,10 @@ final class OverlayWindowController {
             defer: true
         )
         panel.isFloatingPanel = true
-        panel.level = .statusBar
+        // .screenSaver (1000) sits above fullscreen apps; .statusBar (25) got
+        // occluded by fullscreen windows for an accessory app, so the pill
+        // went invisible until the user switched spaces.
+        panel.level = .screenSaver
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.backgroundColor = .clear
         panel.isOpaque = false
@@ -82,11 +85,32 @@ final class OverlayWindowController {
     }
 
     private func positionPanel(_ panel: NSPanel) {
-        guard let screen = NSScreen.main else { return }
+        // Prefer the screen under the cursor so the pill lands where the user
+        // is actually working. Fall back to NSScreen.main (key-window screen)
+        // and finally the first screen. The one-off "jumped to the left"
+        // report traced to NSScreen.main returning a secondary display on the
+        // logical left of the primary — following the cursor avoids it.
+        let screen = screenUnderCursor()
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
+        guard let screen else { return }
         let visibleFrame = screen.visibleFrame
+
+        // Guard against a degenerate frame (can happen during display
+        // reconfig / sleep-wake). Leave the pill at its current origin rather
+        // than slamming it to (0, 0) on the primary display.
+        guard visibleFrame.width >= 200, visibleFrame.height >= 100 else {
+            return
+        }
+
         let x = visibleFrame.midX - panel.frame.width / 2
         let y = visibleFrame.minY + visibleFrame.height * 0.22
         panel.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    private func screenUnderCursor() -> NSScreen? {
+        let location = NSEvent.mouseLocation
+        return NSScreen.screens.first { $0.frame.contains(location) }
     }
 
     private func handlePhaseChange(_ phase: AppPhase) {
