@@ -50,8 +50,6 @@ write_plist() {
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
         <key>HF_HUB_CACHE</key>
         <string>$HOME/.whisper/models</string>
-        <key>HF_HUB_OFFLINE</key>
-        <string>1</string>
         <key>HF_HUB_DISABLE_TELEMETRY</key>
         <string>1</string>
     </dict>

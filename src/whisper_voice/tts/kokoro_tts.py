@@ -21,9 +21,9 @@ class KokoroTTSProvider(TTSProvider):
     """
     Kokoro-82M TTS via kokoro-mlx. Runs in-process on Apple Silicon.
 
-    The model is downloaded by setup.sh to ~/.whisper/models/ and runs
-    fully offline at runtime (HF_HUB_OFFLINE=1). Model is loaded lazily
-    on first use and kept in memory.
+    The model is downloaded on first use to ~/.whisper/models/ and cached.
+    Subsequent loads are offline from the local cache. Model is loaded
+    lazily on first use and kept in memory.
     """
 
     def __init__(self) -> None:

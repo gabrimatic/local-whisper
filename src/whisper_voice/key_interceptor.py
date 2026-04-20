@@ -90,6 +90,11 @@ class KeyInterceptor:
         with self._lock:
             self._shortcuts[key.lower()] = (modifiers, callback)
 
+    def unregister_shortcut(self, key: str):
+        """Remove a previously registered shortcut. No-op if not registered."""
+        with self._lock:
+            self._shortcuts.pop(key.lower(), None)
+
     def set_recording_active(self, active: bool):
         """Enable or disable recording-mode suppression (thread-safe)."""
         with self._lock:

@@ -574,6 +574,12 @@ def service_main():
     """Entry point for the service (launched via LaunchAgent or wh start)."""
     _setup_service_logging()
 
+    # Older installs shipped a LaunchAgent plist that hard-pinned
+    # HF_HUB_OFFLINE=1, which blocked on-demand downloads when users switched
+    # engines or enabled TTS mid-session. Clear it in-process so those installs
+    # get the fix on next restart without needing to re-run setup.sh.
+    os.environ.pop("HF_HUB_OFFLINE", None)
+
     # Single-instance lock
     lock_path = str(Path.home() / ".whisper" / "service.lock")
     lock_fd = os.open(lock_path, os.O_CREAT | os.O_WRONLY, 0o600)

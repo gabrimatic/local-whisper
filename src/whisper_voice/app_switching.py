@@ -13,14 +13,41 @@ from .engines.status import (
     remove_engine_cache,
 )
 from .grammar import Grammar
-from .shortcuts import ShortcutProcessor
+from .shortcuts import ShortcutProcessor, parse_shortcut
 from .transcriber import Transcriber
+from .tts_processor import TTSProcessor
 from .utils import log
 
 
 def _engine_display_name(engine_id: str) -> str:
     info = ENGINE_REGISTRY.get(engine_id)
     return info.name if info else engine_id
+
+
+def _friendly_download_error(err: str, display_name: str) -> str:
+    """Translate huggingface_hub / network failures into a UX-ready sentence."""
+    lowered = err.lower()
+    offline_markers = (
+        "offline mode",
+        "hf_hub_offline",
+        "localentrynotfounderror",
+        "no internet",
+    )
+    network_markers = (
+        "connection",
+        "network",
+        "timed out",
+        "timeout",
+        "dns",
+        "name or service not known",
+        "failed to resolve",
+        "max retries exceeded",
+    )
+    if any(marker in lowered for marker in offline_markers):
+        return f"{display_name} needs internet to download. Connect and try again."
+    if any(marker in lowered for marker in network_markers):
+        return f"{display_name} download failed (network error). Check your connection and try again."
+    return f"{display_name} failed to load: {err}"
 
 
 class SwitchingMixin:
@@ -92,7 +119,8 @@ class SwitchingMixin:
         except Exception as e:
             error_msg = str(e)
             log(f"Engine switch failed: {error_msg}", "ERR")
-            self._send_state_error(f"Switch failed: {error_msg}")
+            friendly = _friendly_download_error(error_msg, new_name)
+            self._send_state_error(friendly)
 
             # Rollback: the old engine was unloaded — bring it back so the user
             # isn't left with no working transcriber.
@@ -238,4 +266,58 @@ class SwitchingMixin:
                     pass
                 self.grammar = None
         log("Grammar correction disabled")
+        self._send_config_snapshot()
+
+    # ------------------------------------------------------------------
+    # TTS lifecycle (mirrors grammar: flipping tts.enabled must also
+    # start/stop the processor and (un)bind the ⌥T shortcut, not just write
+    # the config file).
+    # ------------------------------------------------------------------
+
+    def _enable_tts(self):
+        """Spin up the TTS processor and register its shortcut."""
+        if self._tts_processor is not None:
+            return
+        if self._key_interceptor is None:
+            log("Cannot enable TTS: key interceptor not available", "WARN")
+            return
+        try:
+            processor = TTSProcessor(status_callback=self._tts_status_callback)
+        except Exception as e:
+            log(f"TTS processor failed to initialize: {e}", "ERR")
+            self._send_state_error("TTS failed to start")
+            return
+        self._tts_processor = processor
+        self._key_interceptor.set_speaking_handler(processor.stop)
+        modifiers, key = parse_shortcut(self.config.tts.speak_shortcut)
+        if key:
+            self._key_interceptor.register_shortcut(modifiers, key, processor.trigger)
+        # Ensure the guard is set so interception respects recording/processing
+        # state even when TTS is the only registered shortcut.
+        self._key_interceptor.set_enabled_guard(
+            lambda: (not self.recorder.recording
+                     and not self._busy
+                     and not (self._shortcut_processor and self._shortcut_processor.is_busy()))
+        )
+        log(f"TTS enabled ({self.config.tts.speak_shortcut})", "OK")
+        self._send_config_snapshot()
+
+    def _disable_tts(self):
+        """Tear down the TTS processor and unbind its shortcut."""
+        if self._tts_processor is None and self._key_interceptor is None:
+            return
+        if self._key_interceptor is not None:
+            _, key = parse_shortcut(self.config.tts.speak_shortcut)
+            if key:
+                self._key_interceptor.unregister_shortcut(key)
+            self._key_interceptor.set_speaking_handler(lambda: None)
+            self._key_interceptor.set_speaking_active(False)
+        processor = self._tts_processor
+        self._tts_processor = None
+        if processor is not None:
+            try:
+                processor.close()
+            except Exception as e:
+                log(f"Error closing TTS processor: {e}", "WARN")
+        log("TTS disabled", "INFO")
         self._send_config_snapshot()

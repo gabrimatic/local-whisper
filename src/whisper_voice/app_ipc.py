@@ -262,6 +262,14 @@ class IPCMixin:
                         ).start()
                     else:
                         threading.Thread(target=self._disable_grammar, daemon=True).start()
+                # Same for tts.enabled: without this, toggling the menu item
+                # only rewrote the config file while the TTS processor kept
+                # running and ⌥T kept speaking.
+                elif section == "tts" and key == "enabled":
+                    if value:
+                        threading.Thread(target=self._enable_tts, daemon=True).start()
+                    else:
+                        threading.Thread(target=self._disable_tts, daemon=True).start()
         elif msg_type == "replacement_add":
             spoken = msg.get("spoken", "").strip()
             replacement = msg.get("replacement", "").strip()
