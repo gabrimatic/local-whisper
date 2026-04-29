@@ -5,10 +5,11 @@
 [![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-required-blue.svg)]()
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)]()
 
-**On-device voice transcription, grammar correction, and text-to-speech for macOS. Private, fast, runs on MLX.**
+On-device voice transcription, grammar correction, and text-to-speech for macOS. Runs on MLX, on Apple Silicon.
 
-Double-tap, speak, tap to stop. Text is ready. Multiple engines, pluggable grammar, all MLX-native on Apple Silicon. Nothing leaves your Mac.
-Optional text-to-speech reads any selection aloud with ⌥T. Multiple voices, streaming playback, same deal.
+Double-tap to record, tap to stop, and the text lands on your clipboard. Multiple transcription engines, pluggable grammar backends, all MLX-native. Nothing leaves your Mac.
+
+Optional text-to-speech reads any selection aloud with ⌥T. Multiple voices, streaming playback.
 
 <p align="center">
   <img src="assets/hero.png" width="600" alt="Local Whisper recording in Notes">
@@ -26,7 +27,7 @@ cd local-whisper
 ./setup.sh
 ```
 
-One command. Installs deps, downloads core local models, builds the UI, sets up auto-start, creates the `wh` alias.
+One command. The setup script installs dependencies, downloads core local models, builds the Swift UI, configures auto-start, and creates the `wh` alias.
 
 | Action | Key |
 |--------|-----|
@@ -39,16 +40,16 @@ One command. Installs deps, downloads core local models, builds the UI, sets up 
 
 ---
 
-## What It Does
+## What it does
 
 - **On-device transcription** via MLX. Multiple engines, up to 20 minutes per recording.
-- **Grammar correction** with pluggable backends: Apple Intelligence, Ollama, LM Studio. Or disable it.
-- **Text-to-speech** reads any selected text aloud. Works in any app, multiple voices, streaming playback, fully offline via Kokoro MLX.
-- **Text replacements** for custom spoken-to-correct mappings.
+- **Grammar correction** with pluggable backends: Apple Intelligence, Ollama, LM Studio. Or disabled.
+- **Text-to-speech** reads any selected text aloud. Works in any app, multiple voices, streaming playback, offline via Kokoro MLX.
+- **Text replacements** for spoken-to-corrected mappings.
 - **Audio processing**: VAD, silence trimming, noise reduction, normalization.
-- **Keyboard shortcuts** for proofreading, rewriting, prompt engineering on selected text.
+- **Keyboard shortcuts** for proofreading, rewriting, and prompt engineering on selected text.
 - **CLI**: `wh whisper`, `wh listen`, `wh transcribe` for scripting and automation.
-- **Native macOS UI**: menu bar, Liquid Glass overlay, settings window.
+- **Native macOS UI**: menu bar, Liquid Glass overlay, and settings window.
 - **Auto-backup** of every recording and transcription.
 
 ### Keyboard Shortcuts
@@ -80,7 +81,7 @@ Switch via Settings, `wh engine <name>`, or config.
 
 ### Parakeet-TDT v3 (default)
 
-In-process via [parakeet-mlx](https://github.com/senstella/parakeet-mlx). No server, no network. Multilingual: English plus 24 European languages. Tops the HuggingFace [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) and beats much larger Whisper and Parakeet variants. Long audio handled via overlapping chunks.
+In-process via [parakeet-mlx](https://github.com/senstella/parakeet-mlx). No server, no network. Multilingual: English plus 24 European languages. Ranks at the top of the HuggingFace [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) ahead of larger Whisper and Parakeet variants. Long audio is handled via overlapping chunks.
 
 | Setting | Default | Notes |
 |---------|---------|-------|
@@ -94,7 +95,7 @@ In-process via [parakeet-mlx](https://github.com/senstella/parakeet-mlx). No ser
 
 ### Qwen3-ASR (English only)
 
-In-process via [qwen3-asr-mlx](https://github.com/gabrimatic/qwen3-asr-mlx). No server, no network. Long audio native (up to 20 minutes in a single pass). English-only. Switch with `wh engine qwen3_asr`.
+In-process via [qwen3-asr-mlx](https://github.com/gabrimatic/qwen3-asr-mlx). No server, no network. Native long-audio support, up to 20 minutes in a single pass. English only. Switch with `wh engine qwen3_asr`.
 
 | Setting | Default | Notes |
 |---------|---------|-------|
@@ -440,7 +441,7 @@ voice = "af_sky"           # See voice table in README for all available presets
 
 ## Privacy
 
-Zero network calls. Every component runs on-device or localhost.
+No network calls. Every component runs on-device or on localhost.
 
 | Component | Runs at |
 |-----------|---------|
