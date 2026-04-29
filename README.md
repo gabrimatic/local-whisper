@@ -243,7 +243,7 @@ wh doctor --report  # Write a shareable diagnostic report
 wh log              # Tail service log
 wh update           # Pull, upgrade deps, warm up models, rebuild, restart
 wh version          # Show version
-wh uninstall        # Completely remove Local Whisper
+wh uninstall        # Remove Local Whisper
 ```
 
 ### Voice Dictation Commands
