@@ -154,7 +154,7 @@ struct OnboardingView: View {
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: Theme.Spacing.m - 2) {
-                backendChoice(id: "apple_intelligence", title: "Apple Intelligence", subtitle: "On-device Foundation Models. Best default on Apple Silicon, macOS 15+.", icon: "sparkles", tint: .purple)
+                backendChoice(id: "apple_intelligence", title: "Apple Intelligence", subtitle: "On-device Foundation Models. Best default on Apple Silicon, macOS 15+.", icon: "sparkles", tint: Theme.Brand.sky)
                 backendChoice(id: "ollama",             title: "Ollama",             subtitle: "Local LLM via the Ollama app. Works on any Mac with a loaded model.", icon: "shippingbox.fill", tint: .blue)
                 backendChoice(id: "lm_studio",          title: "LM Studio",          subtitle: "OpenAI-compatible local server. Start it via LM Studio's Developer tab.", icon: "server.rack", tint: .indigo)
                 backendChoice(id: "none",               title: "Skip for now",       subtitle: "Transcription only, no grammar pass. Toggle on later in Settings.", icon: "xmark.circle.fill", tint: .secondary)

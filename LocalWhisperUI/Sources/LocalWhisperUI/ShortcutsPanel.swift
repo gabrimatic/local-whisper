@@ -69,7 +69,7 @@ struct ShortcutsPanel: View {
                 title: "Prompt engineer",
                 description: "Turns the selection into a structured prompt.",
                 icon: "sparkles",
-                tint: .purple,
+                tint: Theme.Brand.sky,
                 value: appState.config.shortcuts.promptEngineer,
                 onCommit: { v in
                     appState.config.shortcuts.promptEngineer = v

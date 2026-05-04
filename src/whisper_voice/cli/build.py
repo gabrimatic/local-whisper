@@ -62,6 +62,8 @@ _LOCAL_WHISPER_UI_INFO_PLIST = """\
     <true/>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
 </dict>
 </plist>
 """
@@ -94,6 +96,8 @@ def _build_local_whisper_ui(swift: str) -> bool:
 
     macos_dir = Path.home() / ".whisper" / "LocalWhisperUI.app" / "Contents" / "MacOS"
     macos_dir.mkdir(parents=True, exist_ok=True)
+    resources_dir = macos_dir.parent / "Resources"
+    resources_dir.mkdir(parents=True, exist_ok=True)
 
     dest_binary = macos_dir / "LocalWhisperUI"
     shutil.copy2(str(built_binary), str(dest_binary))
@@ -101,6 +105,10 @@ def _build_local_whisper_ui(swift: str) -> bool:
 
     info_plist_path = macos_dir.parent / "Info.plist"
     info_plist_path.write_text(_LOCAL_WHISPER_UI_INFO_PLIST)
+
+    icon_path = _local_whisper_ui_dir().parent / "src" / "whisper_voice" / "assets" / "LocalWhisper.icns"
+    if icon_path.exists():
+        shutil.copy2(str(icon_path), str(resources_dir / "AppIcon.icns"))
 
     print(f"{C_GREEN}LocalWhisperUI built:{C_RESET} {macos_dir.parent.parent}")
     return True
