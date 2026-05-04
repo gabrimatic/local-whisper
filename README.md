@@ -621,6 +621,31 @@ wh                    # Run the service
 pytest tests/              # Run the full test suite
 ```
 
+### Flutter iOS App
+
+An iOS-first Flutter implementation lives in `src/flutter/local_whisper`. Flutter owns the app shell, history, models, settings, modes, clipboard flow, and deterministic text cleanup. Native Swift uses `AVAudioEngine` plus WhisperKit/Core ML for the currently wired local transcription runtime. The iOS app model manager installs the same Local Whisper model families from Hugging Face snapshots: Qwen3-ASR (~3.8 GB), Parakeet-TDT v3 (~2.3 GB), Kokoro-82M TTS (~371 MB), and WhisperKit Large v3 (~550 MB Core ML folder). After a model pack is installed, its files live on device for offline use and are verified against the local manifest before being treated as installed.
+
+First launch uses a full-screen setup flow before the tab shell appears: welcome, inline WhisperKit model-pack install, microphone permission, keyboard extension handoff through iOS Settings, and a practice field. The keyboard is verified by switching to Local Whisper Keyboard in the practice field and tapping Verify on the keyboard. The same setup can be replayed from Settings. The setup progress indicator is read-only, and optional model choices open in place instead of sending the user to another tab.
+
+The Flutter iOS icon and the macOS app icon are generated from the same 1024 px source mark. The shared brand palette uses graphite `#091013`, panel `#121821`, mint `#75E3BE`, and sky `#8DDCFF` across Flutter, the iOS keyboard extension, and the macOS Swift UI.
+
+```bash
+cd src/flutter/local_whisper
+flutter pub get
+flutter analyze
+flutter test
+flutter build ios --simulator --debug
+# after a WhisperKit pack is installed in the simulator:
+flutter test integration_test/native_transcription_test.dart -d <simulator-id> --dart-define=LOCAL_WHISPER_MODEL_PATH=<installed-model-folder>
+```
+
+Main surfaces:
+- `Record`: permission checks, model readiness, clear `Start talking` or `Install model` action, live recording state, copy-ready result, foreground cancellation.
+- `History`: searchable local transcript history stored on device.
+- `Modes`: built-in and custom local formatting modes inspired by dictation apps such as Superwhisper.
+- `Models`: install, remove, select, verify storage, and remove Local Whisper model families with model-specific actions.
+- `Settings`: status, locale, auto-copy, cleanup toggles, keyboard behavior, duration limits, privacy controls, and setup replay.
+
 ### Adding an Engine or Grammar Backend
 
 Engines: implement `TranscriptionEngine` in `engines/`, register in `ENGINE_REGISTRY`.
@@ -663,6 +688,22 @@ local-whisper/
 │       ├── AboutView.swift          # Hero, credits, links, replay tutorial
 │       ├── SharedViews.swift        # DeferredText fields, StatusPill, InlineNotice, headers
 │       └── Constants.swift
+├── src/flutter/local_whisper/        # Flutter iOS app
+│   ├── lib/
+│   │   ├── main.dart
+│   │   └── src/
+│   │       ├── app.dart              # Tabs, record/history/modes/models/settings UI
+│   │       ├── native_speech_service.dart
+│   │       ├── model_store.dart      # Local model catalog/install state
+│   │       ├── text_polisher.dart    # Offline cleanup and modes
+│   │       ├── history_store.dart    # Local persistence
+│   │       └── models.dart
+│   ├── ios/Runner/
+│   │   ├── LocalSpeechBridge.swift   # AVAudioEngine + WhisperKit bridge
+│   │   ├── AppDelegate.swift
+│   │   └── SceneDelegate.swift
+│   ├── ios/LocalWhisperKeyboard/     # Native keyboard extension
+│   └── test/
 └── src/whisper_voice/
     ├── app.py              # App class + service_main (imports mixins)
     ├── app_ipc.py          # IPCMixin: IPC send/receive

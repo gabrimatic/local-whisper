@@ -66,6 +66,7 @@ struct LocalWhisperUIApp: App {
         MenuBarExtra {
             MenuBarView()
                 .environment(appState)
+                .tint(Theme.Brand.accent)
         } label: {
             Image(systemName: appState.menuBarIconName)
                 .modifier(MenuBarBounce(value: appState.phase, reduceMotion: reduceMotion))
@@ -75,6 +76,7 @@ struct LocalWhisperUIApp: App {
         Settings {
             SettingsView()
                 .environment(appState)
+                .tint(Theme.Brand.accent)
         }
         .defaultSize(width: 880, height: 640)
         .windowResizability(.contentMinSize)

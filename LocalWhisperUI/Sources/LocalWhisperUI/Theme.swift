@@ -8,6 +8,13 @@ import SwiftUI
 
 enum Theme {
 
+    enum Brand {
+        static let background = Color(red: 9 / 255, green: 16 / 255, blue: 19 / 255)
+        static let panel = Color(red: 18 / 255, green: 24 / 255, blue: 33 / 255)
+        static let accent = Color(red: 117 / 255, green: 227 / 255, blue: 190 / 255)
+        static let sky = Color(red: 141 / 255, green: 220 / 255, blue: 255 / 255)
+    }
+
     // MARK: Typography
 
     enum Typography {
@@ -87,7 +94,7 @@ enum Theme {
             case .grammar:      return .indigo
             case .voice:        return .teal
             case .vocabulary:   return .orange
-            case .output:       return .purple
+            case .output:       return Theme.Brand.sky
             case .shortcuts:    return .pink
             case .activity:     return .green
             case .advanced:     return .gray
