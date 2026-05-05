@@ -621,13 +621,15 @@ wh                    # Run the service
 pytest tests/              # Run the full test suite
 ```
 
-### Flutter iOS App
+### Flutter Mobile App
 
-An iOS-first Flutter implementation lives in `src/flutter/local_whisper`. Flutter owns the app shell, history, models, settings, modes, clipboard flow, and deterministic text cleanup. Native Swift uses `AVAudioEngine` plus WhisperKit/Core ML for the currently wired local transcription runtime. The iOS app model manager installs the same Local Whisper model families from Hugging Face snapshots: Qwen3-ASR (~3.8 GB), Parakeet-TDT v3 (~2.3 GB), Kokoro-82M TTS (~371 MB), and WhisperKit Large v3 (~550 MB Core ML folder). After a model pack is installed, its files live on device for offline use and are verified against the local manifest before being treated as installed.
+The Flutter mobile implementation lives in `src/flutter/local_whisper`. Flutter owns the app shell, history, models, settings, modes, clipboard flow, and deterministic text cleanup. Native Swift uses `AVAudioEngine` plus WhisperKit/Core ML for the currently wired iOS transcription runtime. Android now has native method channels for microphone permission/status, local recording, level events, app/keyboard settings intents, keyboard status, keyboard preference sync, and a Local Whisper input method for setup verification. The model manager installs the same Local Whisper model families from Hugging Face snapshots: Qwen3-ASR (~3.8 GB), Parakeet-TDT v3 (~2.3 GB), Kokoro-82M TTS (~371 MB), and WhisperKit Large v3 (~550 MB Core ML folder). After a model pack is installed, its files live on device for offline use and are verified against the local manifest before being treated as installed.
 
-First launch uses a full-screen setup flow before the tab shell appears: welcome, inline WhisperKit model-pack install, microphone permission, keyboard extension handoff through iOS Settings, and a practice field. The keyboard is verified by switching to Local Whisper Keyboard in the practice field and tapping Verify on the keyboard. The same setup can be replayed from Settings. The setup progress indicator is read-only, and optional model choices open in place instead of sending the user to another tab.
+First launch uses a full-screen setup flow before the tab shell appears: welcome, inline recommended model-pack install, microphone permission, keyboard handoff through platform settings, and a practice field. The keyboard is verified by switching to Local Whisper Keyboard in the practice field and tapping Verify on the keyboard/input method. The same setup can be replayed from Settings. The setup progress indicator is read-only, and optional model choices open in place instead of sending the user to another tab.
 
-The Flutter iOS icon and the macOS app icon are generated from the same 1024 px source mark. The shared brand palette uses graphite `#091013`, panel `#121821`, mint `#75E3BE`, and sky `#8DDCFF` across Flutter, the iOS keyboard extension, and the macOS Swift UI.
+The Flutter iOS icon, Android launcher icons, and the macOS app icon are generated from the same 1024 px source mark. The shared brand palette uses graphite `#091013`, panel `#121821`, mint `#75E3BE`, and sky `#8DDCFF` across Flutter, the iOS keyboard extension, Android input method, and the macOS Swift UI.
+
+Android debug QA can seed a recommended pack and interaction data with `--dart-define=LOCAL_WHISPER_QA_SEED=true`. Production Android still needs a real offline ASR adapter before downloaded model families can transcribe; it does not fall back to cloud speech services.
 
 ```bash
 cd src/flutter/local_whisper
@@ -635,6 +637,7 @@ flutter pub get
 flutter analyze
 flutter test
 flutter build ios --simulator --debug
+flutter build apk --debug
 # after a WhisperKit pack is installed in the simulator:
 flutter test integration_test/native_transcription_test.dart -d <simulator-id> --dart-define=LOCAL_WHISPER_MODEL_PATH=<installed-model-folder>
 ```

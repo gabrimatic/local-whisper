@@ -31,7 +31,7 @@ OPTIONS = {
     'plist': {
         'CFBundleName': 'Local Whisper',
         'CFBundleDisplayName': 'Local Whisper',
-        'CFBundleIdentifier': 'com.gabrimatic.local-whisper',
+        'CFBundleIdentifier': 'info.gabrimatic.local-whisper',
         'CFBundleVersion': '1.2.0',
         'CFBundleShortVersionString': '1.2.0',
         'LSUIElement': True,

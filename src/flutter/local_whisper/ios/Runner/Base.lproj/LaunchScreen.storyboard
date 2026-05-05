@@ -22,7 +22,7 @@
                                 <color key="textColor" red="0.9019607843" green="0.9411764706" blue="0.9215686275" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                                 <nil key="highlightedColor"/>
                             </label>
-                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="Private voice on this iPhone" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" minimumFontSize="13" translatesAutoresizingMaskIntoConstraints="NO" id="cIk-1k-kvE">
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="Private voice on this device" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" minimumFontSize="13" translatesAutoresizingMaskIntoConstraints="NO" id="cIk-1k-kvE">
                                 <rect key="frame" x="0.0" y="0.0" width="220" height="22"/>
                                 <fontDescription key="fontDescription" type="system" pointSize="16"/>
                                 <color key="textColor" red="0.6156862745" green="0.9215686275" blue="0.8235294118" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
