@@ -55,7 +55,7 @@ Android should provide the equivalent guided path for enabling the input method:
 
 ## Android Implementation Targets
 
-- Add an Android native speech bridge behind the existing `local_whisper/speech` method channel.
+- Android native speech bridge now exists behind the existing `local_whisper/speech` method channel.
 - Keep the Dart API shape in `NativeSpeechService` stable:
   - `status`
   - `requestPermissions`
@@ -64,9 +64,17 @@ Android should provide the equivalent guided path for enabling the input method:
   - `cancel`
   - `debugTranscribeFile`
 - Emit recording levels through the existing `local_whisper/levels` event channel.
-- Add Android setup/input-method support behind `local_whisper/setup` without changing the Flutter setup screens unless the platform needs different copy.
+- Android setup/input-method support now exists behind `local_whisper/setup` without changing the shared Flutter setup contract.
 - Reuse `ModelStore` and the same installed-model validation contract where possible.
-- Decide the Android offline runtime before wiring recording. Current Dart catalog includes MLX families and WhisperKit/Core ML; Android will need an Android-native runtime mapping.
+- Production Android still needs an Android-native offline ASR runtime mapping before downloaded model families can transcribe. Debug QA can seed the recommended pack with `--dart-define=LOCAL_WHISPER_QA_SEED=true` to exercise the full UI and native local-recording bridge without adding any cloud fallback.
+
+## Current Android Native Surface
+
+- `android/app/src/main/kotlin/info/gabrimatic/localwhisper/MainActivity.kt`: method-channel bridge for microphone status/permission, local MediaRecorder capture, level events, app settings, input-method settings, keyboard status, keyboard verification, and keyboard settings sync.
+- `android/app/src/main/kotlin/info/gabrimatic/localwhisper/LocalWhisperInputMethodService.kt`: native input method with Verify, punctuation, space, new-line, settings, and haptics.
+- `android/app/src/main/AndroidManifest.xml`: declares microphone, haptics, app activity, launcher identity, and input-method service.
+- `android/app/build.gradle.kts`: uses `info.gabrimatic.localwhisper` for both namespace and application ID.
+- Android launcher icon densities are generated from `assets/app_icon/app_icon_1024.png` and the launch theme uses the shared graphite background.
 
 ## Verified iOS Checks
 
@@ -76,12 +84,15 @@ Run from `src/flutter/local_whisper`:
 flutter test
 flutter analyze
 flutter build ios --simulator --debug
+flutter build apk --debug
 flutter test integration_test/native_transcription_test.dart -d <simulator-id> --dart-define=LOCAL_WHISPER_MODEL_PATH=<installed-model-folder>
 ```
 
 Last verified simulator: iPhone 17 Pro, iOS 26.4.
 
 The native integration test passed with the real WhisperKit model folder and bundled speech fixture.
+
+Latest Android emulator QA used API 36 ARM (`local_whisper_api36`) with a debug build seeded by `--dart-define=LOCAL_WHISPER_QA_SEED=true`. Covered first-run setup, model-ready state, microphone permission grant, Android keyboard settings, enabling/selecting Local Whisper Keyboard, real Verify-token insertion, finish setup, tab shell, recording start/stop/result, history search, modes, models, settings, recording limits, and crash-log checks.
 
 ## Useful Simulator Evidence
 

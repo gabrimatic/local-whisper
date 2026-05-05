@@ -12,6 +12,27 @@ import 'native_speech_service.dart';
 import 'setup_service.dart';
 import 'text_polisher.dart';
 
+const _qaSeedEnabled = bool.fromEnvironment('LOCAL_WHISPER_QA_SEED');
+
+bool get _androidQaRuntimeEnabled =>
+    !kReleaseMode && Platform.isAndroid && _qaSeedEnabled;
+
+String get _deviceLabel => Platform.isAndroid ? 'Android device' : 'iPhone';
+
+bool _canRecordWithModelOnCurrentPlatform(LocalModel model, int iosMajor) {
+  if (Platform.isAndroid) {
+    return _androidQaRuntimeEnabled &&
+        model.kind == ModelKind.transcription &&
+        model.state == ModelInstallState.installed &&
+        (model.localPath?.isNotEmpty ?? false);
+  }
+  return model.kind == ModelKind.transcription &&
+      model.state == ModelInstallState.installed &&
+      model.supportsIosMajor(iosMajor) &&
+      model.runtime == ModelRuntime.whisperKit &&
+      (model.localPath?.isNotEmpty ?? false);
+}
+
 class AppPalette {
   static const background = Color(0xFF091013);
   static const nav = Color(0xFF10181E);
@@ -120,16 +141,15 @@ class _AppControllerState extends State<AppController>
   }
 
   bool _hasNativeRuntime(LocalModel model) {
+    if (Platform.isAndroid) {
+      return _androidQaRuntimeEnabled && model.kind == ModelKind.transcription;
+    }
     return model.runtime == ModelRuntime.whisperKit ||
         model.runtime == ModelRuntime.bundled;
   }
 
   bool _canRecordWithModel(LocalModel model) {
-    return model.kind == ModelKind.transcription &&
-        model.state == ModelInstallState.installed &&
-        model.supportsIosMajor(_iosMajorVersion) &&
-        model.runtime == ModelRuntime.whisperKit &&
-        (model.localPath?.isNotEmpty ?? false);
+    return _canRecordWithModelOnCurrentPlatform(model, _iosMajorVersion);
   }
 
   @override
@@ -170,7 +190,9 @@ class _AppControllerState extends State<AppController>
   }
 
   Future<void> _bootstrap() async {
-    if (!kReleaseMode && Platform.environment['LOCAL_WHISPER_QA_SEED'] == '1') {
+    if (!kReleaseMode &&
+        (_qaSeedEnabled ||
+            Platform.environment['LOCAL_WHISPER_QA_SEED'] == '1')) {
       await _seedInteractionData();
     }
     final modelsFuture = widget.initialModels == null
@@ -185,6 +207,9 @@ class _AppControllerState extends State<AppController>
       modesFuture,
       modelsFuture,
     ).wait;
+    final visibleModels = _androidQaRuntimeEnabled
+        ? _seedAndroidQaModel(models)
+        : models;
     final onboardingComplete = await _historyStore.loadOnboardingComplete();
     NativeSpeechStatus nativeStatus;
     KeyboardSetupStatus keyboardStatus;
@@ -209,7 +234,7 @@ class _AppControllerState extends State<AppController>
       _settings = settings;
       _history = history;
       _modes = modes.isEmpty ? DictationMode.defaults : modes;
-      _models = models;
+      _models = visibleModels;
       _selectedMode = _modes.firstWhere(
         (mode) => mode.id == settings.selectedModeId,
         orElse: () => _modes.first,
@@ -220,6 +245,21 @@ class _AppControllerState extends State<AppController>
       _showOnboarding = !onboardingComplete;
     });
     await _syncKeyboardSettings(settings);
+  }
+
+  List<LocalModel> _seedAndroidQaModel(List<LocalModel> models) {
+    return models
+        .map((model) {
+          if (model.id != 'whisperkit_large_v3_turbo') return model;
+          return model.copyWith(
+            state: ModelInstallState.installed,
+            localPath: '/android_asset/local_whisper_qa_model',
+            installedBytes: 1024,
+            installedFiles: 1,
+            progress: 1,
+          );
+        })
+        .toList(growable: false);
   }
 
   Future<void> _seedInteractionData() async {
@@ -277,7 +317,9 @@ class _AppControllerState extends State<AppController>
       }
       if (!_hasNativeRuntime(selectedModel)) {
         throw LocalWhisperException(
-          '${selectedModel.name} is installed as the Local Whisper model family, but its native iOS runtime is not wired yet.',
+          Platform.isAndroid
+              ? '${selectedModel.name} is installed, but the Android offline ASR runtime is not wired yet.'
+              : '${selectedModel.name} is installed as the Local Whisper model family, but its native iOS runtime is not wired yet.',
         );
       }
       if (selectedModel.runtime == ModelRuntime.whisperKit &&
@@ -493,7 +535,7 @@ class _AppControllerState extends State<AppController>
     try {
       final opened = await _setup.openAppSettings();
       if (!opened) {
-        _toast('Open iOS Settings for Local Whisper.');
+        _toast('Open system Settings for Local Whisper.');
       }
     } on Object catch (error) {
       _toast(_friendlyError(error));
@@ -855,7 +897,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         icon: Icons.graphic_eq_rounded,
         title: 'Private voice, ready everywhere.',
         body:
-            'Local Whisper records on this iPhone, formats your words locally, and keeps finished text ready to paste.',
+            'Local Whisper records on this $_deviceLabel, formats your words locally, and keeps finished text ready to paste.',
         action: _SetupActions(
           primaryLabel: 'Start setup',
           primaryIcon: Icons.arrow_forward_rounded,
@@ -872,7 +914,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         title: _modelReady ? 'Model pack ready' : 'Install a model pack',
         body: _modelReady
             ? '${widget.selectedModel.name} is ready for offline transcription.'
-            : 'Use the recommended WhisperKit pack for the first offline transcription path. You can add more model families later.',
+            : 'Use the recommended local pack for the first offline transcription path. You can add more model families later.',
         action: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -904,7 +946,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             : 'Allow microphone access',
         body: widget.status.permissionsGranted
             ? widget.status.message
-            : 'Local recording needs microphone permission. Audio stays on-device and is not sent to Apple Speech or cloud services.',
+            : 'Local recording needs microphone permission. Audio stays on-device and is not sent to cloud speech services.',
         action: _SetupActions(
           primaryLabel: widget.status.permissionsGranted ? 'Continue' : 'Allow',
           primaryIcon: widget.status.permissionsGranted
@@ -1205,7 +1247,7 @@ class _SetupModelChoicesSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'Start with WhisperKit for the iPhone recorder. The other packs can be installed for upcoming local engines.',
+                    'Start with the recommended pack for the first local recorder path. The other packs can be installed for upcoming local engines.',
                   ),
                 ],
               ),
@@ -1537,7 +1579,7 @@ class RecordPage extends StatelessWidget {
       RecorderPhase.idle => modelBlocked ? 'Model needed' : 'Local Whisper',
     };
     final subtitle = modelBlocked
-        ? 'Install ${selectedModel.name} before recording on this iPhone.'
+        ? 'Install ${selectedModel.name} before recording on this $_deviceLabel.'
         : '${selectedModel.name} in ${settings.localeId} using ${selectedMode.name}.';
 
     return CustomScrollView(
@@ -1603,7 +1645,7 @@ class RecordPage extends StatelessWidget {
                           icon: Icons.download_for_offline_rounded,
                           title: 'Install model first',
                           body:
-                              'Recording starts after a verified local WhisperKit model pack is installed on this iPhone.',
+                              'Recording starts after a verified local model pack is installed on this $_deviceLabel.',
                           color: AppPalette.warning,
                         )
                       : _MessagePanel(
@@ -1611,7 +1653,7 @@ class RecordPage extends StatelessWidget {
                           icon: Icons.lock_rounded,
                           title: 'Private by default',
                           body:
-                              'Audio stays on this iPhone. Recording requires a selected Local Whisper model pack.',
+                              'Audio stays on this $_deviceLabel. Recording requires a selected Local Whisper model pack.',
                           color: AppPalette.accentSoft,
                         ),
                 ),
@@ -2332,10 +2374,7 @@ class ModelsPage extends StatelessWidget {
     final recordReady = models.any(
       (model) =>
           model.id == selectedModelId &&
-          model.state == ModelInstallState.installed &&
-          model.kind == ModelKind.transcription &&
-          model.runtime == ModelRuntime.whisperKit &&
-          model.supportsIosMajor(_currentIosMajor()),
+          _canRecordWithModelOnCurrentPlatform(model, _currentIosMajor()),
     );
 
     return ListView(
@@ -2529,11 +2568,7 @@ class _ModelCard extends StatelessWidget {
         ? 'Selected'
         : stateLabel;
     final canSelect =
-        model.kind == ModelKind.transcription &&
-        model.state != ModelInstallState.notInstalled &&
-        model.state != ModelInstallState.unavailable &&
-        model.supportsIosMajor(iosMajorVersion) &&
-        model.runtime == ModelRuntime.whisperKit &&
+        _canRecordWithModelOnCurrentPlatform(model, iosMajorVersion) &&
         !isDownloading;
     final runtimeLabel = switch (model.runtime) {
       ModelRuntime.mlx => 'MLX',
@@ -2541,7 +2576,14 @@ class _ModelCard extends StatelessWidget {
       ModelRuntime.whisperKit => 'WhisperKit',
       ModelRuntime.bundled => 'Bundled',
     };
-    final unavailableReason = !model.supportsIosMajor(iosMajorVersion)
+    final installNote = _platformInstallNote(model);
+    final unavailableReason =
+        Platform.isAndroid &&
+            model.kind == ModelKind.transcription &&
+            model.state == ModelInstallState.installed &&
+            !_androidQaRuntimeEnabled
+        ? 'Installed pack. Native Android offline ASR adapter still required.'
+        : !model.supportsIosMajor(iosMajorVersion)
         ? 'Requires iOS ${model.minimumIosMajor}+.'
         : model.kind == ModelKind.transcription &&
               model.state == ModelInstallState.installed &&
@@ -2582,12 +2624,9 @@ class _ModelCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(model.description),
-          if (model.installNote.isNotEmpty && unavailableReason == null) ...[
+          if (installNote.isNotEmpty && unavailableReason == null) ...[
             const SizedBox(height: 8),
-            Text(
-              model.installNote,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            Text(installNote, style: Theme.of(context).textTheme.bodySmall),
           ],
           if (unavailableReason != null) ...[
             const SizedBox(height: 8),
@@ -2608,7 +2647,7 @@ class _ModelCard extends StatelessWidget {
             children: [
               _MetaChip(text: model.sizeLabel),
               _MetaChip(text: runtimeLabel),
-              _MetaChip(text: 'iOS ${model.minimumIosMajor}+'),
+              _MetaChip(text: _platformRequirementLabel(model)),
               if (model.installedFiles > 0)
                 _MetaChip(text: '${model.installedFiles} files'),
               if (model.installedBytes > 0)
@@ -3054,6 +3093,29 @@ String _formatDurationSeconds(int seconds) {
   final remainder = seconds % 60;
   if (remainder == 0) return '${minutes}m';
   return '${minutes}m ${remainder}s';
+}
+
+String _platformRequirementLabel(LocalModel model) {
+  if (Platform.isAndroid) {
+    return model.runtime == ModelRuntime.bundled
+        ? 'Bundled'
+        : _androidQaRuntimeEnabled
+        ? 'Android QA'
+        : 'Android adapter pending';
+  }
+  return 'iOS ${model.minimumIosMajor}+';
+}
+
+String _platformInstallNote(LocalModel model) {
+  if (!Platform.isAndroid) return model.installNote;
+  if (model.runtime == ModelRuntime.bundled) return model.installNote;
+  if (model.kind == ModelKind.tts) {
+    return 'Same model family as desktop Local Whisper TTS. Requires a native Android playback synthesis adapter before it can speak.';
+  }
+  if (model.runtime == ModelRuntime.whisperKit && _androidQaRuntimeEnabled) {
+    return 'QA recorder pack used by the Android emulator path. Production Android ASR runtime wiring remains separate from cloud speech services.';
+  }
+  return 'Same model family as the desktop engine. Requires a native Android offline ASR adapter before it can transcribe.';
 }
 
 class _InlineNotice extends StatelessWidget {

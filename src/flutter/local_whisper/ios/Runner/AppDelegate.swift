@@ -3,7 +3,7 @@ import UIKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
-  private let appGroup = "group.com.gabrimatic.localWhisperFlutter"
+  private let appGroup = "group.info.gabrimatic.localWhisperFlutter"
 
   override func application(
     _ application: UIApplication,

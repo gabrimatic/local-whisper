@@ -1,7 +1,7 @@
 import UIKit
 
 final class KeyboardViewController: UIInputViewController {
-  private let appGroup = "group.com.gabrimatic.localWhisperFlutter"
+  private let appGroup = "group.info.gabrimatic.localWhisperFlutter"
   private let verificationToken = "[[LOCAL_WHISPER_KEYBOARD_VERIFIED]]"
   private let accent = UIColor(red: 117 / 255, green: 227 / 255, blue: 190 / 255, alpha: 1.0)
   private let panel = UIColor(red: 22 / 255, green: 26 / 255, blue: 29 / 255, alpha: 1.0)
