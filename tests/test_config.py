@@ -80,6 +80,22 @@ repetition_context_size = 50
         config, _ = _load_config_from(tmp_path, toml_content="")
         assert config.transcription.engine == "parakeet_v3"
 
+    def test_legacy_qwen_default_config_migrates_to_parakeet(self, tmp_path):
+        toml = """
+[transcription]
+# Transcription engine: "qwen3_asr" (default) or "whisperkit"
+engine = "qwen3_asr"
+
+[qwen3_asr]
+model = "mlx-community/Qwen3-ASR-1.7B-bf16"
+"""
+        config, _ = _load_config_from(tmp_path, toml)
+        content = (tmp_path / "config.toml").read_text(encoding="utf-8")
+
+        assert config.transcription.engine == "parakeet_v3"
+        assert "[parakeet_v3]" in content
+        assert 'engine = "parakeet_v3"' in content
+
 
 # ---------------------------------------------------------------------------
 # Default values

@@ -210,8 +210,12 @@ def load_config() -> Config:
     # Load and parse config
     data = {}
     try:
-        with open(_schema.CONFIG_FILE, 'rb') as f:
-            data = tomllib.load(f)
+        content = _schema.CONFIG_FILE.read_text(encoding="utf-8")
+        migrated = _migrate_legacy_default_engine(content)
+        if migrated != content:
+            _schema.CONFIG_FILE.write_text(migrated, encoding="utf-8")
+            content = migrated
+        data = tomllib.loads(content)
     except Exception as e:
         print(f"Config parse error: {e}", file=sys.stderr)
 
@@ -402,6 +406,34 @@ def load_config() -> Config:
     _validate_config(config)
 
     return config
+
+
+def _migrate_legacy_default_engine(content: str) -> str:
+    """Move untouched legacy configs from the old Qwen default to Parakeet."""
+    legacy_marker = 'Transcription engine: "qwen3_asr" (default)'
+    if legacy_marker not in content:
+        return content
+    if "[parakeet_v3]" in content:
+        return content
+    if "[transcription]" not in content or 'engine = "qwen3_asr"' not in content:
+        return content
+
+    content = content.replace(
+        '# Transcription engine: "qwen3_asr" (default) or "whisperkit"\nengine = "qwen3_asr"',
+        '# Transcription engine: "parakeet_v3" (default, multilingual),\n'
+        '# "qwen3_asr" (English only), or "whisperkit"\n'
+        'engine = "parakeet_v3"',
+        1,
+    )
+    if 'engine = "qwen3_asr"' in content:
+        content = content.replace('engine = "qwen3_asr"', 'engine = "parakeet_v3"', 1)
+
+    parakeet_section = '''\n[parakeet_v3]\n# Parakeet-TDT model from mlx-community. v3 is multilingual (EN + 24 EU),\n# tops the HuggingFace Open ASR Leaderboard.\nmodel = "mlx-community/parakeet-tdt-0.6b-v3"\ntimeout = 0\nchunk_duration = 120.0\noverlap_duration = 15.0\ndecoding = "greedy"\nbeam_size = 5\nlength_penalty = 0.013\npatience = 3.5\nduration_reward = 0.67\nlocal_attention = false\nlocal_attention_context_size = 256\n'''
+    if "[qwen3_asr]" in content:
+        content = content.replace("[qwen3_asr]", parakeet_section + "\n[qwen3_asr]", 1)
+    else:
+        content += parakeet_section
+    return content
 
 
 # Global config instance with thread-safe initialization

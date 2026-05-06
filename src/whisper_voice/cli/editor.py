@@ -37,7 +37,7 @@ def _interactive_config() -> None:
         {"type": "choice",  "label": "Hotkey",          "section": "hotkey",        "key": "key",                    "value": _get("hotkey", "key", "alt_r"),                         "options": ["alt_r","alt_l","ctrl_r","ctrl_l","cmd_r","cmd_l","shift_r","shift_l","caps_lock"]},
         {"type": "float",   "label": "Double-tap",       "section": "hotkey",        "key": "double_tap_threshold",   "value": _get("hotkey", "double_tap_threshold", 0.4),            "hint": "sec"},
         {"type": "header",  "label": "Transcription"},
-        {"type": "choice",  "label": "Engine",           "section": "transcription", "key": "engine",                 "value": _get("transcription", "engine", "qwen3_asr"),           "options": ["qwen3_asr", "whisperkit"]},
+        {"type": "choice",  "label": "Engine",           "section": "transcription", "key": "engine",                 "value": _get("transcription", "engine", "parakeet_v3"),        "options": ["parakeet_v3", "qwen3_asr", "whisperkit"]},
         {"type": "string",  "label": "Language",         "section": "qwen3_asr",     "key": "language",               "value": _get("qwen3_asr", "language", "auto"),                  "hint": "en  fa  auto"},
         {"type": "header",  "label": "Grammar"},
         {"type": "bool",    "label": "Enabled",          "section": "grammar",       "key": "enabled",                "value": _get("grammar", "enabled", False)},

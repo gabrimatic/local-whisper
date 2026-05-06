@@ -5,21 +5,21 @@
 [![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-required-blue.svg)]()
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)]()
 
-On-device voice transcription, grammar correction, and text-to-speech for macOS. Runs on MLX, on Apple Silicon.
+Local Whisper is a local-first voice app for macOS, iOS, and Android.
 
-Double-tap to record, tap to stop, and the text lands on your clipboard. Multiple transcription engines, pluggable grammar backends, all MLX-native. Nothing leaves your Mac.
+On macOS, it gives you fast push-to-talk dictation, grammar cleanup, text replacements, selected-text shortcuts, and offline text-to-speech from the menu bar.
 
-Optional text-to-speech reads any selection aloud with ⌥T. Multiple voices, streaming playback.
+On mobile, it brings private recording, local history, modes, model management, and keyboard setup to iOS and Android.
+
+Double-tap to record, tap to stop, and the text lands on your clipboard. Parakeet-TDT v3 is the default speech-to-text engine.
 
 <p align="center">
-  <img src="assets/hero.png" width="600" alt="Local Whisper recording in Notes">
+  <img src="assets/hero.png" width="860" alt="Local Whisper macOS settings with Parakeet-TDT v3 active">
 </p>
 
----
+## Quick Start (macOS)
 
-## Quick Start
-
-**Apple Silicon required.** Microphone and Accessibility permissions needed.
+Apple Silicon required. Microphone and Accessibility permissions are needed.
 
 ```bash
 git clone https://github.com/gabrimatic/local-whisper.git
@@ -40,16 +40,17 @@ One command. The setup script installs dependencies, downloads core local models
 
 ---
 
-## What it does
+## What It Does
 
-- **On-device transcription** via MLX. Multiple engines, up to 20 minutes per recording.
+- **On-device transcription** via MLX. Parakeet-TDT v3 is the default; Qwen3-ASR and WhisperKit are alternatives.
 - **Grammar correction** with pluggable backends: Apple Intelligence, Ollama, LM Studio. Or disabled.
 - **Text-to-speech** reads any selected text aloud. Works in any app, multiple voices, streaming playback, offline via Kokoro MLX.
 - **Text replacements** for spoken-to-corrected mappings.
 - **Audio processing**: VAD, silence trimming, noise reduction, normalization.
 - **Keyboard shortcuts** for proofreading, rewriting, and prompt engineering on selected text.
 - **CLI**: `wh whisper`, `wh listen`, `wh transcribe` for scripting and automation.
-- **Native macOS UI**: menu bar, Liquid Glass overlay, and settings window.
+- **Native macOS UI**: menu bar, floating overlay, and settings window.
+- **Mobile apps**: Flutter iOS and Android surfaces for private recording, history, modes, model management, and keyboard setup.
 - **Auto-backup** of every recording and transcription.
 
 ### Keyboard Shortcuts
@@ -70,7 +71,7 @@ Results go to clipboard. TTS plays through speakers.
 - **Overlay**: `0.0` recording · `···` processing · `Copied` done · `Failed` error · `Speaking...`
 
 <p align="center">
-  <img src="assets/overlay-recording.png" width="280" alt="Floating overlay during recording">
+  <img src="assets/macos-dictation-overlay.png" width="780" alt="Local Whisper recording overlay while dictating into notes">
 </p>
 
 ---
@@ -81,7 +82,7 @@ Switch via Settings, `wh engine <name>`, or config.
 
 ### Parakeet-TDT v3 (default)
 
-In-process via [parakeet-mlx](https://github.com/senstella/parakeet-mlx). No server, no network. Multilingual: English plus 24 European languages. Ranks at the top of the HuggingFace [Open ASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) ahead of larger Whisper and Parakeet variants. Long audio is handled via overlapping chunks.
+In-process via [parakeet-mlx](https://github.com/senstella/parakeet-mlx). No server. Multilingual: English plus 24 European languages. The default checkpoint is NVIDIA Parakeet-TDT 0.6B v3, served through the `mlx-community/parakeet-tdt-0.6b-v3` MLX snapshot. Long audio is handled via overlapping chunks.
 
 | Setting | Default | Notes |
 |---------|---------|-------|
@@ -95,7 +96,7 @@ In-process via [parakeet-mlx](https://github.com/senstella/parakeet-mlx). No ser
 
 ### Qwen3-ASR (English only)
 
-In-process via [qwen3-asr-mlx](https://github.com/gabrimatic/qwen3-asr-mlx). No server, no network. Native long-audio support, up to 20 minutes in a single pass. English only. Switch with `wh engine qwen3_asr`.
+In-process via [qwen3-asr-mlx](https://github.com/gabrimatic/qwen3-asr-mlx). No local server required. Native long-audio support, up to 20 minutes in a single pass. English only. Switch with `wh engine qwen3_asr`.
 
 | Setting | Default | Notes |
 |---------|---------|-------|
@@ -121,7 +122,7 @@ Whisper on Apple Neural Engine via [Argmax](https://github.com/argmaxinc/Whisper
 
 ## Text-to-Speech
 
-Kokoro-82M via [kokoro-mlx](https://github.com/gabrimatic/kokoro-mlx). Runs in-process, no server, no network. Streaming playback starts before full synthesis completes.
+Kokoro-82M via [kokoro-mlx](https://github.com/gabrimatic/kokoro-mlx). Runs in-process after install. No local server required. Streaming playback starts before full synthesis completes.
 
 Toggle from the menu bar or Settings -> Voice. Activating the feature downloads the Kokoro voice model (~170 MB) and uses the spaCy `en_core_web_sm` dictionary plus system `espeak-ng`. Running `./setup.sh` while the toggle is on pre-fetches everything so the first speak has no wait.
 
@@ -160,7 +161,7 @@ Optional. Pick a grammar backend or disable it:
 
 | Backend | Requirements | Notes |
 |---------|-------------|-------|
-| **Apple Intelligence** | macOS 15+, Apple Silicon, Apple Intelligence enabled | Fastest, best quality |
+| **Apple Intelligence** | macOS 26+, Apple Silicon, Apple Intelligence enabled | On-device Foundation Models |
 | **Ollama** | [Ollama](https://ollama.com) installed and running | Works on any Mac |
 | **LM Studio** | [LM Studio](https://lmstudio.ai) with a model loaded and the local server started | Works on any Mac |
 | **Disabled** | None | Transcription only |
@@ -268,10 +269,6 @@ Custom commands go under `[dictation.commands]` in `~/.whisper/config.toml`. The
 
 ### Menu Bar
 
-<p align="center">
-  <img src="assets/menu-bar.png" width="380" alt="Local Whisper menu bar">
-</p>
-
 | Item | What it does |
 |------|-------------|
 | Status | Current state with active engine and backend subtitle |
@@ -289,6 +286,10 @@ Custom commands go under `[dictation.commands]` in `~/.whisper/config.toml`. The
 
 Sidebar layout with focused panels:
 
+<p align="center">
+  <img src="assets/macos-settings-recording.png" width="760" alt="Local Whisper macOS settings">
+</p>
+
 | Panel | Covers |
 |-------|--------|
 | Recording | Trigger key, double-tap window, audio cleanup, duration limits |
@@ -302,146 +303,32 @@ Sidebar layout with focused panels:
 | Advanced | Storage paths, service log, doctor, restart, update |
 | About | Version, credits, replay tutorial |
 
-<p align="center">
-  <img src="assets/settings.png" width="480" alt="Settings window">
-</p>
-
-Saves to `~/.whisper/config.toml`. Restart-required fields warn and offer immediate restart.
+Saves settings to `~/.whisper/config.toml`. Restart-required fields warn and offer immediate restart.
 
 ---
 
 ## Configuration
 
-`~/.whisper/config.toml`. Edit via Settings, `wh config`, or directly.
+Settings are stored in `~/.whisper/config.toml`. Edit them from the app, with `wh config`, or directly.
 
-<details>
-<summary><strong>Full config reference</strong></summary>
+Common fields:
 
-```toml
-[hotkey]
-key = "alt_r"              # alt_r, alt_l, ctrl_r, ctrl_l, cmd_r, cmd_l,
-                           # shift_r, shift_l, caps_lock, f1-f12
-double_tap_threshold = 0.4 # seconds
+| Section | What to change |
+|---------|----------------|
+| `[hotkey]` | Trigger key and double-tap timing |
+| `[transcription]` | Active engine: `parakeet_v3`, `qwen3_asr`, or `whisperkit` |
+| `[grammar]` | Grammar backend and enable/disable state |
+| `[audio]` | VAD, noise reduction, normalization, pre-buffer, and duration limits |
+| `[ui]` | Overlay, sounds, notifications, and auto-paste |
+| `[tts]` | Text-to-speech toggle and shortcut |
 
-[transcription]
-engine = "parakeet_v3"    # "parakeet_v3" (default), "qwen3_asr", or "whisperkit"
-
-[parakeet_v3]
-model = "mlx-community/parakeet-tdt-0.6b-v3"
-timeout = 0                 # 0 = no limit
-chunk_duration = 120.0      # 0 disables chunking
-overlap_duration = 15.0
-decoding = "greedy"         # "greedy" or "beam"
-beam_size = 5
-length_penalty = 0.013
-patience = 3.5
-duration_reward = 0.67
-local_attention = false
-local_attention_context_size = 256
-
-[qwen3_asr]
-model = "mlx-community/Qwen3-ASR-1.7B-bf16"
-timeout = 0                # 0 = no limit
-temperature = 0.0
-top_p = 1.0
-top_k = 0
-repetition_context_size = 100
-repetition_penalty = 1.2
-chunk_duration = 1200.0    # max chunk length in seconds
-max_tokens = 0             # 0 = auto from duration
-
-[whisper]
-model = "whisper-large-v3-v20240930"
-language = "auto"
-url = "http://localhost:50060/v1/audio/transcriptions"
-check_url = "http://localhost:50060/"
-timeout = 0
-temperature = 0.0
-compression_ratio_threshold = 2.4
-no_speech_threshold = 0.6
-logprob_threshold = -1.0
-temperature_fallback_count = 5
-prompt_preset = "none"     # "none", "technical", "dictation", or "custom"
-prompt = ""                # used only when prompt_preset = "custom"
-
-[grammar]
-backend = "apple_intelligence"  # "apple_intelligence", "ollama", or "lm_studio"
-enabled = false
-
-[ollama]
-url = "http://localhost:11434/api/generate"
-check_url = "http://localhost:11434/"
-model = "gemma3:4b-it-qat"
-keep_alive = "60m"
-timeout = 0
-max_chars = 0
-max_predict = 0
-num_ctx = 0
-unload_on_exit = false
-
-[apple_intelligence]
-max_chars = 0
-timeout = 0
-
-[lm_studio]
-url = "http://localhost:1234/v1/chat/completions"
-check_url = "http://localhost:1234/"
-model = "google/gemma-3-4b"
-max_chars = 0
-max_tokens = 0
-timeout = 0
-
-[replacements]
-enabled = false
-
-[replacements.rules]
-# "gonna" = "going to"
-# "wanna" = "want to"
-
-[audio]
-sample_rate = 16000
-min_duration = 0
-max_duration = 0           # 0 = no limit
-min_rms = 0.005            # silence threshold (0.0-1.0)
-vad_enabled = true
-noise_reduction = true
-normalize_audio = true
-pre_buffer = 0.0           # seconds before hotkey (0.0 = disabled)
-
-[backup]
-directory = "~/.whisper"
-history_limit = 100        # max entries for text and audio history (1-1000)
-
-[ui]
-show_overlay = true
-overlay_opacity = 0.92
-sounds_enabled = true
-notifications_enabled = false
-auto_paste = false         # paste at cursor, preserving clipboard
-
-[shortcuts]
-enabled = true
-proofread = "ctrl+shift+g"
-rewrite = "ctrl+shift+r"
-prompt_engineer = "ctrl+shift+p"
-
-[tts]
-enabled = false            # toggle from Settings -> Voice or the menu bar
-provider = "kokoro"
-speak_shortcut = "alt+t"
-
-[kokoro_tts]
-model = "mlx-community/Kokoro-82M-bf16"
-voice = "af_sky"           # See voice table in README for all available presets
-```
-
-</details>
+See [docs/configuration.md](docs/configuration.md) for the full TOML reference.
 
 ---
 
 ## Privacy
 
-No network calls. Every component runs on-device or on localhost.
+Audio recording, transcription, grammar correction, replacements, and text-to-speech run on-device or against localhost services. Setup, model downloads, `wh update`, and `wh doctor --fix` can use the network to install packages, fetch models, or update the checkout.
 
 | Component | Runs at |
 |-----------|---------|
@@ -454,6 +341,8 @@ No network calls. Every component runs on-device or on localhost.
 | LM Studio | localhost:1234 |
 
 Models cached at `~/.whisper/models/`. Config and backups at `~/.whisper/`.
+
+After the required models and optional local services are installed, dictation and cleanup do not send audio or transcript text to cloud APIs.
 
 ---
 
@@ -556,7 +445,7 @@ Tap twice within 0.4s (default). Adjust `double_tap_threshold` in config.
 <summary><strong>Apple Intelligence not working</strong></summary>
 
 Verify:
-1. **macOS 15** (Sequoia) or later
+1. **macOS 26** or later
 2. **Apple Silicon** (M1/M2/M3/M4)
 3. **Apple Intelligence** enabled in System Settings > Apple Intelligence & Siri
 
@@ -621,33 +510,16 @@ wh                    # Run the service
 pytest tests/              # Run the full test suite
 ```
 
-### Flutter Mobile App
+### Mobile Apps
 
-The Flutter mobile implementation lives in `src/flutter/local_whisper`. Flutter owns the app shell, history, models, settings, modes, clipboard flow, and deterministic text cleanup. Native Swift uses `AVAudioEngine` plus WhisperKit/Core ML for the currently wired iOS transcription runtime. Android now has native method channels for microphone permission/status, local recording, level events, app/keyboard settings intents, keyboard status, keyboard preference sync, and a Local Whisper input method for setup verification. The model manager installs the same Local Whisper model families from Hugging Face snapshots: Qwen3-ASR (~3.8 GB), Parakeet-TDT v3 (~2.3 GB), Kokoro-82M TTS (~371 MB), and WhisperKit Large v3 (~550 MB Core ML folder). After a model pack is installed, its files live on device for offline use and are verified against the local manifest before being treated as installed.
+The Flutter app lives in `src/flutter/local_whisper`.
 
-First launch uses a full-screen setup flow before the tab shell appears: welcome, inline recommended model-pack install, microphone permission, keyboard handoff through platform settings, and a practice field. The keyboard is verified by switching to Local Whisper Keyboard in the practice field and tapping Verify on the keyboard/input method. The same setup can be replayed from Settings. The setup progress indicator is read-only, and optional model choices open in place instead of sending the user to another tab.
+| Surface | Status | Notes |
+|---------|--------|-------|
+| Flutter iOS app | Native transcription wired | Uses `AVAudioEngine` plus WhisperKit/Core ML through the native Swift bridge. |
+| Flutter Android app | Native shell ready | Recording bridge, input method, setup flow, model management, history, modes, and QA seeding are in place. Production ASR adapter is still pending. |
 
-The Flutter iOS icon, Android launcher icons, and the macOS app icon are generated from the same 1024 px source mark. The shared brand palette uses graphite `#091013`, panel `#121821`, mint `#75E3BE`, and sky `#8DDCFF` across Flutter, the iOS keyboard extension, Android input method, and the macOS Swift UI.
-
-Android debug QA can seed a recommended pack and interaction data with `--dart-define=LOCAL_WHISPER_QA_SEED=true`. Production Android still needs a real offline ASR adapter before downloaded model families can transcribe; it does not fall back to cloud speech services.
-
-```bash
-cd src/flutter/local_whisper
-flutter pub get
-flutter analyze
-flutter test
-flutter build ios --simulator --debug
-flutter build apk --debug
-# after a WhisperKit pack is installed in the simulator:
-flutter test integration_test/native_transcription_test.dart -d <simulator-id> --dart-define=LOCAL_WHISPER_MODEL_PATH=<installed-model-folder>
-```
-
-Main surfaces:
-- `Record`: permission checks, model readiness, clear `Start talking` or `Install model` action, live recording state, copy-ready result, foreground cancellation.
-- `History`: searchable local transcript history stored on device.
-- `Modes`: built-in and custom local formatting modes inspired by dictation apps such as Superwhisper.
-- `Models`: install, remove, select, verify storage, and remove Local Whisper model families with model-specific actions.
-- `Settings`: status, locale, auto-copy, cleanup toggles, keyboard behavior, duration limits, privacy controls, and setup replay.
+See [docs/mobile.md](docs/mobile.md) for setup flow, keyboard behavior, model packs, Android notes, and mobile checks.
 
 ### Adding an Engine or Grammar Backend
 
@@ -691,7 +563,7 @@ local-whisper/
 │       ├── AboutView.swift          # Hero, credits, links, replay tutorial
 │       ├── SharedViews.swift        # DeferredText fields, StatusPill, InlineNotice, headers
 │       └── Constants.swift
-├── src/flutter/local_whisper/        # Flutter iOS app
+├── src/flutter/local_whisper/        # Flutter iOS and Android app
 │   ├── lib/
 │   │   ├── main.dart
 │   │   └── src/
@@ -706,6 +578,12 @@ local-whisper/
 │   │   ├── AppDelegate.swift
 │   │   └── SceneDelegate.swift
 │   ├── ios/LocalWhisperKeyboard/     # Native keyboard extension
+│   ├── android/app/src/main/
+│   │   ├── AndroidManifest.xml       # App identity, microphone, haptics, input method
+│   │   ├── kotlin/info/gabrimatic/localwhisper/
+│   │   │   ├── MainActivity.kt       # Method/event channels for recording and setup
+│   │   │   └── LocalWhisperInputMethodService.kt
+│   │   └── res/                      # Launch theme, keyboard XML, launcher icons
 │   └── test/
 └── src/whisper_voice/
     ├── app.py              # App class + service_main (imports mixins)

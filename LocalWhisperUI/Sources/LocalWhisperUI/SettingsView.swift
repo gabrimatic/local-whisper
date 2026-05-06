@@ -9,24 +9,25 @@ struct SettingsView: View {
     @SceneStorage("settings.selection") private var storedSelection: String = SettingsSection.recording.rawValue
 
     var body: some View {
-        NavigationSplitView {
+        HStack(spacing: 0) {
             sidebar
-        } detail: {
+            Divider()
             detail
-                .frame(minWidth: 520, idealWidth: 600)
-                .navigationTitle(selection.title)
-                .navigationSubtitle(selection.subtitle)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 780, minHeight: 540)
+        .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
             if let restored = SettingsSection(rawValue: storedSelection) {
                 selection = restored
             }
             Self.activateRegular()
+            Self.configureSettingsWindowChrome()
             // Clear focus so DeferredTextFields don't swallow the Right Option
             // hotkey while the Settings window is key. Without this, double-tap
             // registers start + stop because the focused field consumes one edge.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                Self.configureSettingsWindowChrome()
                 NSApp.keyWindow?.makeFirstResponder(nil)
             }
         }
@@ -42,36 +43,51 @@ struct SettingsView: View {
     // MARK: - Sidebar
 
     private var sidebar: some View {
-        List(SettingsSection.allCases, selection: $selection) { section in
-            NavigationLink(value: section) {
-                Label {
-                    Text(section.title)
-                } icon: {
-                    Image(systemName: section.symbol)
-                        .foregroundStyle(section.tint)
+        VStack(alignment: .leading, spacing: Theme.Spacing.l) {
+            SettingsSidebarHeader()
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.top, Theme.Spacing.xl)
+
+            VStack(spacing: Theme.Spacing.xs) {
+                ForEach(SettingsSection.allCases) { section in
+                    SettingsSidebarRow(
+                        section: section,
+                        isSelected: selection == section
+                    ) {
+                        selection = section
+                    }
                 }
             }
-            .tag(section)
+            .padding(.horizontal, Theme.Spacing.m)
+
+            Spacer(minLength: 0)
         }
-        .listStyle(.sidebar)
-        .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
+        .frame(width: 228)
+        .background(.regularMaterial)
     }
 
     // MARK: - Detail panels
 
     @ViewBuilder
     private var detail: some View {
-        switch selection {
-        case .recording:    RecordingPanel().environment(appState)
-        case .transcription: TranscriptionPanel().environment(appState)
-        case .grammar:      GrammarPanel().environment(appState)
-        case .voice:        VoicePanel().environment(appState)
-        case .vocabulary:   VocabularyPanel().environment(appState)
-        case .output:       OutputPanel().environment(appState)
-        case .shortcuts:    ShortcutsPanel().environment(appState)
-        case .activity:     ActivityPanel().environment(appState)
-        case .advanced:     AdvancedPanel().environment(appState)
-        case .about:        AboutView().environment(appState)
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsDetailHeader(section: selection)
+                .padding(.horizontal, Theme.Spacing.xxxl)
+                .padding(.top, Theme.Spacing.xl)
+                .padding(.bottom, Theme.Spacing.s)
+
+            switch selection {
+            case .recording:    RecordingPanel().environment(appState)
+            case .transcription: TranscriptionPanel().environment(appState)
+            case .grammar:      GrammarPanel().environment(appState)
+            case .voice:        VoicePanel().environment(appState)
+            case .vocabulary:   VocabularyPanel().environment(appState)
+            case .output:       OutputPanel().environment(appState)
+            case .shortcuts:    ShortcutsPanel().environment(appState)
+            case .activity:     ActivityPanel().environment(appState)
+            case .advanced:     AdvancedPanel().environment(appState)
+            case .about:        AboutView().environment(appState)
+            }
         }
     }
 
@@ -82,6 +98,13 @@ struct SettingsView: View {
         // floating utility window. Reverted in restoreAccessoryPolicy().
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @MainActor
+    private static func configureSettingsWindowChrome() {
+        guard let window = NSApp.keyWindow else { return }
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
     }
 
     @MainActor
@@ -96,6 +119,102 @@ struct SettingsView: View {
             if !stillOpen {
                 NSApp.setActivationPolicy(.accessory)
             }
+        }
+    }
+}
+
+// MARK: - Sidebar chrome
+
+private struct SettingsSidebarHeader: View {
+    var body: some View {
+        HStack(spacing: Theme.Spacing.m) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Theme.Radius.medium)
+                    .fill(Theme.Brand.accent.opacity(0.16))
+                Image(systemName: "waveform")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Theme.Brand.accent)
+                    .symbolRenderingMode(.hierarchical)
+            }
+            .frame(width: 40, height: 40)
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.medium)
+                    .strokeBorder(Theme.Brand.accent.opacity(0.20), lineWidth: 1)
+            )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Local Whisper")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text("Settings")
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .lineLimit(1)
+        }
+        .padding(.top, Theme.Spacing.xl)
+    }
+}
+
+private struct SettingsSidebarRow: View {
+    let section: SettingsSection
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: Theme.Spacing.m) {
+                Image(systemName: section.symbol)
+                    .font(.system(size: 15, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(isSelected ? section.tint : .secondary)
+                    .frame(width: 22)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(section.title)
+                        .font(Theme.Typography.bodyEmphasized)
+                        .foregroundStyle(isSelected ? .primary : .secondary)
+                    Text(section.sidebarSubtitle)
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.medium))
+            .padding(.horizontal, Theme.Spacing.m)
+            .padding(.vertical, 9)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: Theme.Radius.medium)
+                        .fill(section.tint.opacity(0.16))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.medium)
+                                .strokeBorder(section.tint.opacity(0.20), lineWidth: 1)
+                        )
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct SettingsDetailHeader: View {
+    let section: SettingsSection
+
+    var body: some View {
+        HStack(alignment: .center, spacing: Theme.Spacing.m) {
+            SectionIcon(symbol: section.symbol, tint: section.tint, diameter: 34, fontSize: 15)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(section.title)
+                    .font(Theme.Typography.title)
+                Text(section.subtitle)
+                    .font(Theme.Typography.captionEmphasized)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
         }
     }
 }
@@ -143,6 +262,21 @@ enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .activity:     return "Usage statistics"
         case .advanced:     return "Storage and diagnostics"
         case .about:        return "Version and credits"
+        }
+    }
+
+    var sidebarSubtitle: String {
+        switch self {
+        case .recording:    return "Hotkey and mic"
+        case .transcription: return "Speech engine"
+        case .grammar:      return "Cleanup pass"
+        case .voice:        return "Read aloud"
+        case .vocabulary:   return "Replacements"
+        case .output:       return "Paste and history"
+        case .shortcuts:    return "Keybindings"
+        case .activity:     return "Stats"
+        case .advanced:     return "Diagnostics"
+        case .about:        return "Credits"
         }
     }
 
