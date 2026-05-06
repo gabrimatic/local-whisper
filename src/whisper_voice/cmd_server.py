@@ -102,17 +102,32 @@ class CommandServer:
             with self._active_lock:
                 if self._handling:
                     # Reject: already handling a connection
-                    try:
-                        msg = json.dumps({"type": "error", "message": "Service is busy"}) + "\n"
-                        client.sendall(msg.encode("utf-8"))
-                        client.close()
-                    except Exception:
-                        pass
+                    self._reject_busy(client)
                     continue
                 self._handling = True
             threading.Thread(
                 target=self._handle_connection, args=(client,), daemon=True
             ).start()
+
+    def _reject_busy(self, client: socket.socket):
+        """Read one request frame before replying busy so clients do not see a broken pipe."""
+        try:
+            client.settimeout(1.0)
+            buf = b""
+            while b"\n" not in buf and len(buf) <= 65536:
+                chunk = client.recv(4096)
+                if not chunk:
+                    break
+                buf += chunk
+            msg = json.dumps({"type": "error", "message": "Service is busy"}) + "\n"
+            client.sendall(msg.encode("utf-8"))
+        except Exception:
+            pass
+        finally:
+            try:
+                client.close()
+            except Exception:
+                pass
 
     def _handle_connection(self, client: socket.socket):
         """Handle a single CLI connection: read request, dispatch, respond, close."""
