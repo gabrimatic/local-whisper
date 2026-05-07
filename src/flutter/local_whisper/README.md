@@ -4,7 +4,7 @@ Flutter mobile implementation of Local Whisper for iOS and Android.
 
 Mobile is the app plus the keyboard. Record in the app, keep local model packs and history on the device, and use modes to shape the finished text. The iOS keyboard extension and Android input method bring Local Whisper actions into other text fields.
 
-iOS records with `AVAudioEngine` and transcribes locally with WhisperKit/Core ML. Android records audio locally and owns the native input method and setup path. On Android, the remaining production work is real transcription: load an installed offline ASR pack, run inference on-device, and return the transcript to Flutter. There is no Apple Speech framework path and no cloud fallback.
+iOS records with `AVAudioEngine` and transcribes locally with WhisperKit/Core ML. Android records 16 kHz mono WAV audio, transcribes on-device with `sherpa_onnx`, and owns the native input method and setup path. There is no Apple Speech framework path and no cloud fallback.
 
 ## Run
 
@@ -31,6 +31,7 @@ flutter build apk --debug --dart-define=LOCAL_WHISPER_QA_SEED=true
 - `ios/LocalWhisperKeyboard/`: native Local Whisper keyboard extension.
 - `android/app/src/main/kotlin/info/gabrimatic/localwhisper/MainActivity.kt`: native Android method/event channel bridge.
 - `android/app/src/main/kotlin/info/gabrimatic/localwhisper/LocalWhisperInputMethodService.kt`: native Android Local Whisper input method.
+- `lib/src/sherpa_speech_service.dart`: Flutter-side Android sherpa-onnx transcription runtime.
 - `assets/app_icon/app_icon_1024.png`: shared source icon used for Flutter iOS, Android launcher icons, and mirrored macOS app assets.
 
 ## Current Mobile Flow
@@ -47,15 +48,17 @@ flutter build apk --debug --dart-define=LOCAL_WHISPER_QA_SEED=true
 
 ## Model Packs
 
-- Qwen3-ASR: `mlx-community/Qwen3-ASR-1.7B-bf16` (~3.8 GB snapshot).
-- Parakeet-TDT v3: `mlx-community/parakeet-tdt-0.6b-v3` (~2.3 GB snapshot).
+- Parakeet-TDT v3 Android: `csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8` (~640 MB ONNX snapshot).
+- Qwen3-ASR 0.6B Android: `pantinor/sherpa-onnx-qwen3-asr-0.6b-int8` (~940 MB ONNX snapshot).
+- Qwen3-ASR MLX: `mlx-community/Qwen3-ASR-1.7B-bf16` (~3.8 GB snapshot).
+- Parakeet-TDT v3 MLX: `mlx-community/parakeet-tdt-0.6b-v3` (~2.3 GB snapshot).
 - Kokoro-82M TTS: `mlx-community/Kokoro-82M-bf16` (~371 MB snapshot).
 - WhisperKit Large v3: `argmaxinc/whisperkit-coreml`, wired to `openai_whisper-large-v3-v20240930_547MB`.
 - Bundled deterministic cleanup engine.
 
-The setup model step shows the recommended WhisperKit pack inline with install progress. The optional model list opens as an in-place sheet, so first-run setup never detours to the Models tab.
+The setup model step shows the recommended pack inline with install progress: WhisperKit on iOS and Parakeet-TDT v3 INT8 ONNX on Android. The optional model list opens as an in-place sheet, so first-run setup never detours to the Models tab.
 
-WhisperKit Large v3 is wired for iOS transcription today. Qwen3-ASR, Parakeet-TDT v3, and Kokoro are managed as local packs for native runtimes; they are not hosted APIs.
+WhisperKit Large v3 is wired for iOS transcription today. Parakeet-TDT v3 INT8 ONNX and Qwen3-ASR 0.6B INT8 ONNX are wired for Android through sherpa-onnx. These are local packs, not hosted APIs.
 
 ## Brand System
 
@@ -70,7 +73,7 @@ WhisperKit Large v3 is wired for iOS transcription today. Qwen3-ASR, Parakeet-TD
 - First-run setup is linear and repeatable from Settings.
 - Setup does not allow step jumping from the progress indicator.
 - The keyboard step opens platform settings, explains the keyboard path, verifies through a real token inserted by the keyboard/input method, and supports finishing without the keyboard when the user chooses that path.
-- Record keeps the primary action obvious: `Start talking` begins recording when the selected WhisperKit model is installed; `Install model` opens Models when it is not. Recording shows elapsed time, a stop button, and the level meter.
+- Record keeps the primary action obvious: `Start talking` begins recording when the selected platform model is installed; `Install model` opens Models when it is not. Recording shows elapsed time, a stop button, and the level meter.
 - Settings groups powerful controls into focused sections for status, recording, cleanup, keyboard behavior, privacy, and onboarding replay.
 
 ## Android Notes
@@ -79,7 +82,7 @@ WhisperKit Large v3 is wired for iOS transcription today. Qwen3-ASR, Parakeet-TD
 - Android uses the stable application ID `info.gabrimatic.localwhisper` and the same Local Whisper launcher mark as iOS/macOS.
 - The Android input method exposes Verify, punctuation, space, new-line, settings, and haptics. Add `android.permission.VIBRATE` with the input method so haptics never crash the app.
 - Android debug QA can seed the recommended pack and interaction data with `--dart-define=LOCAL_WHISPER_QA_SEED=true`.
-- Android records audio locally today. The remaining production work is native offline ASR inference: load an installed model pack, transcribe on-device, and return the real transcript to Flutter. Do not add Android cloud speech fallback.
+- Android records WAV audio through `AudioRecord`, hands the path to Flutter, and transcribes in a background isolate with sherpa-onnx. Do not add Android cloud speech fallback.
 
 ## Supported Edge Cases
 

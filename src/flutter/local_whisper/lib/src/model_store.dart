@@ -72,6 +72,34 @@ class ModelStore {
           'WhisperKit large-v3 Core ML pack used by the native iOS recorder.',
     ),
     LocalModel(
+      id: 'parakeet_tdt_v3_sherpa',
+      name: 'Parakeet-TDT v3',
+      kind: ModelKind.transcription,
+      description:
+          'Default Android offline ASR pack. Same model family as the macOS Parakeet engine, converted to INT8 ONNX for sherpa-onnx.',
+      sizeLabel: '~640 MB ONNX pack',
+      state: ModelInstallState.notInstalled,
+      runtime: ModelRuntime.sherpaOnnx,
+      minimumIosMajor: 14,
+      repoId: 'csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8',
+      installNote:
+          'Best Android default: private on-device transcription for English, German, and 25 European languages through sherpa-onnx.',
+    ),
+    LocalModel(
+      id: 'qwen3_asr_sherpa',
+      name: 'Qwen3-ASR 0.6B',
+      kind: ModelKind.transcription,
+      description:
+          'Broader multilingual Android ASR pack for sherpa-onnx, including Persian, Arabic, CJK, and European languages.',
+      sizeLabel: '~940 MB ONNX pack',
+      state: ModelInstallState.notInstalled,
+      runtime: ModelRuntime.sherpaOnnx,
+      minimumIosMajor: 14,
+      repoId: 'pantinor/sherpa-onnx-qwen3-asr-0.6b-int8',
+      installNote:
+          'Use when broader language coverage matters. Transcript text is wired first; timestamp quality must be proven before exposing segments.',
+    ),
+    LocalModel(
       id: 'local_cleanup',
       name: 'Local Cleanup Engine',
       kind: ModelKind.cleanup,

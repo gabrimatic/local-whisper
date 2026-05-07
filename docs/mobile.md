@@ -4,7 +4,7 @@ The Flutter mobile app lives in `src/flutter/local_whisper`. Mobile is the app p
 
 Record in the app, keep local model packs and searchable history on the device, and use modes to shape the finished text. The native keyboard on iOS and the native input method on Android bring Local Whisper actions into other text fields.
 
-iOS transcribes locally today with WhisperKit/Core ML. Android records audio locally and has the app, setup flow, and keyboard path in place. The remaining Android work is the production speech-to-text runtime: Android needs native inference code that can load an installed offline ASR pack and return the real transcript.
+iOS transcribes locally today with WhisperKit/Core ML. Android records local WAV audio and transcribes on-device through `sherpa_onnx`. Parakeet-TDT v3 INT8 ONNX is the recommended Android pack; Qwen3-ASR 0.6B INT8 ONNX is the broader multilingual pack.
 
 <p align="center">
   <img src="../assets/ios-hero-record.png" width="760" alt="Local Whisper iOS record screen">
@@ -19,7 +19,7 @@ iOS transcribes locally today with WhisperKit/Core ML. Android records audio loc
 | Surface | Status | Notes |
 |---------|--------|-------|
 | iOS app + keyboard | Native transcription wired | Record and transcribe locally with `AVAudioEngine` plus WhisperKit/Core ML. The keyboard extension gives text fields Local Whisper modes, punctuation, haptics, and setup verification. |
-| Android app + keyboard | App and keyboard ready | Record locally in the app and verify the native input method in a real text field. The app keeps history, modes, and local model packs on device; real transcription waits on an Android offline ASR runtime for installed packs. |
+| Android app + keyboard | Native transcription wired | Record local WAV audio, transcribe with sherpa-onnx model packs, and verify the native input method in a real text field. The app keeps history, modes, and local model packs on device. |
 
 ## Product Flow
 
@@ -48,34 +48,36 @@ Native iOS uses:
 
 Native Android uses:
 
-- `android/app/src/main/kotlin/info/gabrimatic/localwhisper/MainActivity.kt`: microphone status, recording, levels, app settings, input-method settings, keyboard status, keyboard verification, and keyboard preference sync.
+- `android/app/src/main/kotlin/info/gabrimatic/localwhisper/MainActivity.kt`: microphone status, 16 kHz mono WAV recording, levels, app settings, input-method settings, keyboard status, keyboard verification, and keyboard preference sync.
 - `android/app/src/main/kotlin/info/gabrimatic/localwhisper/LocalWhisperInputMethodService.kt`: Verify, punctuation, space, new-line, settings, and haptics.
 - `android/app/src/main/AndroidManifest.xml`: microphone, haptics, app identity, launcher identity, and input-method service.
+
+Flutter owns Android transcription through `lib/src/sherpa_speech_service.dart`. The service runs sherpa-onnx in a background isolate, loads the installed model folder, reads the recorded WAV file, and returns the transcript through the same `NativeSpeechService` result shape used by iOS.
 
 ## Model Packs
 
 The model manager installs Local Whisper model families from Hugging Face snapshots and verifies installed files against a local manifest before treating a pack as installed.
 
-WhisperKit Large v3 is wired for iOS transcription today. Qwen3-ASR, Parakeet-TDT v3, and Kokoro are managed as local packs for native runtimes; they are not hosted APIs and they are not sent to a cloud speech service.
+WhisperKit Large v3 is wired for iOS transcription today. Android uses sherpa-onnx model packs. Qwen3-ASR, Parakeet-TDT v3, WhisperKit, and Kokoro are local model families; they are not hosted APIs and they are not sent to a cloud speech service.
 
 | Pack | Approx size | Notes |
 |------|-------------|-------|
-| Qwen3-ASR | 3.8 GB | Offline ASR model family. |
-| Parakeet-TDT v3 | 2.3 GB | Offline ASR model family. |
+| Parakeet-TDT v3 INT8 ONNX | 640 MB | Default Android offline ASR pack through sherpa-onnx. |
+| Qwen3-ASR 0.6B INT8 ONNX | 940 MB | Android multilingual ASR pack through sherpa-onnx. |
+| Qwen3-ASR MLX | 3.8 GB | Desktop/iOS-family offline ASR pack. |
+| Parakeet-TDT v3 MLX | 2.3 GB | Desktop/iOS-family offline ASR pack. |
 | Kokoro-82M TTS | 371 MB | Local text-to-speech model. |
 | WhisperKit Large v3 | 550 MB | Wired iOS Core ML folder. |
 
 ## Android Notes
 
-Android debug QA can seed a recommended pack and interaction data:
+Android debug QA can seed the recommended pack and interaction data:
 
 ```bash
 flutter run --dart-define=LOCAL_WHISPER_QA_SEED=true
 ```
 
-Android is not blocked on UI. It can request microphone permission, record local audio, show levels, store local data, and verify the native input method.
-
-The missing piece is production speech-to-text. Android needs native inference code that opens an installed offline ASR pack, runs transcription on-device, and returns the real transcript to Flutter. Debug QA seeds that path so the full app and keyboard flow can be tested without adding a cloud fallback.
+Android can request microphone permission, record local WAV audio, show levels, store local data, verify the native input method, and transcribe with the installed sherpa-onnx model pack. Debug QA still seeds interaction state so the app and keyboard flow can be exercised without downloading a large model during every emulator pass.
 
 ## Checks
 

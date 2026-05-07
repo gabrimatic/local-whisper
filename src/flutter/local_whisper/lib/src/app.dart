@@ -21,9 +21,9 @@ String get _deviceLabel => Platform.isAndroid ? 'Android device' : 'iPhone';
 
 bool _canRecordWithModelOnCurrentPlatform(LocalModel model, int iosMajor) {
   if (Platform.isAndroid) {
-    return _androidQaRuntimeEnabled &&
-        model.kind == ModelKind.transcription &&
+    return model.kind == ModelKind.transcription &&
         model.state == ModelInstallState.installed &&
+        model.runtime == ModelRuntime.sherpaOnnx &&
         (model.localPath?.isNotEmpty ?? false);
   }
   return model.kind == ModelKind.transcription &&
@@ -142,7 +142,8 @@ class _AppControllerState extends State<AppController>
 
   bool _hasNativeRuntime(LocalModel model) {
     if (Platform.isAndroid) {
-      return _androidQaRuntimeEnabled && model.kind == ModelKind.transcription;
+      return model.kind == ModelKind.transcription &&
+          model.runtime == ModelRuntime.sherpaOnnx;
     }
     return model.runtime == ModelRuntime.whisperKit ||
         model.runtime == ModelRuntime.bundled;
@@ -207,9 +208,13 @@ class _AppControllerState extends State<AppController>
       modesFuture,
       modelsFuture,
     ).wait;
-    final visibleModels = _androidQaRuntimeEnabled
-        ? _seedAndroidQaModel(models)
-        : models;
+    final visibleModels = _modelsForCurrentPlatform(
+      _androidQaRuntimeEnabled ? _seedAndroidQaModel(models) : models,
+    );
+    final normalizedSettings = _normalizeSettingsForCurrentPlatform(
+      settings,
+      visibleModels,
+    );
     final onboardingComplete = await _historyStore.loadOnboardingComplete();
     NativeSpeechStatus nativeStatus;
     KeyboardSetupStatus keyboardStatus;
@@ -231,12 +236,12 @@ class _AppControllerState extends State<AppController>
     }
     if (!mounted) return;
     setState(() {
-      _settings = settings;
+      _settings = normalizedSettings;
       _history = history;
       _modes = modes.isEmpty ? DictationMode.defaults : modes;
       _models = visibleModels;
       _selectedMode = _modes.firstWhere(
-        (mode) => mode.id == settings.selectedModeId,
+        (mode) => mode.id == normalizedSettings.selectedModeId,
         orElse: () => _modes.first,
       );
       _nativeStatus = nativeStatus;
@@ -244,13 +249,44 @@ class _AppControllerState extends State<AppController>
       _bootstrapped = true;
       _showOnboarding = !onboardingComplete;
     });
-    await _syncKeyboardSettings(settings);
+    await _syncKeyboardSettings(normalizedSettings);
+  }
+
+  List<LocalModel> _modelsForCurrentPlatform(List<LocalModel> models) {
+    if (!Platform.isAndroid) return models;
+    return models
+        .where(
+          (model) =>
+              model.kind != ModelKind.transcription ||
+              model.runtime == ModelRuntime.sherpaOnnx,
+        )
+        .toList(growable: false);
+  }
+
+  AppSettings _normalizeSettingsForCurrentPlatform(
+    AppSettings settings,
+    List<LocalModel> models,
+  ) {
+    if (!Platform.isAndroid) return settings;
+    final selectedExists = models.any(
+      (model) => model.id == settings.selectedModelId,
+    );
+    if (selectedExists) return settings;
+    final androidDefault = models.firstWhere(
+      (model) =>
+          model.kind == ModelKind.transcription &&
+          model.runtime == ModelRuntime.sherpaOnnx,
+      orElse: () => models.first,
+    );
+    final normalized = settings.copyWith(selectedModelId: androidDefault.id);
+    unawaited(_historyStore.saveSettings(normalized));
+    return normalized;
   }
 
   List<LocalModel> _seedAndroidQaModel(List<LocalModel> models) {
     return models
         .map((model) {
-          if (model.id != 'whisperkit_large_v3_turbo') return model;
+          if (model.id != 'parakeet_tdt_v3_sherpa') return model;
           return model.copyWith(
             state: ModelInstallState.installed,
             localPath: '/android_asset/local_whisper_qa_model',
@@ -318,11 +354,12 @@ class _AppControllerState extends State<AppController>
       if (!_hasNativeRuntime(selectedModel)) {
         throw LocalWhisperException(
           Platform.isAndroid
-              ? '${selectedModel.name} is installed, but the Android offline ASR runtime is not wired yet.'
+              ? '${selectedModel.name} is not an Android transcription runtime. Choose Parakeet-TDT v3 or Qwen3-ASR 0.6B for on-device Android transcription.'
               : '${selectedModel.name} is installed as the Local Whisper model family, but its native iOS runtime is not wired yet.',
         );
       }
-      if (selectedModel.runtime == ModelRuntime.whisperKit &&
+      if ((selectedModel.runtime == ModelRuntime.whisperKit ||
+              selectedModel.runtime == ModelRuntime.sherpaOnnx) &&
           (selectedModel.localPath?.isEmpty ?? true)) {
         throw LocalWhisperException(
           '${selectedModel.name} needs a verified local model folder before recording.',
@@ -593,8 +630,10 @@ class _AppControllerState extends State<AppController>
       );
       if (!mounted) return;
       setState(() {
-        _models = models;
-        if (model.runtime == ModelRuntime.whisperKit &&
+        _models = _modelsForCurrentPlatform(models);
+        if (((Platform.isAndroid && model.runtime == ModelRuntime.sherpaOnnx) ||
+                (!Platform.isAndroid &&
+                    model.runtime == ModelRuntime.whisperKit)) &&
             model.kind == ModelKind.transcription) {
           _settings = _settings.copyWith(selectedModelId: model.id);
           _historyStore.saveSettings(_settings);
@@ -626,15 +665,18 @@ class _AppControllerState extends State<AppController>
     final models = await _modelStore.removeModel(model);
     if (!mounted) return;
     setState(() {
-      _models = models;
+      _models = _modelsForCurrentPlatform(models);
       if (_settings.selectedModelId == model.id) {
-        final fallback = models.firstWhere(
+        final fallback = _models.firstWhere(
           _canRecordWithModel,
-          orElse: () => models.firstWhere(
+          orElse: () => _models.firstWhere(
             (item) =>
                 item.kind == ModelKind.transcription &&
-                item.runtime == ModelRuntime.whisperKit,
-            orElse: () => models.firstWhere(
+                item.runtime ==
+                    (Platform.isAndroid
+                        ? ModelRuntime.sherpaOnnx
+                        : ModelRuntime.whisperKit),
+            orElse: () => _models.firstWhere(
               (item) => item.kind == ModelKind.transcription,
             ),
           ),
@@ -1323,6 +1365,7 @@ class _SetupModelChoicesSheet extends StatelessWidget {
       ModelRuntime.mlx => 'MLX',
       ModelRuntime.coreMl => 'Core ML',
       ModelRuntime.whisperKit => 'WhisperKit',
+      ModelRuntime.sherpaOnnx => 'Sherpa ONNX',
       ModelRuntime.bundled => 'Bundled',
     };
   }
@@ -2574,6 +2617,7 @@ class _ModelCard extends StatelessWidget {
       ModelRuntime.mlx => 'MLX',
       ModelRuntime.coreMl => 'Core ML',
       ModelRuntime.whisperKit => 'WhisperKit',
+      ModelRuntime.sherpaOnnx => 'Sherpa ONNX',
       ModelRuntime.bundled => 'Bundled',
     };
     final installNote = _platformInstallNote(model);
@@ -2581,8 +2625,8 @@ class _ModelCard extends StatelessWidget {
         Platform.isAndroid &&
             model.kind == ModelKind.transcription &&
             model.state == ModelInstallState.installed &&
-            !_androidQaRuntimeEnabled
-        ? 'Installed pack. Native Android offline ASR adapter still required.'
+            model.runtime != ModelRuntime.sherpaOnnx
+        ? 'Installed pack for another runtime. Choose a Sherpa ONNX pack for Android transcription.'
         : !model.supportsIosMajor(iosMajorVersion)
         ? 'Requires iOS ${model.minimumIosMajor}+.'
         : model.kind == ModelKind.transcription &&
@@ -3099,9 +3143,9 @@ String _platformRequirementLabel(LocalModel model) {
   if (Platform.isAndroid) {
     return model.runtime == ModelRuntime.bundled
         ? 'Bundled'
-        : _androidQaRuntimeEnabled
-        ? 'Android QA'
-        : 'Android adapter pending';
+        : model.runtime == ModelRuntime.sherpaOnnx
+        ? 'Android offline'
+        : 'Other platform';
   }
   return 'iOS ${model.minimumIosMajor}+';
 }
@@ -3112,10 +3156,10 @@ String _platformInstallNote(LocalModel model) {
   if (model.kind == ModelKind.tts) {
     return 'Same model family as desktop Local Whisper TTS. Requires a native Android playback synthesis adapter before it can speak.';
   }
-  if (model.runtime == ModelRuntime.whisperKit && _androidQaRuntimeEnabled) {
-    return 'QA recorder pack used by the Android emulator path. Production Android ASR runtime wiring remains separate from cloud speech services.';
+  if (model.runtime == ModelRuntime.sherpaOnnx) {
+    return model.installNote;
   }
-  return 'Same model family as the desktop engine. Requires a native Android offline ASR adapter before it can transcribe.';
+  return 'Model pack for another Local Whisper runtime. Android transcription uses Sherpa ONNX packs.';
 }
 
 class _InlineNotice extends StatelessWidget {

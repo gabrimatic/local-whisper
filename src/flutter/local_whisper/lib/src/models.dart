@@ -4,7 +4,7 @@ enum RecorderPhase { idle, checking, recording, processing, result, error }
 
 enum ModelKind { transcription, cleanup, tts }
 
-enum ModelRuntime { mlx, coreMl, whisperKit, bundled }
+enum ModelRuntime { mlx, coreMl, whisperKit, sherpaOnnx, bundled }
 
 enum ModelInstallState {
   bundled,
@@ -62,6 +62,10 @@ class NativeSpeechResult {
     required this.duration,
     required this.localeId,
     required this.onDevice,
+    this.engine,
+    this.modelId,
+    this.elapsedMs,
+    this.rtf,
   });
 
   final String transcript;
@@ -69,6 +73,10 @@ class NativeSpeechResult {
   final double duration;
   final String localeId;
   final bool onDevice;
+  final String? engine;
+  final String? modelId;
+  final int? elapsedMs;
+  final double? rtf;
 
   factory NativeSpeechResult.fromJson(Map<Object?, Object?> json) {
     final transcript = json['transcript'] as String? ?? '';
@@ -78,6 +86,10 @@ class NativeSpeechResult {
       duration: (json['duration'] as num?)?.toDouble() ?? 0,
       localeId: json['localeId'] as String? ?? 'en-US',
       onDevice: json['onDevice'] == true,
+      engine: json['engine'] as String?,
+      modelId: json['modelId'] as String?,
+      elapsedMs: (json['elapsedMs'] as num?)?.toInt(),
+      rtf: (json['rtf'] as num?)?.toDouble(),
     );
   }
 
@@ -87,6 +99,10 @@ class NativeSpeechResult {
     double? duration,
     String? localeId,
     bool? onDevice,
+    String? engine,
+    String? modelId,
+    int? elapsedMs,
+    double? rtf,
   }) {
     return NativeSpeechResult(
       transcript: transcript ?? this.transcript,
@@ -94,6 +110,10 @@ class NativeSpeechResult {
       duration: duration ?? this.duration,
       localeId: localeId ?? this.localeId,
       onDevice: onDevice ?? this.onDevice,
+      engine: engine ?? this.engine,
+      modelId: modelId ?? this.modelId,
+      elapsedMs: elapsedMs ?? this.elapsedMs,
+      rtf: rtf ?? this.rtf,
     );
   }
 }

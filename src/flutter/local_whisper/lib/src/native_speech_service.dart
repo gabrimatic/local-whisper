@@ -1,14 +1,20 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 
 import 'models.dart';
+import 'sherpa_speech_service.dart';
 
 class NativeSpeechService {
   static const _method = MethodChannel('local_whisper/speech');
   static const _levels = EventChannel('local_whisper/levels');
 
   Stream<double>? _levelStream;
+  final _sherpa = SherpaSpeechService();
+  String _activeLocale = 'en-US';
+  String _activeModel = '';
+  String _activeModelPath = '';
 
   Stream<double> get levelStream {
     return _levelStream ??= _levels.receiveBroadcastStream().map((event) {
@@ -33,6 +39,9 @@ class NativeSpeechService {
     required String model,
     String? modelPath,
   }) async {
+    _activeLocale = locale;
+    _activeModel = model;
+    _activeModelPath = modelPath ?? '';
     await _method.invokeMethod<void>('start', {
       'locale': locale,
       'model': model,
@@ -42,6 +51,19 @@ class NativeSpeechService {
 
   Future<NativeSpeechResult> stop() async {
     final value = await _method.invokeMapMethod<Object?, Object?>('stop');
+    if (Platform.isAndroid) {
+      final payload = value ?? const {};
+      final audioPath = payload['audioPath'] as String? ?? '';
+      if (audioPath.isNotEmpty) {
+        return _sherpa.transcribeFile(
+          audioPath: audioPath,
+          model: _activeModel,
+          modelPath: _activeModelPath,
+          locale: payload['localeId'] as String? ?? _activeLocale,
+          duration: (payload['duration'] as num?)?.toDouble() ?? 0,
+        );
+      }
+    }
     return NativeSpeechResult.fromJson(value ?? const {});
   }
 
@@ -63,6 +85,15 @@ class NativeSpeechService {
     if (!debugMode) {
       throw UnsupportedError('Debug transcription is unavailable in release.');
     }
+    if (Platform.isAndroid) {
+      return _sherpa.transcribeFile(
+        audioPath: audioPath,
+        model: model,
+        modelPath: modelPath,
+        locale: locale,
+        duration: 0,
+      );
+    }
     final value = await _method.invokeMapMethod<Object?, Object?>(
       'debugTranscribeFile',
       {
@@ -75,5 +106,7 @@ class NativeSpeechService {
     return NativeSpeechResult.fromJson(value ?? const {});
   }
 
-  void dispose() {}
+  void dispose() {
+    _sherpa.dispose();
+  }
 }

@@ -66,11 +66,12 @@ Android should provide the equivalent guided path for enabling the input method:
 - Emit recording levels through the existing `local_whisper/levels` event channel.
 - Android setup/input-method support now exists behind `local_whisper/setup` without changing the shared Flutter setup contract.
 - Reuse `ModelStore` and the same installed-model validation contract where possible.
-- Android records audio locally today and returns seeded/debug transcripts for QA. Production transcription still needs native offline ASR inference: load an installed model pack, run it on-device, and return the real transcript through the existing Dart API. Debug QA can seed the recommended pack with `--dart-define=LOCAL_WHISPER_QA_SEED=true` to exercise the full app and input-method flow without adding any cloud fallback.
+- Android records 16 kHz mono WAV audio locally and returns the file path through the existing Dart API. Flutter then transcribes the file in `lib/src/sherpa_speech_service.dart` with sherpa-onnx. Parakeet-TDT v3 INT8 ONNX is the default Android pack, and Qwen3-ASR 0.6B INT8 ONNX is the broader multilingual pack. Debug QA can still seed the recommended pack with `--dart-define=LOCAL_WHISPER_QA_SEED=true` to exercise the full app and input-method flow without adding any cloud fallback.
 
 ## Current Android Native Surface
 
-- `android/app/src/main/kotlin/info/gabrimatic/localwhisper/MainActivity.kt`: method-channel bridge for microphone status/permission, local MediaRecorder capture, level events, app settings, input-method settings, keyboard status, keyboard verification, and keyboard settings sync.
+- `android/app/src/main/kotlin/info/gabrimatic/localwhisper/MainActivity.kt`: method-channel bridge for microphone status/permission, local `AudioRecord` WAV capture, level events, app settings, input-method settings, keyboard status, keyboard verification, and keyboard settings sync.
+- `lib/src/sherpa_speech_service.dart`: Flutter-side sherpa-onnx transcription runtime for Android model packs.
 - `android/app/src/main/kotlin/info/gabrimatic/localwhisper/LocalWhisperInputMethodService.kt`: native input method with Verify, punctuation, space, new-line, settings, and haptics.
 - `android/app/src/main/AndroidManifest.xml`: declares microphone, haptics, app activity, launcher identity, and input-method service.
 - `android/app/build.gradle.kts`: uses `info.gabrimatic.localwhisper` for both namespace and application ID.
