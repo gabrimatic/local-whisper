@@ -66,7 +66,7 @@ Android should provide the equivalent guided path for enabling the input method:
 - Emit recording levels through the existing `local_whisper/levels` event channel.
 - Android setup/input-method support now exists behind `local_whisper/setup` without changing the shared Flutter setup contract.
 - Reuse `ModelStore` and the same installed-model validation contract where possible.
-- Production Android still needs an Android-native offline ASR runtime mapping before downloaded model families can transcribe. Debug QA can seed the recommended pack with `--dart-define=LOCAL_WHISPER_QA_SEED=true` to exercise the full UI and native local-recording bridge without adding any cloud fallback.
+- Android records audio locally today and returns seeded/debug transcripts for QA. Production transcription still needs native offline ASR inference: load an installed model pack, run it on-device, and return the real transcript through the existing Dart API. Debug QA can seed the recommended pack with `--dart-define=LOCAL_WHISPER_QA_SEED=true` to exercise the full app and input-method flow without adding any cloud fallback.
 
 ## Current Android Native Surface
 

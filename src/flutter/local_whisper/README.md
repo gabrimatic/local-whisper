@@ -2,7 +2,9 @@
 
 Flutter mobile implementation of Local Whisper for iOS and Android.
 
-The app is offline by construction once the selected model pack is installed. Flutter handles the product flow, local history, model management, modes, settings, clipboard output, and deterministic cleanup. Native Swift handles iOS microphone capture through `AVAudioEngine` and local transcription through WhisperKit/Core ML. Android has native method channels for microphone permission/status, local recording, level events, settings intents, keyboard status, and keyboard preference sync, plus a native Local Whisper input method for setup verification. There is no Apple Speech framework path and no cloud fallback.
+Mobile is the app plus the keyboard. Record in the app, keep local model packs and history on the device, and use modes to shape the finished text. The iOS keyboard extension and Android input method bring Local Whisper actions into other text fields.
+
+iOS records with `AVAudioEngine` and transcribes locally with WhisperKit/Core ML. Android records audio locally and owns the native input method and setup path. On Android, the remaining production work is real transcription: load an installed offline ASR pack, run inference on-device, and return the transcript to Flutter. There is no Apple Speech framework path and no cloud fallback.
 
 ## Run
 
@@ -38,12 +40,12 @@ flutter build apk --debug --dart-define=LOCAL_WHISPER_QA_SEED=true
 3. Open the platform settings page for keyboard setup and app permissions when the user asks, then let the user verify the keyboard by switching to Local Whisper Keyboard in the practice field and tapping Verify on the keyboard/input method.
 4. Check the selected local model state before requesting microphone permission.
 5. Start native recording through the platform bridge.
-6. Stop recording and transcribe the file with the selected wired local engine where the production runtime exists.
+6. Stop recording and transcribe the file with the selected wired local engine where that production runtime exists.
 7. Return the raw transcript to Flutter.
 8. Apply local cleanup and the selected dictation mode.
 9. Copy the result, show it in the app, and save searchable local history.
 
-## Model Families
+## Model Packs
 
 - Qwen3-ASR: `mlx-community/Qwen3-ASR-1.7B-bf16` (~3.8 GB snapshot).
 - Parakeet-TDT v3: `mlx-community/parakeet-tdt-0.6b-v3` (~2.3 GB snapshot).
@@ -52,6 +54,8 @@ flutter build apk --debug --dart-define=LOCAL_WHISPER_QA_SEED=true
 - Bundled deterministic cleanup engine.
 
 The setup model step shows the recommended WhisperKit pack inline with install progress. The optional model list opens as an in-place sheet, so first-run setup never detours to the Models tab.
+
+WhisperKit Large v3 is wired for iOS transcription today. Qwen3-ASR, Parakeet-TDT v3, and Kokoro are managed as local packs for native runtimes; they are not hosted APIs.
 
 ## Brand System
 
@@ -75,7 +79,7 @@ The setup model step shows the recommended WhisperKit pack inline with install p
 - Android uses the stable application ID `info.gabrimatic.localwhisper` and the same Local Whisper launcher mark as iOS/macOS.
 - The Android input method exposes Verify, punctuation, space, new-line, settings, and haptics. Add `android.permission.VIBRATE` with the input method so haptics never crash the app.
 - Android debug QA can seed the recommended pack and interaction data with `--dart-define=LOCAL_WHISPER_QA_SEED=true`.
-- Production Android still needs a real offline ASR adapter before downloaded model families can transcribe. Do not add Android cloud speech fallback.
+- Android records audio locally today. The remaining production work is native offline ASR inference: load an installed model pack, transcribe on-device, and return the real transcript to Flutter. Do not add Android cloud speech fallback.
 
 ## Supported Edge Cases
 
