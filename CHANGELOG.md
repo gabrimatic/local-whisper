@@ -24,6 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Tightened privacy wording in the package metadata and macOS onboarding/about panels so setup/model downloads are not implied to be network-free.
 - Aligned the generated default TOML and full configuration reference, including service lifecycle settings, dictation commands, and Qwen3-ASR decoding tunables.
 - Updated CI to Node 24-ready GitHub Actions and added weekly Dependabot coverage for workflow actions.
+- Changed project licensing from MIT to PolyForm Noncommercial 1.0.0, with required notices preserving the Local Whisper name and copyright attribution.
 - Pinned `pydantic` and `pydantic-core` together so Kokoro, misaki, and spaCy cannot install an ABI-mismatched core wheel that prevents TTS model loading.
 
 ## [1.6.1] - 2026-04-20
