@@ -333,17 +333,16 @@ def cmd_start():
 
     # Homebrew: prefer brew services which manages its own plist
     if is_brew:
-        brew_plist = Path.home() / "Library" / "LaunchAgents" / "homebrew.mxcl.local-whisper.plist"
-        if brew_plist.exists():
-            result = subprocess.run(["brew", "services", "start", "local-whisper"], capture_output=True)
-            if result.returncode == 0:
-                print(f"{C_GREEN}Started{C_RESET} (via brew services)")
-            else:
-                print(f"{C_RED}Failed to start via brew services{C_RESET}", file=sys.stderr)
-                stderr = result.stderr.decode().strip() if result.stderr else ""
-                if stderr:
-                    print(f"  {C_DIM}{stderr}{C_RESET}", file=sys.stderr)
-            return
+        result = subprocess.run(["brew", "services", "start", "local-whisper"], capture_output=True)
+        if result.returncode == 0:
+            print(f"{C_GREEN}Started{C_RESET} (via brew services)")
+        else:
+            print(f"{C_RED}Failed to start via brew services{C_RESET}", file=sys.stderr)
+            stderr = result.stderr.decode().strip() if result.stderr else ""
+            if stderr:
+                print(f"  {C_DIM}{stderr}{C_RESET}", file=sys.stderr)
+            sys.exit(1)
+        return
 
     if LAUNCHAGENT_PLIST.exists():
         # Ensure the agent is loaded (idempotent if already loaded)

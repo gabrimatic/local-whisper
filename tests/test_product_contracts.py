@@ -55,6 +55,22 @@ def test_user_facing_privacy_copy_allows_setup_network_access():
         assert "everything runs on your mac" not in content, path
 
 
+def test_recommended_install_path_uses_homebrew_and_guided_setup():
+    """Recommended install copy should lead with one command and finish with wh setup."""
+    readme = _read("README.md")
+    install_doc = _read("docs/installation.md")
+    installer = _read("install.sh")
+    cli = _read("src/whisper_voice/cli/main.py")
+
+    assert "raw.githubusercontent.com/gabrimatic/local-whisper/main/install.sh" in readme
+    assert "brew install gabrimatic/local-whisper/local-whisper" in install_doc
+    assert "wh setup" in install_doc
+    assert "brew install gabrimatic/local-whisper/local-whisper" in installer
+    assert 'elif cmd in ("setup", "install")' in cli
+    combined = "\n".join([readme, install_doc, installer])
+    assert "begin" + "ner" not in combined.lower()
+
+
 def test_configuration_reference_matches_generated_default_config():
     """The full TOML reference should stay aligned with generated config files."""
     from whisper_voice.config.schema import DEFAULT_CONFIG

@@ -1,0 +1,112 @@
+# Installation
+
+Local Whisper is easiest to install with Homebrew. You paste one command, follow the permission prompts, then use the Right Option key to dictate into any Mac app.
+
+Requirements: **Apple Silicon Mac**, macOS with Microphone and Accessibility permission, and enough free disk space for the app plus local models.
+
+## Recommended Setup
+
+Copy this into Terminal:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/gabrimatic/local-whisper/main/install.sh)"
+```
+
+That installer does three things:
+
+| Step | What happens |
+|------|--------------|
+| Homebrew | Installs Homebrew if it is missing, then installs Local Whisper from the Homebrew tap. |
+| Local model | Runs `wh setup`, downloads the default Parakeet-TDT v3 speech model, and creates `~/.whisper/config.toml`. |
+| macOS permissions | Opens or checks Microphone and Accessibility permission so the global hotkey can record from any app. |
+
+After it finishes, try it:
+
+1. Double-tap **Right Option**.
+2. Speak.
+3. Tap **Right Option** again, or press **Space**, to stop.
+4. The text is copied or pasted where you were typing.
+
+## Manual Homebrew Setup
+
+Use this path when you already have Homebrew and prefer to see each command:
+
+```bash
+brew install gabrimatic/local-whisper/local-whisper
+wh setup
+```
+
+`brew install gabrimatic/local-whisper/local-whisper` installs from the Local Whisper tap directly. Homebrew adds the tap automatically.
+
+`wh setup` finishes the app setup: config, default model, macOS permissions, and the background service.
+
+## macOS Permissions
+
+Local Whisper needs two permissions:
+
+| Permission | Why it is needed |
+|------------|------------------|
+| Microphone | Records your voice locally. |
+| Accessibility | Lets the global hotkey work from any app and paste text back where you were typing. |
+
+macOS may list the app as **Python** in permission screens. That is expected because the background service runs through Local Whisper's packaged Python runtime.
+
+If setup finishes with permissions pending, open:
+
+```bash
+open x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility
+```
+
+Then enable **Python** under Accessibility. For Microphone, go to System Settings -> Privacy & Security -> Microphone and enable **Python** there too.
+
+Restart after changing permissions:
+
+```bash
+wh restart
+```
+
+## Source Setup
+
+Use source setup when you want to develop Local Whisper or test unreleased changes:
+
+```bash
+git clone https://github.com/gabrimatic/local-whisper.git
+cd local-whisper
+./setup.sh
+```
+
+The source setup path installs an editable Python package in `.venv`, builds the Swift menu bar app, configures a LaunchAgent, and adds the `wh` alias to your shell profile.
+
+## Updates
+
+Homebrew installs:
+
+```bash
+brew upgrade local-whisper
+wh setup
+```
+
+Source installs:
+
+```bash
+wh update
+```
+
+Run `wh doctor` any time you want a health check.
+
+## Uninstall
+
+Homebrew installs:
+
+```bash
+wh uninstall
+brew uninstall local-whisper
+```
+
+Source installs:
+
+```bash
+wh uninstall
+```
+
+`wh uninstall` removes the background service, config, logs, cached models, and shell alias.

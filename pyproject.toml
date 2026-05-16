@@ -72,6 +72,8 @@ include = ["src/whisper_voice/assets/*.png"]
 include = [
     "/src",
     "/README.md",
+    "/docs",
+    "/install.sh",
     "/setup.sh",
     "/src/whisper_voice/assets/*.png",
 ]

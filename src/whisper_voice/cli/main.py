@@ -26,7 +26,7 @@ from .constants import (
     LOG_FILE,
     get_install_method,
 )
-from .doctor import cmd_doctor, cmd_update
+from .doctor import _update_models, cmd_doctor, cmd_update
 from .editor import cmd_config
 from .history import cmd_export, cmd_stats
 from .lifecycle import (
@@ -68,7 +68,8 @@ def _print_help():
             ("wh export [opts]",   "Export transcription history (md/txt/json)"),
         ]),
         ("Maintenance", [
-            ("wh install",         "Run full setup (deps, models, service)"),
+            ("wh setup",           "Finish first-time setup (models, permissions, service)"),
+            ("wh install",         "Alias for wh setup"),
             ("wh version",         "Show version and install method"),
             ("wh update",          "Update code, deps, models, and restart"),
             ("wh doctor [--fix|--report [PATH]]", "Check system health, auto-repair, or write report"),
@@ -110,15 +111,134 @@ def cmd_log():
 
 def cmd_install():
     """Run the full setup script (deps, venv, models, service, permissions)."""
+    if get_install_method() == INSTALL_BREW:
+        _run_homebrew_setup()
+        return
+
     project_root = Path(__file__).resolve().parents[3]
     setup_script = project_root / "setup.sh"
 
     if not setup_script.exists():
-        print(f"{C_RED}setup.sh not found at {project_root}{C_RESET}")
-        print(f"{C_DIM}Are you running from a git checkout?{C_RESET}")
+        print(f"{C_RED}This install does not include setup.sh.{C_RESET}")
+        print(f"{C_DIM}Install with Homebrew for the guided setup path:{C_RESET}")
+        print(f"{C_BOLD}  brew install gabrimatic/local-whisper/local-whisper{C_RESET}")
+        print(f"{C_BOLD}  wh setup{C_RESET}")
         sys.exit(1)
 
     os.execvp("bash", ["bash", str(setup_script)])
+
+
+def _run_homebrew_setup():
+    """Guided first-time setup for Homebrew installs."""
+    print()
+    print(f"  {C_BOLD}╭────────────────────────────────────────╮{C_RESET}")
+    print(f"  {C_BOLD}│{C_RESET}  {C_CYAN}Local Whisper{C_RESET} · First-time setup     {C_BOLD}│{C_RESET}")
+    print(f"  {C_BOLD}╰────────────────────────────────────────╯{C_RESET}")
+    print()
+    print(f"  {C_DIM}This downloads the default local model, checks permissions,")
+    print(f"  and starts Local Whisper in the background.{C_RESET}")
+    print()
+
+    print(f"  {C_BOLD}1/4  Preparing config{C_RESET}")
+    _ensure_config()
+
+    print()
+    print(f"  {C_BOLD}2/4  Getting the local speech model ready{C_RESET}")
+    _update_models()
+
+    print()
+    print(f"  {C_BOLD}3/4  Checking macOS permissions{C_RESET}")
+    permissions_ok = _request_permissions()
+
+    print()
+    print(f"  {C_BOLD}4/4  Starting Local Whisper{C_RESET}")
+    cmd_start()
+
+    print()
+    if permissions_ok:
+        print(f"  {C_GREEN}{C_BOLD}Setup complete.{C_RESET}")
+    else:
+        print(f"  {C_YELLOW}{C_BOLD}Setup complete, permissions still need attention.{C_RESET}")
+        print(f"  {C_DIM}Grant the missing permission in System Settings, then run: wh restart{C_RESET}")
+    print()
+    print(f"  Try it: {C_BOLD}double-tap Right Option, speak, tap again to stop.{C_RESET}")
+    print(f"  Check health anytime: {C_BOLD}wh doctor{C_RESET}")
+    print()
+
+
+def _ensure_config():
+    config_dir = Path.home() / ".whisper"
+    config_path = config_dir / "config.toml"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    if config_path.exists():
+        print(f"  {C_GREEN}✓{C_RESET}  Config already exists")
+        return
+
+    from whisper_voice.config import DEFAULT_CONFIG
+    config_path.write_text(DEFAULT_CONFIG, encoding="utf-8")
+    print(f"  {C_GREEN}✓{C_RESET}  Config created at ~/.whisper/config.toml")
+
+
+def _request_permissions() -> bool:
+    try:
+        from whisper_voice.utils import (
+            check_accessibility_trusted,
+            check_microphone_permission,
+            request_accessibility_permission,
+        )
+    except Exception as exc:
+        print(f"  {C_YELLOW}⚠{C_RESET}  Could not load permission checks: {exc}")
+        return False
+
+    ax_ok = check_accessibility_trusted()
+    if not ax_ok:
+        request_accessibility_permission()
+
+    mic_ok, _ = check_microphone_permission()
+
+    if ax_ok:
+        print(f"  {C_GREEN}✓{C_RESET}  Accessibility")
+    else:
+        print(f"  {C_YELLOW}⚠{C_RESET}  Accessibility is not granted yet")
+
+    if mic_ok:
+        print(f"  {C_GREEN}✓{C_RESET}  Microphone")
+    else:
+        print(f"  {C_YELLOW}⚠{C_RESET}  Microphone is not granted yet")
+
+    if ax_ok and mic_ok:
+        return True
+
+    print()
+    print(f"  {C_DIM}macOS may list Local Whisper as \"Python\" because the background")
+    print(f"  service runs through the packaged Python runtime.{C_RESET}")
+    if not ax_ok:
+        print(f"  {C_DIM}Accessibility: System Settings -> Privacy & Security -> Accessibility{C_RESET}")
+    if not mic_ok:
+        print(f"  {C_DIM}Microphone: System Settings -> Privacy & Security -> Microphone{C_RESET}")
+
+    if not sys.stdin.isatty():
+        return False
+
+    for _ in range(3):
+        print()
+        try:
+            input("  Press Enter after granting permissions, or Ctrl+C to continue later... ")
+        except KeyboardInterrupt:
+            print()
+            return False
+
+        ax_ok = check_accessibility_trusted()
+        mic_ok, _ = check_microphone_permission()
+        if ax_ok and mic_ok:
+            print(f"  {C_GREEN}✓{C_RESET}  All permissions granted")
+            return True
+        if not ax_ok:
+            print(f"  {C_YELLOW}⚠{C_RESET}  Accessibility still needs to be enabled")
+        if not mic_ok:
+            print(f"  {C_YELLOW}⚠{C_RESET}  Microphone still needs to be enabled")
+
+    return ax_ok and mic_ok
 
 
 def cmd_uninstall():
@@ -282,7 +402,7 @@ def cli_main():
         cmd_export(rest)
     elif cmd == "stats":
         cmd_stats(rest)
-    elif cmd == "install":
+    elif cmd in ("setup", "install"):
         cmd_install()
     elif cmd == "uninstall":
         cmd_uninstall()

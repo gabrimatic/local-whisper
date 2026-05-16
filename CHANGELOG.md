@@ -4,6 +4,18 @@ This changelog tracks notable Local Whisper changes.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- Added a one-command installer (`install.sh`) that installs the Homebrew formula and runs guided first-time setup from Terminal.
+- Added `wh setup` as the first-time setup command for Homebrew installs, covering config creation, model preparation, macOS permissions, and service startup.
+- Added a dedicated installation guide with recommended, manual Homebrew, source, update, permission, and uninstall paths.
+
+### Changed
+
+- Made the README and `setup.sh` setup copy calmer and more direct while keeping the local model, privacy, and permission details explicit.
+
 ## [1.6.4] - 2026-05-12
 
 ### Changed

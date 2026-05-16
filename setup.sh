@@ -99,12 +99,19 @@ echo -e "${BOLD}╭────────────────────�
 echo -e "${BOLD}│${NC}  ${CYAN}Local Whisper${NC} · Setup                 ${BOLD}│${NC}"
 echo -e "${BOLD}│${NC}  ${DIM}Local dictation · Grammar · TTS${NC}        ${BOLD}│${NC}"
 echo -e "${BOLD}╰────────────────────────────────────────╯${NC}"
+echo ""
+echo -e "  ${BOLD}What this does:${NC}"
+echo -e "  ${DIM}1. Installs the local app dependencies.${NC}"
+echo -e "  ${DIM}2. Downloads and warms the default speech model once.${NC}"
+echo -e "  ${DIM}3. Adds the menu bar service and asks for macOS permissions.${NC}"
+echo ""
+echo -e "  ${DIM}After setup, speech processing stays on-device or localhost.${NC}"
 
 # ============================================================================
 # System requirements
 # ============================================================================
 
-log_step "Checking system requirements..."
+log_step "Checking this Mac..."
 
 if [[ "$OSTYPE" != "darwin"* ]]; then
     fail "macOS required. Detected: $OSTYPE"
@@ -169,7 +176,7 @@ log_ok "Python $PYTHON_VERSION ($PYTHON_BIN)"
 # Virtual environment + package install
 # ============================================================================
 
-log_step "Installing local-whisper..."
+log_step "Installing Local Whisper..."
 
 VENV_DIR="$SCRIPT_DIR/.venv"
 
@@ -243,7 +250,7 @@ mkdir -p "$MODEL_DIR"
 # Models
 # ============================================================================
 
-log_step "Downloading models (one-time)..."
+log_step "Getting the local speech model ready..."
 
 # Transcription engine: only prepare the currently-selected one. Users who
 # switch engines later pay the download + warm-up on that switch's first call
@@ -376,7 +383,7 @@ fi
 # Build Swift UI
 # ============================================================================
 
-log_step "Building UI..."
+log_step "Building the menu bar app..."
 
 SWIFT_UI_DIR="$SCRIPT_DIR/LocalWhisperUI"
 SWIFT_UI_DEST="$HOME/.whisper/LocalWhisperUI.app"
@@ -452,7 +459,7 @@ fi
 # LaunchAgent
 # ============================================================================
 
-log_step "Installing service..."
+log_step "Adding the background service..."
 
 # Legacy cleanup
 osascript -e 'tell application "System Events" to delete (login items whose name is "Local Whisper")' 2>/dev/null || true
@@ -494,8 +501,8 @@ log_ok "Service prepared"
 #
 # The permission dialogs will show "Python" as the app name. That's expected.
 
-log_step "Checking permissions..."
-log_info "macOS will show \"Python\" in permission dialogs. That is the correct app."
+log_step "Checking macOS permissions..."
+log_info "macOS may show \"Python\" in permission dialogs. That is the correct background service."
 
 # Request Accessibility (opens System Settings if not granted)
 AX_OK=$("$VENV_DIR/bin/python3" -c "
@@ -526,7 +533,7 @@ if [ "$AX_OK" != "yes" ] || [ "$MIC_OK" != "yes" ]; then
     [ "$MIC_OK" != "yes" ] && log_warn "Microphone: not yet granted"
     echo ""
     log_info "Grant the permissions above in System Settings, then press Enter."
-    log_info "Look for \"Python\" in the permission lists."
+    log_info "Look for \"Python\" in the permission lists; that is Local Whisper's packaged runtime."
     [ "$AX_OK" != "yes" ] && log_info "  → Privacy & Security → Accessibility"
     [ "$MIC_OK" != "yes" ] && log_info "  → Privacy & Security → Microphone"
 
@@ -565,7 +572,7 @@ fi
 # Start the service
 # ============================================================================
 
-log_step "Starting service..."
+log_step "Starting Local Whisper..."
 
 # Rewrite plist with RunAtLoad=true for login auto-start
 write_plist "true"
@@ -615,5 +622,5 @@ echo -e "  ${BOLD}Usage:${NC} Double-tap ${YELLOW}Right Option (⌥)${NC} → sp
 echo -e "  ${BOLD}TTS:${NC}   Select text → ${YELLOW}⌥T${NC} to hear it aloud"
 echo -e "  ${BOLD}CLI:${NC}   ${DIM}wh${NC} (manage service)  ${DIM}wh whisper \"text\"${NC} (speak)"
 echo ""
-echo -e "  ${DIM}Starts automatically at login. Run 'wh' in a new terminal.${NC}"
+echo -e "  ${DIM}Starts automatically at login. Run 'wh doctor' if anything feels off.${NC}"
 echo ""

@@ -55,13 +55,32 @@ Local Whisper is speech-to-text for the places you already type. Start recording
 
 Requirements: **Apple Silicon**, Microphone permission, and Accessibility permission.
 
+Recommended setup:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/gabrimatic/local-whisper/main/install.sh)"
+```
+
+Manual Homebrew setup:
+
+```bash
+brew install gabrimatic/local-whisper/local-whisper
+wh setup
+```
+
+The Homebrew path installs Local Whisper, downloads and warms the default Parakeet model, checks macOS permissions, starts the background service, and keeps updates simple.
+
+Source setup for development:
+
 ```bash
 git clone https://github.com/gabrimatic/local-whisper.git
 cd local-whisper
 ./setup.sh
 ```
 
-The setup script installs dependencies, downloads and warms the active transcription model (Parakeet by default), builds the Swift UI, configures auto-start, and creates the `wh` alias. Other engines download when you switch to them. Kokoro downloads when text-to-speech is enabled.
+The source setup script installs dependencies, downloads and warms the active transcription model (Parakeet by default), builds the Swift UI, configures auto-start, and creates the `wh` alias. Other engines download when you switch to them. Kokoro downloads when text-to-speech is enabled.
+
+Details: [Installation](docs/installation.md).
 
 | Action | Key |
 |--------|-----|
@@ -279,6 +298,7 @@ wh config path      # Print config file path
 wh doctor           # Check system health
 wh doctor --fix     # Auto-repair issues
 wh doctor --report  # Write a shareable diagnostic report
+wh setup            # Finish first-time setup after Homebrew install
 wh log              # Tail service log
 wh update           # Pull, upgrade deps, warm up models, rebuild, restart
 wh version          # Show version
