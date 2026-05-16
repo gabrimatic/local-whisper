@@ -1,0 +1,61 @@
+---
+title: "Architecture"
+description: "Understand the Python service, Swift UI, Flutter apps, native mobile bridges, sockets, and runtime boundaries."
+---
+
+Local Whisper splits runtime, UI, and mobile surfaces while keeping audio and text processing local.
+
+## macOS runtime
+
+```text
+Python LaunchAgent service
+  Recording, transcription, grammar, replacements, clipboard, hotkeys
+  Text-to-speech through Kokoro MLX
+  IPC server at ~/.whisper/ipc.sock
+  Command server at ~/.whisper/cmd.sock
+  Pipeline watchdog and crash recovery
+
+Swift menu bar app
+  Menu bar status and controls
+  Floating overlay
+  Settings window
+  Onboarding and tutorial
+  Sleep/wake observer that asks Python to resync audio
+```
+
+## Python modules
+
+| Area | Modules |
+| --- | --- |
+| Assembly | `app.py` |
+| Recording | `app_recording.py`, `audio.py`, `key_interceptor.py` |
+| Pipeline | `app_pipeline.py`, `transcriber.py`, `grammar.py`, `audio_processor.py` |
+| Commands | `app_commands.py`, `cmd_server.py`, `cli/` |
+| UI IPC | `app_ipc.py`, `ipc_server.py` |
+| Recovery | `app_recovery.py`, `recovery.py`, `long_session.py`, `watchdog.py` |
+| Persistence | `backup.py`, `history_export.py`, `stats.py` |
+| Text tools | `dictation_commands.py`, `shortcuts.py`, `tts_processor.py` |
+| Configuration | `config/schema.py`, `config/loader.py`, `config/mutations.py` |
+
+## Swift modules
+
+| Area | Files |
+| --- | --- |
+| Entry and state | `AppMain.swift`, `AppState.swift`, `IPCClient.swift`, `IPCMessages.swift` |
+| Menu and overlay | `MenuBarView.swift`, `OverlayWindowController.swift`, `OverlayView.swift` |
+| Settings | `SettingsView.swift`, `RecordingPanel.swift`, `TranscriptionPanel.swift`, `GrammarPanel.swift`, `VoicePanel.swift`, `VocabularyPanel.swift`, `OutputPanel.swift`, `ShortcutsPanel.swift`, `ActivityPanel.swift`, `AdvancedPanel.swift`, `AboutView.swift` |
+| Shared UI | `Theme.swift`, `SharedViews.swift`, `Constants.swift`, `EngineSettingsSections.swift` |
+
+## Mobile architecture
+
+Flutter owns app shell, onboarding, history, modes, model management, settings, clipboard flow, and deterministic text cleanup.
+
+Native iOS owns microphone recording, WhisperKit/Core ML bridge, and keyboard extension behavior.
+
+Native Android owns microphone permission/status, WAV recording, app and input-method settings intents, keyboard status, haptics, and input method behavior. Flutter-side sherpa-onnx handles Android transcription after native recording returns the local WAV path.
+
+## Long sessions and recovery
+
+Recordings longer than five minutes use the chunked pipeline. Each VAD segment is transcribed, grammar-corrected, and persisted to `~/.whisper/current_session.jsonl` before the next chunk runs. If a crash happens mid-session, completed chunks are recovered on next boot.
+
+The LaunchAgent uses `KeepAlive={SuccessfulExit=false}` with `ThrottleInterval=10`. Crashes restart. Clean stops do not hot-loop.

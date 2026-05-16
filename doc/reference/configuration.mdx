@@ -1,26 +1,28 @@
-# Configuration
+---
+title: "Configuration reference"
+description: "Review the full Local Whisper TOML schema and defaults."
+---
 
 Local Whisper stores macOS service settings in `~/.whisper/config.toml`.
 
 Change most settings from the app or with `wh config`. Edit the TOML directly when you need exact control.
 
-## Full Reference
+## Full reference
 
 ```toml
 [hotkey]
-key = "alt_r"              # alt_r, alt_l, ctrl_r, ctrl_l, cmd_r, cmd_l,
-                           # shift_r, shift_l, caps_lock, f1-f12
-double_tap_threshold = 0.4 # seconds
+key = "alt_r"
+double_tap_threshold = 0.4
 
 [transcription]
-engine = "parakeet_v3"    # "parakeet_v3" (default), "qwen3_asr", or "whisperkit"
+engine = "parakeet_v3"
 
 [parakeet_v3]
 model = "mlx-community/parakeet-tdt-0.6b-v3"
-timeout = 0                 # 0 = no limit
-chunk_duration = 120.0      # 0 disables chunking
+timeout = 0
+chunk_duration = 120.0
 overlap_duration = 15.0
-decoding = "greedy"         # "greedy" or "beam"
+decoding = "greedy"
 beam_size = 5
 length_penalty = 0.013
 patience = 3.5
@@ -29,16 +31,15 @@ local_attention = false
 local_attention_context_size = 256
 
 [qwen3_asr]
-# Language is auto-detected by Qwen3-ASR.
 model = "mlx-community/Qwen3-ASR-1.7B-bf16"
-timeout = 0                # 0 = no limit
+timeout = 0
 temperature = 0.0
 top_p = 1.0
 top_k = 0
 repetition_context_size = 100
 repetition_penalty = 1.2
-chunk_duration = 1200.0    # max chunk length in seconds
-max_tokens = 0             # 0 = auto from duration
+chunk_duration = 1200.0
+max_tokens = 0
 
 [whisper]
 model = "whisper-large-v3-v20240930"
@@ -51,11 +52,11 @@ compression_ratio_threshold = 2.4
 no_speech_threshold = 0.6
 logprob_threshold = -1.0
 temperature_fallback_count = 5
-prompt_preset = "none"     # "none", "technical", "dictation", or "custom"
-prompt = ""                # used only when prompt_preset = "custom"
+prompt_preset = "none"
+prompt = ""
 
 [grammar]
-backend = "apple_intelligence"  # "apple_intelligence", "ollama", or "lm_studio"
+backend = "apple_intelligence"
 enabled = false
 
 [ollama]
@@ -89,7 +90,7 @@ enabled = false
 # "wanna" = "want to"
 
 [dictation]
-enabled = true             # spoken punctuation and command replacement
+enabled = true
 
 [dictation.commands]
 # "next bullet" = "\n- "
@@ -98,26 +99,26 @@ enabled = true             # spoken punctuation and command replacement
 [audio]
 sample_rate = 16000
 min_duration = 0
-max_duration = 0           # 0 = no limit
-min_rms = 0.005            # silence threshold (0.0-1.0)
+max_duration = 0
+min_rms = 0.005
 vad_enabled = true
 noise_reduction = true
 normalize_audio = true
-pre_buffer = 0.0           # seconds before hotkey (0.0 = disabled)
+pre_buffer = 0.0
 
 [service]
-idle_unload_minutes = 20   # minutes before unloading idle ML models; 0 = never
+idle_unload_minutes = 20
 
 [backup]
 directory = "~/.whisper"
-history_limit = 100        # max entries for text and audio history (1-1000)
+history_limit = 100
 
 [ui]
 show_overlay = true
 overlay_opacity = 0.92
 sounds_enabled = true
 notifications_enabled = false
-auto_paste = false         # paste at cursor, preserving clipboard
+auto_paste = false
 
 [shortcuts]
 enabled = true
@@ -126,11 +127,15 @@ rewrite = "ctrl+shift+r"
 prompt_engineer = "ctrl+shift+p"
 
 [tts]
-enabled = false            # toggle from Settings -> Voice or the menu bar
+enabled = false
 provider = "kokoro"
 speak_shortcut = "alt+t"
 
 [kokoro_tts]
 model = "mlx-community/Kokoro-82M-bf16"
-voice = "af_sky"           # See README for available voices
+voice = "af_sky"
 ```
+
+## Source of truth
+
+The Python schema and defaults live in `src/whisper_voice/config/schema.py`. When a setting changes, update this page and the schema together.

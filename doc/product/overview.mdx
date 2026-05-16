@@ -1,0 +1,37 @@
+---
+title: "Product overview"
+description: "Understand the Local Whisper surfaces, local runtime model, and core user workflows."
+---
+
+Local Whisper is speech-to-text for the places you already type. On macOS, you start recording with a global shortcut, speak, and get cleaned text copied or pasted into the active app. On mobile, you record in the Flutter app and use native keyboards to bring Local Whisper actions into other text fields.
+
+## Core workflows
+
+| Workflow | What happens |
+| --- | --- |
+| macOS dictation | The Python service records microphone audio, processes it, transcribes it with the selected engine, optionally cleans it with the selected grammar backend, applies replacements, and writes the result to clipboard or cursor. |
+| Selected-text transforms | Keyboard shortcuts copy selected text, send it through the grammar backend as proofread, rewrite, or prompt-engineer mode, then return the result to the clipboard. |
+| Text-to-speech | `Option+T` or `wh whisper` sends text to Kokoro MLX, streams audio playback, and lets you cancel with `Option+T`, Esc, or a new recording. |
+| Mobile recording | Flutter records and manages history, modes, model packs, and settings. Native iOS and Android code owns microphone, keyboard, and platform-specific speech bridges. |
+
+## What stays local
+
+Recording, audio cleanup, transcription, replacements, text-to-speech, history, and backups run locally. Grammar correction runs on-device, localhost, or a private LAN server you configure. Setup, model downloads, updates, and repair commands can use the network.
+
+## Data locations
+
+| Data | Location |
+| --- | --- |
+| Runtime config | `~/.whisper/config.toml` |
+| Models | `~/.whisper/models/` |
+| History and audio backups | `~/.whisper/` |
+| IPC socket | `~/.whisper/ipc.sock` |
+| CLI command socket | `~/.whisper/cmd.sock` |
+
+## Design constraints
+
+* Keep transcription local or localhost.
+* Do not add cloud speech fallback.
+* Preserve lazy loading for non-selected engines, grammar backends, and model families.
+* Keep mobile model packs on device after download.
+* Keep macOS UI and Python IPC contracts in sync.

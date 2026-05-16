@@ -102,3 +102,37 @@ jobs:
 
       - name: Check setup.sh syntax
         run: bash -n setup.sh
+
+  docs-checks:
+    name: Mintlify docs checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: doc
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Install Mintlify CLI
+        run: npm install -g mint
+
+      - name: Validate docs
+        run: mint validate
+
+      - name: Check docs links
+        run: mint broken-links
+
+      - name: Export docs
+        run: mint export --output export.zip
+
+      - name: Check GitHub Pages export preparation
+        run: |
+          rm -rf ../_site
+          mkdir -p ../_site
+          unzip -q export.zip -d ../_site
+          node scripts/prepare-github-pages.mjs ../_site "/local-whisper"

@@ -58,7 +58,7 @@ def test_user_facing_privacy_copy_allows_setup_network_access():
 def test_recommended_install_path_uses_homebrew_and_guided_setup():
     """Recommended install copy should lead with one command and finish with wh setup."""
     readme = _read("README.md")
-    install_doc = _read("docs/installation.md")
+    install_doc = _read("doc/reference/installation.mdx")
     installer = _read("install.sh")
     cli = _read("src/whisper_voice/cli/main.py")
 
@@ -71,11 +71,23 @@ def test_recommended_install_path_uses_homebrew_and_guided_setup():
     assert "begin" + "ner" not in combined.lower()
 
 
+def test_legacy_docs_directory_has_moved_to_mintlify_doc():
+    """The old docs directory should be represented only in the Mintlify doc source."""
+    assert not (ROOT / "docs").exists()
+
+    for path in [
+        "doc/reference/configuration.mdx",
+        "doc/reference/installation.mdx",
+        "doc/product/mobile.mdx",
+    ]:
+        assert (ROOT / path).is_file(), path
+
+
 def test_configuration_reference_matches_generated_default_config():
     """The full TOML reference should stay aligned with generated config files."""
     from whisper_voice.config.schema import DEFAULT_CONFIG
 
-    docs = _read("docs/configuration.md")
+    docs = _read("doc/reference/configuration.mdx")
     match = re.search(r"```toml\n(.*?)\n```", docs, re.DOTALL)
     assert match is not None
 

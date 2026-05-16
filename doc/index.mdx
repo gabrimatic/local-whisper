@@ -1,0 +1,51 @@
+---
+title: "Local Whisper documentation"
+description: "Local-first speech-to-text documentation for macOS, iOS, and Android."
+---
+
+Local Whisper is a local-first speech-to-text app and dictation service for macOS, iOS, and Android. You use it where you already type: press a shortcut on macOS, speak, and get cleaned text copied or pasted without sending audio to a hosted speech API.
+
+After setup and model downloads, built-in runtime paths stay on-device or localhost. Grammar cleanup can also use a private LAN LM Studio server when you configure one. Local Whisper has no hosted speech fallback, no account requirement, no telemetry, and no transcript upload.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" href="/quickstart">
+    Install the macOS service, build the UI, and start dictating.
+  </Card>
+  <Card title="Installation" href="/reference/installation">
+    Choose the Homebrew installer, manual Homebrew setup, or source setup path.
+  </Card>
+  <Card title="Mobile apps" href="/product/mobile">
+    Understand the Flutter app, iOS keyboard, Android input method, and model packs.
+  </Card>
+  <Card title="Configuration" href="/reference/configuration">
+    Review the full TOML reference for engines, grammar, audio, output, and TTS.
+  </Card>
+  <Card title="Architecture" href="/reference/architecture">
+    See how Python, Swift, Flutter, native mobile, IPC, and local models fit together.
+  </Card>
+</CardGroup>
+
+## Runtime paths
+
+| Runtime path | Where it runs |
+| --- | --- |
+| Recording and audio cleanup | On device |
+| Parakeet-TDT v3 and Qwen3-ASR transcription | In-process MLX |
+| Android Parakeet-TDT v3 and Qwen3-ASR transcription | On-device sherpa-onnx |
+| WhisperKit transcription | Localhost |
+| Grammar cleanup | Apple Intelligence on-device; Ollama or LM Studio on localhost or private LAN |
+| Text-to-speech | In-process Kokoro MLX |
+| History and backups | `~/.whisper/` |
+
+## Surfaces
+
+| Surface | What it provides |
+| --- | --- |
+| macOS service and CLI | Global dictation hotkey, local transcription, grammar cleanup, replacements, clipboard or paste output, history, TTS, and service control through `wh`. |
+| macOS Swift UI | Menu bar status, engine and grammar switching, overlay states, history, settings, updates, and service controls. |
+| Flutter iOS app and keyboard | Local WhisperKit/Core ML transcription, setup, model packs, local history, modes, punctuation, haptics, and text-field workflows. |
+| Flutter Android app and keyboard | Local WAV recording, sherpa-onnx transcription, model packs, keyboard verification, punctuation, quick insert, and haptics. |
+
+## Project promise
+
+Local Whisper is built for local dictation and local text handling. Setup, model downloads, `wh update`, and repair commands can use the network. Normal audio and transcript processing stays on-device, localhost, or a private LAN server you explicitly configure.

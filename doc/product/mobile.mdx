@@ -1,0 +1,94 @@
+---
+title: "Mobile apps"
+description: "Set up the Flutter iOS and Android app, native keyboards, local history, model packs, and mobile checks."
+---
+
+The Flutter app is Local Whisper's mobile speech-to-text surface. It gives iOS and Android a recorder app, local model packs, searchable history, modes, and a native keyboard for text fields.
+
+Record in the app, keep data on the device, and use modes to shape the finished text. The iOS keyboard extension and Android input method bring Local Whisper actions into other apps.
+
+## Status
+
+| Surface | Status | Notes |
+| --- | --- | --- |
+| iOS app and keyboard | Native transcription wired | Records and transcribes locally with `AVAudioEngine` plus WhisperKit/Core ML. The keyboard extension provides modes, punctuation, haptics, and setup verification. |
+| Android app and keyboard | Native transcription wired | Records local WAV audio, transcribes with sherpa-onnx model packs, and verifies the native input method in a real text field. |
+
+## First-run flow
+
+First launch shows setup before the tab shell:
+
+1. Welcome
+2. Recommended model install
+3. Microphone permission
+4. Keyboard setup and practice
+5. Finish
+
+You can replay setup from Settings. The progress indicator is read-only; navigation happens through explicit actions. Optional model choices open in place.
+
+## Architecture
+
+Flutter owns the app shell, local model-pack management, local history, modes, settings, clipboard output, and deterministic cleanup.
+
+Native iOS uses:
+
+* `ios/Runner/LocalSpeechBridge.swift` for microphone recording and WhisperKit/Core ML.
+* `ios/LocalWhisperKeyboard/` for mode buttons, punctuation, haptics, and Verify.
+
+Native Android uses:
+
+* `MainActivity.kt` for microphone status, 16 kHz mono WAV recording, app settings, input-method settings, keyboard status, and preference sync.
+* `LocalWhisperInputMethodService.kt` for Verify, mode markers, punctuation, Space, New line, Delete, settings, and haptics.
+* `AndroidManifest.xml` for microphone, haptics, app identity, launcher identity, and input-method service.
+* `lib/src/sherpa_speech_service.dart` for Flutter-side sherpa-onnx transcription in a background isolate.
+
+## History and keyboard control
+
+History stays on the device. The History tab shows saved entry count, total recorded duration, and approximate saved-history size. You can export history as Markdown to the clipboard, delete one transcript, or clear all history after confirmation.
+
+The Models tab shows installed pack count and model storage. Installed packs can be removed from the device when you no longer need them.
+
+The iOS keyboard reads haptics and quick-insert settings from the shared app group. The Android keyboard reads the same settings from setup preferences. Turning off quick insert keeps Verify, Space, New line, and Delete available while hiding mode and punctuation shortcuts.
+
+## Model packs
+
+| Pack | Approx size | Notes |
+| --- | ---: | --- |
+| Parakeet-TDT v3 INT8 ONNX | 640 MB | Default Android local ASR pack through sherpa-onnx. |
+| Qwen3-ASR 0.6B INT8 ONNX | 940 MB | Android multilingual ASR pack through sherpa-onnx. |
+| Qwen3-ASR MLX | 3.8 GB | Desktop and iOS-family local ASR pack. |
+| Parakeet-TDT v3 MLX | 2.3 GB | Desktop and iOS-family local ASR pack. |
+| Kokoro-82M TTS | 371 MB | Local text-to-speech model. |
+| WhisperKit Large v3 | 550 MB | Wired iOS Core ML folder. |
+
+Large model-pack installs retry transient manifest and file-download failures. Downloaded files are verified before a pack is marked ready.
+
+## Android notes
+
+Android debug QA can seed the recommended pack and interaction data:
+
+```bash
+flutter run --dart-define=LOCAL_WHISPER_QA_SEED=true
+```
+
+Android requests microphone permission, records local WAV audio, shows levels, stores data locally, verifies the native input method, and transcribes with the installed sherpa-onnx model pack. Debug QA seeds interaction state so emulator passes can exercise the app and keyboard flow without downloading a large model each time.
+
+Large model downloads can fail on flaky networks or temporary Hugging Face edge responses. The app retries transient manifest and file failures automatically. If the install still fails, tap Download again after the connection is stable.
+
+## Checks
+
+Run from `src/flutter/local_whisper`:
+
+```bash
+flutter pub get
+flutter analyze
+flutter test
+flutter build ios --simulator --debug
+flutter build apk --debug
+```
+
+After a WhisperKit pack is installed in the simulator:
+
+```bash
+flutter test integration_test/native_transcription_test.dart -d <simulator-id> --dart-define=LOCAL_WHISPER_MODEL_PATH=<installed-model-folder>
+```

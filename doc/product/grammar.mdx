@@ -1,0 +1,71 @@
+---
+title: "Grammar cleanup"
+description: "Configure Apple Intelligence, Ollama, LM Studio, or transcription-only mode."
+---
+
+Grammar cleanup is optional. Set `grammar.enabled = false` for transcription-only mode, or choose a backend with `grammar.backend`.
+
+Backends are registered in `src/whisper_voice/backends/__init__.py`. Non-selected backends must stay lazy and must not initialize at startup.
+
+## Backends
+
+| Backend | Requirements | Runtime |
+| --- | --- | --- |
+| Apple Intelligence | macOS 26+, Apple Silicon, Apple Intelligence enabled | On-device Foundation Models |
+| Ollama | Ollama installed and running | Localhost at `http://localhost:11434` |
+| LM Studio | Model loaded and local server started | Localhost at `http://localhost:1234` by default; private LAN allowed |
+| Disabled | None | Transcription only |
+
+## Apple Intelligence
+
+Apple Intelligence is the default configured backend, but grammar is disabled by default. Enable it only when macOS and Apple Intelligence support are available.
+
+```toml
+[grammar]
+backend = "apple_intelligence"
+enabled = true
+```
+
+## Ollama
+
+```bash
+ollama pull gemma3:4b-it-qat
+ollama serve
+wh backend ollama
+```
+
+```toml
+[ollama]
+url = "http://localhost:11434/api/generate"
+check_url = "http://localhost:11434/"
+model = "gemma3:4b-it-qat"
+keep_alive = "60m"
+```
+
+## LM Studio
+
+Download and load a model in LM Studio, then start the local server from the Developer tab.
+
+```bash
+curl http://localhost:1234/v1/models
+wh backend lm_studio
+```
+
+```toml
+[lm_studio]
+url = "http://localhost:1234/v1/chat/completions"
+check_url = "http://localhost:1234/"
+model = "google/gemma-3-4b"
+```
+
+## Selected-text modes
+
+When grammar is enabled, Local Whisper can transform selected text:
+
+| Shortcut | Mode |
+| --- | --- |
+| `Ctrl+Shift+G` | Proofread |
+| `Ctrl+Shift+R` | Rewrite |
+| `Ctrl+Shift+P` | Prompt engineer |
+
+Results go to the clipboard.

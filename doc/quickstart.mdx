@@ -1,0 +1,69 @@
+---
+title: "Quickstart"
+description: "Install Local Whisper on macOS, grant permissions, and run your first local dictation."
+---
+
+## Requirements
+
+You need:
+
+* Apple Silicon
+* Microphone permission
+* Accessibility permission
+* Network access during setup for packages and model downloads
+
+## Install
+
+Recommended installer:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/gabrimatic/local-whisper/main/install.sh)"
+```
+
+Manual Homebrew setup:
+
+```bash
+brew install gabrimatic/local-whisper/local-whisper
+wh setup
+```
+
+Source setup for development:
+
+```bash
+git clone https://github.com/gabrimatic/local-whisper.git
+cd local-whisper
+./setup.sh
+```
+
+The Homebrew path installs Local Whisper, downloads and warms the default Parakeet-TDT v3 model, checks macOS permissions, and starts the background service. Source setup is for development and unreleased changes.
+
+See [Installation](/reference/installation) for permissions, updates, and uninstall details.
+
+## Start dictating
+
+| Action | Key |
+| --- | --- |
+| Start recording | Double-tap **Right Option** |
+| Hold to record | Hold **Right Option** past the double-tap threshold |
+| Stop and transcribe | Tap **Right Option** or **Space** |
+| Cancel | **Esc** |
+| Read selected text aloud | **Option+T** |
+| Stop speech | **Option+T** again or **Esc** |
+
+The result goes to the clipboard by default. When `ui.auto_paste` is enabled, Local Whisper pastes at the active cursor while preserving the previous clipboard contents.
+
+## Check the service
+
+```bash
+wh status
+wh doctor
+wh log
+```
+
+Use `wh doctor --fix` only when you want Local Whisper to repair install, permission, or service issues automatically.
+
+## Next steps
+
+* Configure engines and backends in [Configuration](/reference/configuration).
+* Learn the menu bar and overlay in [macOS app](/product/macos).
+* Set up mobile in [Mobile apps](/product/mobile).

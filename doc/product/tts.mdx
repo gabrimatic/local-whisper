@@ -1,0 +1,53 @@
+---
+title: "Text-to-speech"
+description: "Use Kokoro MLX voices from the keyboard shortcut or CLI."
+---
+
+Text-to-speech uses Kokoro-82M through `kokoro-mlx`. It runs in process after install and does not require a local TTS server.
+
+Turn it on from the menu bar or Settings -> Voice. The first enable downloads the Kokoro voice model and uses the spaCy `en_core_web_sm` dictionary plus system `espeak-ng`.
+
+## Use it
+
+| Surface | Command |
+| --- | --- |
+| Keyboard | Select text and press `Option+T`. Press `Option+T` again, Esc, or start recording to stop. |
+| CLI | `wh whisper "text"` |
+| CLI with voice | `wh whisper --voice af_bella "text"` |
+| stdin | `echo "hello" \| wh whisper` |
+
+The overlay shows generation and speaking states.
+
+## Voices
+
+| Voice | ID | Type |
+| --- | --- | --- |
+| Heart | `af_heart` | American female |
+| Bella | `af_bella` | American female |
+| Nova | `af_nova` | American female |
+| Sky | `af_sky` | American female, default |
+| Sarah | `af_sarah` | American female |
+| Nicole | `af_nicole` | American female |
+| Alice | `bf_alice` | British female |
+| Emma | `bf_emma` | British female |
+| Adam | `am_adam` | American male |
+| Echo | `am_echo` | American male |
+| Eric | `am_eric` | American male |
+| Liam | `am_liam` | American male |
+| Daniel | `bm_daniel` | British male |
+| George | `bm_george` | British male |
+
+## Configuration
+
+```toml
+[tts]
+enabled = false
+provider = "kokoro"
+speak_shortcut = "alt+t"
+
+[kokoro_tts]
+model = "mlx-community/Kokoro-82M-bf16"
+voice = "af_sky"
+```
+
+The provider registry lives in `src/whisper_voice/tts/__init__.py`.

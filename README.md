@@ -18,6 +18,8 @@ Double-tap Right Option from any app to start recording, tap Right Option or Spa
 
 Use the menu bar for status, engine and grammar switching, history, settings, updates, and service controls. Parakeet-TDT v3 is the default macOS transcription engine.
 
+Full documentation lives in [doc/index.mdx](doc/index.mdx).
+
 <p align="center">
   <img src="assets/hero.png" width="860" alt="Local Whisper macOS settings with Parakeet-TDT v3 active">
 </p>
@@ -80,7 +82,7 @@ cd local-whisper
 
 The source setup script installs dependencies, downloads and warms the active transcription model (Parakeet by default), builds the Swift UI, configures auto-start, and creates the `wh` alias. Other engines download when you switch to them. Kokoro downloads when text-to-speech is enabled.
 
-Details: [Installation](docs/installation.md).
+Details: [Installation](doc/reference/installation.mdx).
 
 | Action | Key |
 |--------|-----|
@@ -383,7 +385,7 @@ Common fields:
 | `[ui]` | Overlay, sounds, notifications, and auto-paste |
 | `[tts]` | Text-to-speech toggle and shortcut |
 
-See [docs/configuration.md](docs/configuration.md) for the full TOML reference.
+See [doc/reference/configuration.mdx](doc/reference/configuration.mdx) for the full TOML reference.
 
 ---
 
@@ -576,7 +578,7 @@ The Flutter app lives in `src/flutter/local_whisper`.
 | Flutter iOS app | Native transcription wired | Uses `AVAudioEngine` plus WhisperKit/Core ML through the native Swift bridge. |
 | Flutter Android app + keyboard | Native transcription wired | Uses local WAV recording plus sherpa-onnx. Parakeet-TDT v3 INT8 ONNX is the default Android model, with Qwen3-ASR 0.6B INT8 ONNX available for broader language coverage. |
 
-See [docs/mobile.md](docs/mobile.md) for setup flow, keyboard behavior, model packs, Android notes, and mobile checks.
+See [doc/product/mobile.mdx](doc/product/mobile.mdx) for setup flow, keyboard behavior, model packs, Android notes, and mobile checks.
 
 ### Adding an Engine or Grammar Backend
 

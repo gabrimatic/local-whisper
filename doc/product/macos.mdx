@@ -1,0 +1,61 @@
+---
+title: "macOS app"
+description: "Use the global dictation service, menu bar app, overlay, settings, shortcuts, and history on macOS."
+---
+
+The macOS runtime has two parts:
+
+* Python owns capture, transcription, grammar cleanup, replacements, clipboard and paste output, history, sockets, LaunchAgent lifecycle, and CLI commands.
+* Swift owns the visible menu bar app, overlay, settings, onboarding, and IPC rendering.
+
+## Hotkeys
+
+| Shortcut | Action |
+| --- | --- |
+| Double-tap **Right Option** | Start recording |
+| Hold **Right Option** | Hold-to-record after the double-tap threshold |
+| Tap **Right Option** or **Space** | Stop and transcribe |
+| **Esc** | Cancel recording or stop speech |
+| **Option+T** | Read selected text aloud |
+| **Ctrl+Shift+G** | Proofread selected text |
+| **Ctrl+Shift+R** | Rewrite selected text |
+| **Ctrl+Shift+P** | Optimize selected text as an LLM prompt |
+
+Text-transform shortcuts require grammar correction to be enabled with a working backend.
+
+## Menu bar
+
+The menu bar shows service state and exposes:
+
+| Item | Purpose |
+| --- | --- |
+| Status | Current state, active engine, and backend subtitle |
+| Engine | Switch transcription engine in place |
+| Grammar | Switch grammar backend in place |
+| Replacements | Toggle replacements and show rule count |
+| Retry Last / Copy Last | Re-transcribe or re-copy |
+| Transcriptions | Recent entries, click to copy |
+| Recordings | Audio files, click to reveal in Finder |
+| Settings | Full sidebar settings window |
+| Service | Restart, check for updates, and open logs |
+
+## Settings panels
+
+| Panel | Covers |
+| --- | --- |
+| Recording | Trigger key, double-tap window, audio cleanup, and duration limits |
+| Transcription | Engine picker and per-engine sampling or decoding parameters |
+| Grammar | Backend picker and per-backend connection and limits |
+| Voice | Text-to-speech voice, shortcut, and dictation command help |
+| Vocabulary | Searchable replacement editor with import and export |
+| Output | Overlay, sounds, notifications, paste-at-cursor, and history limit |
+| Shortcuts | Proofread, rewrite, prompt-engineer bindings, and cheatsheet |
+| Activity | Sessions, words, 30-day chart, top words, and top replacement triggers |
+| Advanced | Storage paths, model idle unload, service log, doctor, restart, and update |
+| About | Version, credits, and replay tutorial |
+
+Settings save to `~/.whisper/config.toml`. Fields that require restart warn and offer immediate restart.
+
+## Overlay states
+
+The floating overlay shows recording duration, waveform, processing progress, copied or pasted result, errors, and speaking state. Python publishes state snapshots over IPC. Swift drops stalled IPC consumers instead of blocking the transcription pipeline.

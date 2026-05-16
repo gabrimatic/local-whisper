@@ -1,0 +1,46 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Local Whisper",
+  "favicon": "/favicon.svg",
+  "colors": {
+    "primary": "#2BAE9E",
+    "light": "#EAF8F5",
+    "dark": "#101820"
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Start",
+        "pages": [
+          "index",
+          "quickstart",
+          "reference/installation",
+          "cli",
+          "troubleshooting"
+        ]
+      },
+      {
+        "group": "Product",
+        "pages": [
+          "product/overview",
+          "product/macos",
+          "product/mobile",
+          "product/engines",
+          "product/grammar",
+          "product/tts"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/configuration",
+          "reference/architecture",
+          "reference/security",
+          "reference/testing",
+          "reference/releasing"
+        ]
+      }
+    ]
+  }
+}

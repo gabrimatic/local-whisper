@@ -56,3 +56,7 @@ xcuserdata/
 .reviews/
 .review/
 .scratchpad/
+
+# Documentation builds
+doc/export.zip
+_site/

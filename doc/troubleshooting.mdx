@@ -1,0 +1,84 @@
+---
+title: "Troubleshooting"
+description: "Fix common setup, permission, engine, overlay, and local backend issues."
+---
+
+## This process is not trusted
+
+Grant Accessibility permission to the `wh` process, not only to your terminal app. System Settings opens automatically on first run.
+
+If it does not open:
+
+```bash
+open x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility
+```
+
+Enable `wh`, then restart:
+
+```bash
+wh restart
+```
+
+## Double-tap does not start recording
+
+Tap Right Option twice within the configured threshold. The default is `0.4` seconds.
+
+To change it, edit `hotkey.double_tap_threshold` in `~/.whisper/config.toml` or use the Recording settings panel.
+
+## Apple Intelligence grammar does not work
+
+Verify:
+
+1. macOS 26 or later
+2. Apple Silicon
+3. Apple Intelligence enabled in System Settings
+
+If any requirement is missing, use Ollama, LM Studio, or disabled grammar mode.
+
+## Ollama grammar does not work
+
+Verify:
+
+```bash
+ollama pull gemma3:4b-it-qat
+ollama serve
+curl http://localhost:11434/
+```
+
+Then choose Ollama from Settings, the menu bar, or `wh backend ollama`.
+
+## LM Studio grammar does not work
+
+Verify:
+
+1. LM Studio is installed.
+2. A model is downloaded and loaded.
+3. The local server is started from the Developer tab.
+4. The API responds:
+
+```bash
+curl http://localhost:1234/v1/models
+```
+
+Loading a model is not enough. The local server must be running.
+
+## First transcription is slow
+
+Fresh setup downloads and warms the active engine. Later runs load cached models from disk.
+
+Qwen3-ASR downloads when you switch to it. WhisperKit manages its own model folder. Kokoro downloads only after text-to-speech is enabled.
+
+## Empty transcription
+
+Check microphone permission, input-device selection, and speech level. If the first recording after sleep, wake, or long idle is empty, try once more. Local Whisper resets stale macOS input streams when it sees all-zero audio or a PortAudio input error.
+
+## Overlay is not visible
+
+Check:
+
+```toml
+[ui]
+show_overlay = true
+```
+
+Fullscreen spaces and display changes can affect where the overlay appears. Restarting the service resyncs the Swift UI and Python service state.

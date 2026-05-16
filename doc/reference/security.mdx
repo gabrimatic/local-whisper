@@ -1,0 +1,54 @@
+---
+title: "Privacy and security"
+description: "Understand Local Whisper privacy boundaries, permissions, trust boundaries, and vulnerability reporting."
+---
+
+Privacy is a core constraint. Local Whisper does not send audio or transcript text to a hosted speech API.
+
+## Runtime boundary
+
+| Component | Runs at |
+| --- | --- |
+| Parakeet-TDT v3 | In-process MLX |
+| Qwen3-ASR | In-process MLX |
+| Kokoro TTS | In-process MLX |
+| WhisperKit | `localhost:50060` |
+| Apple Intelligence | On-device |
+| Ollama | `localhost:11434` |
+| LM Studio | `localhost:1234` by default; private LAN allowed |
+| History, config, backups | Local filesystem under `~/.whisper/` |
+
+Setup, model downloads, `wh update`, and `wh doctor --fix` can use the network to install packages, fetch models, or update the checkout.
+
+## Permissions
+
+| Permission | Why | Scope |
+| --- | --- | --- |
+| Microphone | Record voice for transcription | Active during recording |
+| Accessibility | Detect global hotkey and text shortcuts | Monitors key events for configured shortcuts |
+
+The app does not request contacts, location, camera, or analytics permissions.
+
+## Audio lifecycle
+
+1. Local Whisper records a temporary WAV file under `~/.whisper/`.
+2. The selected local engine transcribes the audio.
+3. Grammar text is sent only to the selected local, on-device, localhost, or private LAN backend when grammar is enabled.
+4. The result is copied to the clipboard or pasted at the cursor.
+5. Audio is retained under `~/.whisper/` for backup according to history settings.
+
+## Vulnerability reporting
+
+Report vulnerabilities privately through GitHub private vulnerability reporting:
+
+```text
+https://github.com/gabrimatic/local-whisper/security/advisories/new
+```
+
+Do not open public issues for security vulnerabilities. Include reproduction steps, demonstrated impact, and a suggested fix when available.
+
+Out of scope:
+
+* Issues requiring physical access to the machine
+* Issues requiring the user to grant Accessibility or Microphone permission to a malicious process
+* Prompt injection via grammar backend responses, because Local Whisper copies text and does not execute it

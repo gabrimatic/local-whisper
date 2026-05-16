@@ -1,0 +1,89 @@
+---
+title: "CLI"
+description: "Use the wh command to manage the service, switch engines, transcribe files, speak text, and export history."
+---
+
+The `wh` command controls the Local Whisper service and exposes local utilities for recording, transcription, text-to-speech, history, diagnostics, updates, and configuration.
+
+## Service lifecycle
+
+```bash
+wh                  # Status and help
+wh status           # Service status, PID, grammar backend, uptime, and recovery state
+wh start            # Launch the service
+wh stop             # Stop the service
+wh restart          # Restart and rebuild Swift UI if sources changed
+wh build            # Rebuild Swift UI app
+wh log              # Tail service log
+wh version          # Show version
+wh uninstall        # Remove Local Whisper
+```
+
+## Engines and grammar
+
+```bash
+wh engine                 # Show current engine and list available engines
+wh engine parakeet_v3     # Switch to Parakeet-TDT v3
+wh engine qwen3_asr       # Switch to Qwen3-ASR
+wh engine whisperkit      # Switch to WhisperKit
+
+wh backend                # Show current grammar backend and list available backends
+wh backend apple_intelligence
+wh backend ollama
+wh backend lm_studio
+```
+
+The CLI switch restarts the service. The macOS menu bar can switch engines and grammar backends in place.
+
+## Recording and transcription
+
+```bash
+wh listen                 # Record until silence, then print transcription
+wh listen 30              # Record up to 30 seconds
+wh listen --raw           # Raw transcription, no grammar
+
+wh transcribe recording.wav
+wh transcribe --raw audio.wav
+```
+
+## Text-to-speech
+
+```bash
+wh whisper "hello"
+wh whisper --voice af_bella "hello"
+echo "hello" | wh whisper
+```
+
+Text-to-speech uses Kokoro MLX in process after the model is installed. No local TTS server is required.
+
+## Replacements
+
+```bash
+wh replace
+wh replace add "gonna" "going to"
+wh replace remove "gonna"
+wh replace on
+wh replace off
+wh replace import rules.csv
+```
+
+Imports accept CSV, TSV, TOML-style `"spoken" = "replacement"`, or arrow-style `spoken -> replacement` files.
+
+## History and diagnostics
+
+```bash
+wh stats
+wh export
+wh export --format json --out ~/Downloads/history.json
+wh export --format txt --limit 50
+
+wh config
+wh config edit
+wh config path
+wh doctor
+wh doctor --fix
+wh doctor --report
+wh update
+```
+
+Diagnostic reports redact local transcript and config contents. They are designed to be safe to include in private support or issue reports.

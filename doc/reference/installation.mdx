@@ -1,10 +1,17 @@
-# Installation
+---
+title: "Installation"
+description: "Install Local Whisper with Homebrew, grant macOS permissions, update, or uninstall."
+---
 
 Local Whisper is easiest to install with Homebrew. You paste one command, follow the permission prompts, then use the Right Option key to dictate into any Mac app.
 
-Requirements: **Apple Silicon Mac**, macOS with Microphone and Accessibility permission, and enough free disk space for the app plus local models.
+Requirements:
 
-## Recommended Setup
+* Apple Silicon Mac
+* macOS with Microphone and Accessibility permission
+* Enough free disk space for the app plus local models
+
+## Recommended setup
 
 Copy this into Terminal:
 
@@ -15,19 +22,19 @@ Copy this into Terminal:
 That installer does three things:
 
 | Step | What happens |
-|------|--------------|
+| --- | --- |
 | Homebrew | Installs Homebrew if it is missing, then installs Local Whisper from the Homebrew tap. |
 | Local model | Runs `wh setup`, downloads the default Parakeet-TDT v3 speech model, and creates `~/.whisper/config.toml`. |
 | macOS permissions | Opens or checks Microphone and Accessibility permission so the global hotkey can record from any app. |
 
-After it finishes, try it:
+After it finishes:
 
 1. Double-tap **Right Option**.
 2. Speak.
 3. Tap **Right Option** again, or press **Space**, to stop.
 4. The text is copied or pasted where you were typing.
 
-## Manual Homebrew Setup
+## Manual Homebrew setup
 
 Use this path when you already have Homebrew and prefer to see each command:
 
@@ -40,12 +47,12 @@ wh setup
 
 `wh setup` finishes the app setup: config, default model, macOS permissions, and the background service.
 
-## macOS Permissions
+## macOS permissions
 
 Local Whisper needs two permissions:
 
 | Permission | Why it is needed |
-|------------|------------------|
+| --- | --- |
 | Microphone | Records your voice locally. |
 | Accessibility | Lets the global hotkey work from any app and paste text back where you were typing. |
 
@@ -65,7 +72,7 @@ Restart after changing permissions:
 wh restart
 ```
 
-## Source Setup
+## Source setup
 
 Use source setup when you want to develop Local Whisper or test unreleased changes:
 

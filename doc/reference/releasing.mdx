@@ -1,0 +1,33 @@
+---
+title: "Releasing"
+description: "Understand the Local Whisper release flow, release script, and publish checks."
+---
+
+Local Whisper's release path is direct to `main`.
+
+## Release script
+
+```bash
+./scripts/release.sh <version>
+```
+
+The script bumps version metadata, updates release files, runs checks, commits and tags the release, pushes `main`, creates the GitHub release, and updates the Homebrew tap at `../homebrew-local-whisper`.
+
+## Before release
+
+Verify the relevant surfaces:
+
+* Python tests for service and CLI changes
+* Swift build for macOS UI changes
+* Flutter analyze, tests, and platform builds for mobile changes
+* Manual `wh` smoke checks for runtime behavior
+* Mintlify validation for documentation changes
+* Public text for privacy accuracy and artifact identity hygiene
+
+## Changelog
+
+Update `CHANGELOG.md` for user-visible changes. Keep entries concrete and grouped under Added, Changed, Fixed, or Removed where useful.
+
+## Documentation
+
+Update docs in the same change as behavior changes. Source-of-truth docs live in `doc/`.

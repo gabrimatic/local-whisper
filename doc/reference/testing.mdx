@@ -1,0 +1,76 @@
+---
+title: "Testing"
+description: "Run Python, Swift, Flutter, Mintlify, and manual smoke checks for Local Whisper."
+---
+
+Use targeted checks for small changes and broader checks before shipping cross-surface work.
+
+## Python
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+pytest tests/
+```
+
+Focused examples:
+
+```bash
+pytest tests/test_config.py tests/test_cli_lifecycle.py
+pytest tests/test_flow.py -v
+pytest -m integration -v
+```
+
+`tests/test_flow.py` and integration tests can require live transcription and grammar services.
+
+## Swift
+
+```bash
+cd LocalWhisperUI
+swift build -c release
+```
+
+Run this after Swift UI edits and whenever IPC message contracts change.
+
+## Flutter
+
+```bash
+cd src/flutter/local_whisper
+flutter pub get
+flutter analyze
+flutter test
+flutter build ios --simulator --debug
+flutter build apk --debug
+```
+
+After a WhisperKit pack is installed in a simulator:
+
+```bash
+flutter test integration_test/native_transcription_test.dart -d <simulator-id> --dart-define=LOCAL_WHISPER_MODEL_PATH=<installed-model-folder>
+```
+
+## Documentation
+
+Run from `doc/`:
+
+```bash
+mint validate
+mint broken-links
+mint export --output export.zip
+mint dev --no-open --port 3333
+```
+
+The docs source is `doc/`. Keep Mintlify pages, assets, snippets, and configuration there.
+
+## Manual smoke checks
+
+1. `wh status`
+2. `wh start`
+3. Double-tap Right Option to record.
+4. Tap Right Option or Space to stop.
+5. Press Esc to cancel when needed.
+6. Verify clipboard or paste behavior.
+7. Verify overlay states.
+8. Verify menu bar state.
+9. Verify selected-text shortcuts when those surfaces change.

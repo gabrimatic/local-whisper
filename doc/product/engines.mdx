@@ -1,0 +1,60 @@
+---
+title: "Transcription engines"
+description: "Choose and configure Parakeet-TDT v3, Qwen3-ASR, or WhisperKit."
+---
+
+Transcription engines are selected by `transcription.engine` in `~/.whisper/config.toml`, the macOS Settings app, the menu bar, or `wh engine <name>`.
+
+Engines are registered in `src/whisper_voice/engines/__init__.py`. Non-selected engines must stay lazy and must not load weights at startup.
+
+## Parakeet-TDT v3
+
+Parakeet-TDT v3 is the default. It runs in-process through MLX, uses the `mlx-community/parakeet-tdt-0.6b-v3` checkpoint, supports English plus 24 European languages, and handles long audio with overlapping chunks.
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `model` | `mlx-community/parakeet-tdt-0.6b-v3` | Downloaded by setup for fresh installs. |
+| `timeout` | `0` | No limit. |
+| `chunk_duration` | `120.0` | Seconds per chunk. `0` disables chunking. |
+| `overlap_duration` | `15.0` | Overlap between chunks. |
+| `decoding` | `greedy` | Use `beam` for a small quality bump at higher cost. |
+| `beam_size` | `5` | Beam-only. |
+| `local_attention` | `false` | Reduces peak RAM for unchunked long audio. |
+
+## Qwen3-ASR
+
+Qwen3-ASR runs in-process through MLX. It uses model-side language detection and supports long audio through a large internal chunk duration.
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `model` | `mlx-community/Qwen3-ASR-1.7B-bf16` | Downloaded when selected. |
+| `timeout` | `0` | No limit. |
+| `temperature` | `0.0` | Deterministic decode. |
+| `repetition_penalty` | `1.2` | Suppresses repetition loops. |
+| `chunk_duration` | `1200.0` | Max chunk length in seconds. |
+| `max_tokens` | `0` | Auto-scale from duration. |
+
+## WhisperKit
+
+WhisperKit uses a local server at `localhost:50060`.
+
+Install it separately:
+
+```bash
+brew install whisperkit-cli
+wh engine whisperkit
+```
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `model` | `whisper-large-v3-v20240930` | Accuracy-focused default. |
+| `language` | `auto` | Auto-detect unless set. |
+| `url` | `http://localhost:50060/v1/audio/transcriptions` | Local transcription endpoint. |
+| `check_url` | `http://localhost:50060/` | Health check. |
+
+## Adding an engine
+
+1. Implement `TranscriptionEngine` in `src/whisper_voice/engines/`.
+2. Add an `ENGINE_REGISTRY` entry in `src/whisper_voice/engines/__init__.py`.
+3. Add config schema/defaults if needed.
+4. Verify menu bar, CLI, Settings, startup, and lazy loading.
