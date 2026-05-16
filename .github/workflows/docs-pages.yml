@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "doc/**"
+      - "install.sh"
       - ".github/workflows/docs-pages.yml"
   workflow_dispatch:
 
@@ -51,6 +52,7 @@ jobs:
           mint export --output ../_site/local-whisper-docs.zip
           unzip -q ../_site/local-whisper-docs.zip -d ../_site
           rm ../_site/local-whisper-docs.zip
+          cp ../install.sh ../_site/install.sh
 
       - name: Prepare project Pages paths
         run: node doc/scripts/prepare-github-pages.mjs _site "/${{ github.event.repository.name }}"

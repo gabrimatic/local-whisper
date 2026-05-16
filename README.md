@@ -60,7 +60,7 @@ Requirements: **Apple Silicon**, Microphone permission, and Accessibility permis
 Recommended setup:
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/gabrimatic/local-whisper/main/install.sh)"
+curl -fsSL https://gabrimatic.github.io/local-whisper/install.sh | bash
 ```
 
 Manual Homebrew setup:

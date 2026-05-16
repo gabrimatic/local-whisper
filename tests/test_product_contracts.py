@@ -62,7 +62,10 @@ def test_recommended_install_path_uses_homebrew_and_guided_setup():
     installer = _read("install.sh")
     cli = _read("src/whisper_voice/cli/main.py")
 
-    assert "raw.githubusercontent.com/gabrimatic/local-whisper/main/install.sh" in readme
+    assert "https://gabrimatic.github.io/local-whisper/install.sh" in readme
+    assert "https://gabrimatic.github.io/local-whisper/install.sh" in install_doc
+    assert "raw.githubusercontent.com/gabrimatic/local-whisper/main/install.sh" not in readme
+    assert "raw.githubusercontent.com/gabrimatic/local-whisper/main/install.sh" not in install_doc
     assert "brew install gabrimatic/local-whisper/local-whisper" in install_doc
     assert "wh setup" in install_doc
     assert "brew install gabrimatic/local-whisper/local-whisper" in installer
@@ -102,10 +105,12 @@ def test_github_pages_auto_deploys_mintlify_doc_updates():
     assert "push:" in workflow
     assert "branches: [main]" in workflow
     assert '"doc/**"' in workflow
+    assert '"install.sh"' in workflow
     assert '".github/workflows/docs-pages.yml"' in workflow
     assert "pages: write" in workflow
     assert "id-token: write" in workflow
     assert "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true" in workflow
+    assert "cp ../install.sh ../_site/install.sh" in workflow
     assert "Deploy GitHub Pages" in workflow
     assert "actions/deploy-pages@v4" in workflow
 

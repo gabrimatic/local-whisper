@@ -41,8 +41,34 @@ function rewrite(text) {
   // GitHub Pages is static-only. Mintlify's export includes pre-rendered HTML,
   // but its runtime expects local server-only props routes that Pages cannot serve.
   const withoutRuntimeScripts = text.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
+  const withStaticThemeToggle = withoutRuntimeScripts.replace(
+    "</body>",
+    `<script data-local-whisper-static-theme>
+(function () {
+  var key = "local-whisper-docs-theme";
+  function applyTheme(theme) {
+    var isDark = theme === "dark";
+    document.documentElement.classList.toggle("dark", isDark);
+    document.documentElement.classList.toggle("light", !isDark);
+    document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+    try { localStorage.setItem(key, theme); } catch (_) {}
+  }
+  try {
+    var saved = localStorage.getItem(key);
+    if (saved === "light" || saved === "dark") applyTheme(saved);
+  } catch (_) {}
+  document.addEventListener("click", function (event) {
+    var target = event.target.closest && event.target.closest('button[aria-label="Toggle dark mode"]');
+    if (!target) return;
+    event.preventDefault();
+    event.stopPropagation();
+    applyTheme(document.documentElement.classList.contains("dark") ? "light" : "dark");
+  }, true);
+})();
+</script></body>`
+  );
 
-  return withoutRuntimeScripts
+  return withStaticThemeToggle
     .replaceAll('href="/', `href="${basePath}/`)
     .replaceAll('src="/', `src="${basePath}/`)
     .replaceAll('content="/', `content="${basePath}/`)
