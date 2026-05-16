@@ -83,6 +83,21 @@ def test_legacy_docs_directory_has_moved_to_mintlify_doc():
         assert (ROOT / path).is_file(), path
 
 
+def test_github_pages_auto_deploys_mintlify_doc_updates():
+    """App docs pushes to main should automatically publish the Mintlify export to Pages."""
+    workflow = _read(".github/workflows/docs-pages.yml")
+
+    assert "push:" in workflow
+    assert "branches: [main]" in workflow
+    assert '"doc/**"' in workflow
+    assert '".github/workflows/docs-pages.yml"' in workflow
+    assert "pages: write" in workflow
+    assert "id-token: write" in workflow
+    assert "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true" in workflow
+    assert "Deploy GitHub Pages" in workflow
+    assert "actions/deploy-pages@v4" in workflow
+
+
 def test_configuration_reference_matches_generated_default_config():
     """The full TOML reference should stay aligned with generated config files."""
     from whisper_voice.config.schema import DEFAULT_CONFIG
