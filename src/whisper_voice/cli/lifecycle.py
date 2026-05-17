@@ -52,6 +52,10 @@ def _find_pid() -> Optional[int]:
     return pids[0] if pids else None
 
 
+def _is_service_command(command: str) -> bool:
+    return "local-whisper" in command and (" wh _run" in command or "/wh _run" in command)
+
+
 def _find_pids() -> list[int]:
     """Return same-user Local Whisper service PIDs, excluding this CLI process."""
     my_pid = os.getpid()
@@ -78,7 +82,7 @@ def _find_pids() -> list[int]:
         command = parts[2]
         if pid == my_pid or process_uid != uid:
             continue
-        if " wh _run" in command and "local-whisper" in command:
+        if _is_service_command(command):
             pids.append(pid)
     return pids
 

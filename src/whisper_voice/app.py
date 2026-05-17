@@ -560,7 +560,7 @@ def _service_process_pids() -> list[int]:
         command = parts[2]
         if pid == current_pid or process_uid != uid:
             continue
-        if " wh _run" in command and "local-whisper" in command:
+        if "local-whisper" in command and (" wh _run" in command or "/wh _run" in command):
             pids.append(pid)
     return pids
 

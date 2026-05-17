@@ -4,6 +4,13 @@ This changelog tracks notable Local Whisper changes.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- Kept Homebrew self-updates from deleting the running Cellar before the updater finishes, then prepared models through the newly linked `wh` binary.
+- Fixed Homebrew service PID detection for `/opt/homebrew/opt/local-whisper/bin/wh _run` launch paths so `wh status` and duplicate cleanup see the real process.
+
 ## [1.6.6] - 2026-05-17
 
 ### Fixed

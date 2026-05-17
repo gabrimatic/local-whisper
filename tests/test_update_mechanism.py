@@ -13,16 +13,20 @@ def _ok(stdout="", stderr=""):
 
 def test_homebrew_update_refreshes_upgrades_models_and_restarts(monkeypatch):
     calls = []
+    envs = []
     statuses = []
 
     def fake_run(cmd, *args, **kwargs):
         calls.append(cmd)
+        envs.append(kwargs.get("env"))
+        if cmd == ["/opt/homebrew/bin/brew", "--prefix", doctor.FORMULA_NAME]:
+            return _ok(stdout="/opt/homebrew/opt/local-whisper\n")
         return _ok()
 
     monkeypatch.setattr(doctor, "get_install_method", lambda: doctor.INSTALL_BREW)
     monkeypatch.setattr(doctor.shutil, "which", lambda name: f"/opt/homebrew/bin/{name}" if name == "brew" else None)
+    monkeypatch.setattr(doctor.Path, "exists", lambda self: True)
     monkeypatch.setattr(doctor.subprocess, "run", fake_run)
-    monkeypatch.setattr(doctor, "_update_models", lambda required=False: required)
     monkeypatch.setattr(doctor, "_wait_for_service_ready", lambda: True)
 
     assert doctor.cmd_update(status_callback=lambda phase, text: statuses.append((phase, text)))
@@ -30,8 +34,11 @@ def test_homebrew_update_refreshes_upgrades_models_and_restarts(monkeypatch):
     assert calls == [
         ["/opt/homebrew/bin/brew", "update"],
         ["/opt/homebrew/bin/brew", "upgrade", doctor.FORMULA_NAME],
-        ["/opt/homebrew/bin/brew", "services", "restart", "local-whisper"],
+        ["/opt/homebrew/bin/brew", "--prefix", doctor.FORMULA_NAME],
+        ["/opt/homebrew/opt/local-whisper/bin/wh", "_prepare_models"],
+        ["/opt/homebrew/bin/brew", "services", "restart", doctor.FORMULA_NAME],
     ]
+    assert all(env is None or env.get("HOMEBREW_NO_INSTALL_CLEANUP") == "1" for env in envs)
     assert statuses[-1] == ("done", "Update complete")
 
 
@@ -76,12 +83,16 @@ def test_update_fails_before_restart_when_active_model_cannot_prepare(monkeypatc
 
     def fake_run(cmd, *args, **kwargs):
         calls.append(cmd)
+        if cmd == ["/opt/homebrew/bin/brew", "--prefix", doctor.FORMULA_NAME]:
+            return _ok(stdout="/opt/homebrew/opt/local-whisper\n")
+        if cmd == ["/opt/homebrew/opt/local-whisper/bin/wh", "_prepare_models"]:
+            return SimpleNamespace(returncode=1, stdout="", stderr="model missing")
         return _ok()
 
     monkeypatch.setattr(doctor, "get_install_method", lambda: doctor.INSTALL_BREW)
     monkeypatch.setattr(doctor.shutil, "which", lambda name: f"/opt/homebrew/bin/{name}" if name == "brew" else None)
+    monkeypatch.setattr(doctor.Path, "exists", lambda self: True)
     monkeypatch.setattr(doctor.subprocess, "run", fake_run)
-    monkeypatch.setattr(doctor, "_update_models", lambda required=False: False)
 
     assert not doctor.cmd_update()
-    assert ["/opt/homebrew/bin/brew", "services", "restart", "local-whisper"] not in calls
+    assert ["/opt/homebrew/bin/brew", "services", "restart", doctor.FORMULA_NAME] not in calls

@@ -78,6 +78,30 @@ def _get_venv_python() -> Optional[str]:
     return sys.executable
 
 
+def _homebrew_update_env() -> dict[str, str]:
+    """Environment for self-updating without deleting the running Cellar."""
+    env = os.environ.copy()
+    env.setdefault("HOMEBREW_NO_INSTALL_CLEANUP", "1")
+    return env
+
+
+def _homebrew_wh_binary(brew: str) -> str:
+    """Return the currently linked Homebrew wh binary after an upgrade."""
+    try:
+        result = subprocess.run(
+            [brew, "--prefix", FORMULA_NAME],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            candidate = Path(result.stdout.strip()) / "bin" / "wh"
+            if candidate.exists():
+                return str(candidate)
+    except Exception:
+        pass
+    return shutil.which("wh") or "wh"
+
+
 def cmd_doctor(args: list):
     """Check system health and optionally fix issues.
 
@@ -537,26 +561,34 @@ def cmd_update(
         brew = shutil.which("brew")
         if not brew:
             return fail("Update failed: Homebrew not found")
-        result = subprocess.run([brew, "update"], capture_output=True, text=True)
+        brew_env = _homebrew_update_env()
+        result = subprocess.run([brew, "update"], capture_output=True, text=True, env=brew_env)
         if result.returncode != 0:
             return fail("Update failed: Homebrew refresh failed", result.stderr or result.stdout)
         print(f"  {C_GREEN}Done{C_RESET}")
 
         print(f"\n  {C_BOLD}2/4  Upgrading Local Whisper...{C_RESET}")
         report("processing", "Updating: installing app update...")
-        result = subprocess.run([brew, "upgrade", FORMULA_NAME], capture_output=True, text=True)
+        result = subprocess.run([brew, "upgrade", FORMULA_NAME], capture_output=True, text=True, env=brew_env)
         if result.returncode != 0:
             return fail("Update failed: Homebrew upgrade failed", result.stderr or result.stdout)
         print(f"  {C_GREEN}Done{C_RESET}")
 
         print(f"\n  {C_BOLD}3/4  Preparing active model...{C_RESET}")
         report("processing", "Updating: preparing active model...")
-        if not _update_models(required=True):
+        updated_wh = _homebrew_wh_binary(brew)
+        result = subprocess.run([updated_wh, "_prepare_models"], env=brew_env)
+        if result.returncode != 0:
             return fail("Update failed: active model could not be prepared")
 
         print(f"\n  {C_BOLD}4/4  Restarting service...{C_RESET}")
         report("processing", "Updating: restarting service...")
-        result = subprocess.run([brew, "services", "restart", "local-whisper"], capture_output=True, text=True)
+        result = subprocess.run(
+            [brew, "services", "restart", FORMULA_NAME],
+            capture_output=True,
+            text=True,
+            env=brew_env,
+        )
         if result.returncode != 0:
             return fail("Update failed: service restart failed", result.stderr or result.stdout)
         if wait_after_restart and not _wait_for_service_ready():

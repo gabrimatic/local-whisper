@@ -39,3 +39,13 @@ def test_stop_cleans_legacy_processes_without_current_lock(monkeypatch, capsys):
 
     assert stopped == [[111, 222]]
     assert "Stopping legacy service processes" in capsys.readouterr().out
+
+
+def test_homebrew_service_process_path_is_detected():
+    command = (
+        "/opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/"
+        "Versions/3.12/Resources/Python.app/Contents/MacOS/Python "
+        "/opt/homebrew/opt/local-whisper/bin/wh _run"
+    )
+
+    assert lifecycle._is_service_command(command)

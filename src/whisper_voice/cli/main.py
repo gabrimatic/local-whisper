@@ -414,6 +414,9 @@ def cli_main():
     elif cmd == "_run":
         from whisper_voice.app import service_main
         service_main()
+    elif cmd == "_prepare_models":
+        if not _update_models(required=True):
+            sys.exit(1)
     elif cmd in ("-h", "--help", "help"):
         _print_help()
     else:
