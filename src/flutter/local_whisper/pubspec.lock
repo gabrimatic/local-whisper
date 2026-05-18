@@ -227,10 +227,10 @@ packages:
     dependency: transitive
     description:
       name: meta
-      sha256: "23f08335362185a5ea2ad3a4e597f1375e78bce8a040df5c600c8d3552ef2394"
+      sha256: "1741988757a65eb6b36abe716829688cf01910bbf91c34354ff7ec1c3de2b349"
       url: "https://pub.dev"
     source: hosted
-    version: "1.17.0"
+    version: "1.18.0"
   native_toolchain_c:
     dependency: transitive
     description:
@@ -411,74 +411,74 @@ packages:
     dependency: "direct main"
     description:
       name: sherpa_onnx
-      sha256: "7953a638d4620bd08e2328b4f3e973febba35e65873ce9cee49f0691b3e4aca3"
+      sha256: b5a503cedc0605134770015fd4dba00c62f109f8a16630a52ebc04ef99ccbf93
       url: "https://pub.dev"
     source: hosted
-    version: "1.13.0"
+    version: "1.13.2"
   sherpa_onnx_android_arm64:
     dependency: transitive
     description:
       name: sherpa_onnx_android_arm64
-      sha256: "218962d7ff50ee2f128d6ba5fa3f83d444b70afda0a30fe35aa202465b506dfc"
+      sha256: b6aeb7cd5b32c6d1bd209a4bff0f28044d95977620d20e1d926b0c31e0a0725f
       url: "https://pub.dev"
     source: hosted
-    version: "1.13.0"
+    version: "1.13.2"
   sherpa_onnx_android_armeabi:
     dependency: transitive
     description:
       name: sherpa_onnx_android_armeabi
-      sha256: "3f420482746c61208a85d26d086e3019f12ed709190f2433f724360c6df1eabe"
+      sha256: ab647a0a4ca4b7c31159db1bdfc79b718882a088a2ed9757b340856d626715c0
       url: "https://pub.dev"
     source: hosted
-    version: "1.13.0"
+    version: "1.13.2"
   sherpa_onnx_android_x86:
     dependency: transitive
     description:
       name: sherpa_onnx_android_x86
-      sha256: "56a8d9705cefc560008bccc2e81c6fe207246852f0ca8f541779a5702b4ffa92"
+      sha256: df0e8bf68ff564bf8683f285ee3e65fb296ec118dbf6ce60a906bb1b3206120e
       url: "https://pub.dev"
     source: hosted
-    version: "1.13.0"
+    version: "1.13.2"
   sherpa_onnx_android_x86_64:
     dependency: transitive
     description:
       name: sherpa_onnx_android_x86_64
-      sha256: "34fb7d19caad0e69839810fb1122497939d2aa3733e2f835d0bd2f613887050f"
+      sha256: f9f63fafde9498bed9de45a0e1d3f2eb4d649ad257e5de30b91d139432750b84
       url: "https://pub.dev"
     source: hosted
-    version: "1.13.0"
+    version: "1.13.2"
   sherpa_onnx_ios:
     dependency: transitive
     description:
       name: sherpa_onnx_ios
-      sha256: "8f0e99a02eb428401a83669a05d236af68515e08e0b6b385473ab54d08b56718"
+      sha256: "46b30fe5db3e0741026e94f09f3515dc60071eb970e12039265e1ba98c4d812d"
       url: "https://pub.dev"
     source: hosted
-    version: "1.13.0"
+    version: "1.13.2"
   sherpa_onnx_linux:
     dependency: transitive
     description:
       name: sherpa_onnx_linux
-      sha256: "26f795ec92409ad953b22b97fd7121050aeaf58f15121bee9e7a3912f0370460"
+      sha256: e0b2780d809a5be6cc36b7915bbe25dd15059e357a7f0ac684feb4e6ad4e20b7
       url: "https://pub.dev"
     source: hosted
-    version: "1.13.0"
+    version: "1.13.2"
   sherpa_onnx_macos:
     dependency: transitive
     description:
       name: sherpa_onnx_macos
-      sha256: "633f74ec45c48849c780fea9c2a4adec61b37dd29cdc1fccfa9009860fef0bcd"
+      sha256: "8049aae4e290d01ce51267541a770eb5a61c8164d46c1127406557995b054875"
       url: "https://pub.dev"
     source: hosted
-    version: "1.13.0"
+    version: "1.13.2"
   sherpa_onnx_windows:
     dependency: transitive
     description:
       name: sherpa_onnx_windows
-      sha256: e81e1244180b78f89c1aad93f288e8787e9a95e3759a5c59dd80f2fab901ba22
+      sha256: "428c5fc2fea2d9083555d6281224ab7dba3a33a8fbc013de18ea843cf1236f14"
       url: "https://pub.dev"
     source: hosted
-    version: "1.13.0"
+    version: "1.13.2"
   sky_engine:
     dependency: transitive
     description: flutter
@@ -536,10 +536,10 @@ packages:
     dependency: transitive
     description:
       name: test_api
-      sha256: "8161c84903fd860b26bfdefb7963b3f0b68fee7adea0f59ef805ecca346f0c7a"
+      sha256: "949a932224383300f01be9221c39180316445ecb8e7547f70a41a35bf421fb9e"
       url: "https://pub.dev"
     source: hosted
-    version: "0.7.10"
+    version: "0.7.11"
   typed_data:
     dependency: transitive
     description:
