@@ -39,7 +39,7 @@ dependencies = [
     # Kokoro/misaki pull pydantic through spaCy. Keep the core wheel
     # aligned with pydantic's strict import-time ABI check.
     "pydantic==2.12.5",
-    "pydantic-core==2.41.5",
+    "pydantic-core==2.46.4",
 ]
 
 [project.optional-dependencies]
