@@ -116,7 +116,6 @@ class RecordingMixin:
             with self._state_lock:
                 self._key_pressed = False
                 if self._hold_recording:
-                    self._hold_recording = False
                     should_stop = True
 
             if should_stop and self.recorder.recording:
