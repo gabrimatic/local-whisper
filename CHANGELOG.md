@@ -4,6 +4,12 @@ This changelog tracks notable Local Whisper changes.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.6.14] - 2026-06-16
+
+### Fixed
+
+- Fixed Dependabot handling for Pydantic by letting `pydantic` declare its exact `pydantic-core` ABI dependency instead of tracking incompatible standalone core bumps.
+
 ## [1.6.13] - 2026-06-16
 
 ### Added

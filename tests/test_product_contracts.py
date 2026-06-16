@@ -6,6 +6,7 @@ Product contract checks for user-facing copy and source-of-truth metadata.
 
 import re
 import tomllib
+from importlib import metadata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -213,8 +214,10 @@ def test_pydantic_core_pin_matches_pydantic_runtime_requirement():
     """The packaged Kokoro path must not ship mismatched pydantic-core wheels."""
     pyproject = tomllib.loads(_read("pyproject.toml"))
     dependencies = set(pyproject["project"]["dependencies"])
+    pydantic_requires = {requirement.split(";", maxsplit=1)[0].strip() for requirement in metadata.requires("pydantic") or []}
 
     assert "pyobjc-framework-AVFoundation>=12.2" in dependencies
     assert "pyobjc-framework-ApplicationServices>=12.2" in dependencies
     assert "pydantic==2.13.4" in dependencies
-    assert "pydantic-core==2.46.4" in dependencies
+    assert not any(dependency.startswith("pydantic-core==") for dependency in dependencies)
+    assert "pydantic-core==2.46.4" in pydantic_requires

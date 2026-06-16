@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "local-whisper"
-version = "1.6.13"
+version = "1.6.14"
 description = "Local macOS dictation with local transcription and grammar cleanup"
 readme = "README.md"
 license = "PolyForm-Noncommercial-1.0.0"
@@ -38,10 +38,9 @@ dependencies = [
     "kokoro-mlx>=0.1.2",
     "soundfile>=0.14.0",
     "misaki[en]>=0.9.4",
-    # Kokoro/misaki pull pydantic through spaCy. Keep the core wheel
-    # aligned with pydantic's strict import-time ABI check.
+    # Kokoro/misaki pull pydantic through spaCy. Pydantic declares the
+    # exact pydantic-core ABI wheel it can import safely.
     "pydantic==2.13.4",
-    "pydantic-core==2.46.4",
 ]
 
 [project.optional-dependencies]

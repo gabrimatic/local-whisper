@@ -466,9 +466,9 @@ if [[ -d "$SWIFT_UI_DIR" ]]; then
     <key>CFBundleName</key>
     <string>Local Whisper</string>
     <key>CFBundleVersion</key>
-    <string>1.6.13</string>
+    <string>1.6.14</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.6.13</string>
+    <string>1.6.14</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>LSUIElement</key>
