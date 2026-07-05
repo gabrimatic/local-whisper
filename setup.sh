@@ -70,6 +70,7 @@ write_plist() {
     <string>com.local-whisper</string>
     <key>ProgramArguments</key>
     <array>
+        <string>$RUNTIME_BIN</string>
         <string>$VENV_DIR/bin/wh</string>
         <string>_run</string>
     </array>
@@ -105,14 +106,14 @@ PLIST_EOF
 }
 
 check_ax() {
-    "$VENV_DIR/bin/python3" -c "
+    "$RUNTIME_BIN" -c "
 from whisper_voice.utils import check_accessibility_trusted
 print('yes' if check_accessibility_trusted() else 'no')
 " 2>/dev/null
 }
 
 check_mic() {
-    "$VENV_DIR/bin/python3" -c "
+    "$RUNTIME_BIN" -c "
 from whisper_voice.utils import check_microphone_permission
 ok, _ = check_microphone_permission()
 print('yes' if ok else 'no')
@@ -208,6 +209,12 @@ log_ok "Python $PYTHON_VERSION ($PYTHON_BIN)"
 log_step "Installing Local Whisper..."
 
 VENV_DIR="$SCRIPT_DIR/.venv"
+# Stable service runtime: a private copy of the Python interpreter. macOS TCC
+# identifies unsigned binaries by code hash, and the venv's python3.x is a
+# symlink into Homebrew — every `brew upgrade` of Python replaces the target,
+# so the service shows up as a brand-new "python3.x" in Privacy & Security and
+# permissions must be granted again. A copy freezes the identity.
+RUNTIME_BIN="$VENV_DIR/bin/local-whisper"
 
 # Recreate venv if it exists but uses an incompatible Python
 if [[ -d "$VENV_DIR" ]]; then
@@ -234,6 +241,28 @@ if [[ "$MACOS_MAJOR" -ge 26 ]]; then
 else
     pip install -e "$SCRIPT_DIR" -q || fail "Failed to install package"
     log_ok "Package installed"
+fi
+
+# ============================================================================
+# Stable service runtime
+# ============================================================================
+# Copy the resolved interpreter to $RUNTIME_BIN so the service's TCC identity
+# survives Homebrew Python upgrades. The copy still resolves the venv through
+# the adjacent pyvenv.cfg, exactly like the symlink it replaces. Refresh only
+# when the copy is missing or can no longer run (its Python was removed) —
+# refreshing changes the code hash and requires re-granting permissions once.
+if [[ -x "$RUNTIME_BIN" ]] && ! "$RUNTIME_BIN" --version &> /dev/null; then
+    log_info "Service runtime no longer works (Python upgraded/removed) — refreshing"
+    rm -f "$RUNTIME_BIN"
+fi
+if [[ ! -f "$RUNTIME_BIN" ]]; then
+    REAL_PY=$(readlink -f "$VENV_DIR/bin/python3")
+    cp "$REAL_PY" "$RUNTIME_BIN" || fail "Failed to create stable service runtime"
+    chmod 755 "$RUNTIME_BIN"
+    "$RUNTIME_BIN" --version &> /dev/null || fail "Stable service runtime failed to run"
+    log_ok "Stable service runtime created (permissions will show as \"local-whisper\")"
+else
+    log_ok "Stable service runtime present"
 fi
 
 # ============================================================================
@@ -546,14 +575,16 @@ log_ok "Service prepared"
 # ============================================================================
 # Permissions
 # ============================================================================
-# Both permissions are requested from the venv Python binary (the same one the
-# LaunchAgent runs). macOS TCC grants apply per-binary path, so granting here
-# means the service inherits the same access.
+# Both permissions are requested from the stable runtime binary (the same one
+# the LaunchAgent runs). macOS TCC grants apply per code identity, so granting
+# here means the service inherits the same access — and because the runtime is
+# a frozen copy, the grant survives Homebrew Python upgrades.
 #
-# The permission dialogs will show "Python" as the app name. That's expected.
+# The permission dialogs will show "local-whisper" as the app name.
 
 log_step "Checking macOS permissions..."
-log_info "macOS may show \"Python\" in permission dialogs. That is the correct background service."
+log_info "macOS shows \"local-whisper\" in permission dialogs. That is the background service."
+log_info "Older \"python3.x\" rows in Privacy & Security are stale — you can remove them."
 
 # Request Accessibility (opens System Settings if not granted)
 AX_OK=$("$VENV_DIR/bin/python3" -c "
@@ -584,7 +615,7 @@ if [ "$AX_OK" != "yes" ] || [ "$MIC_OK" != "yes" ]; then
     [ "$MIC_OK" != "yes" ] && log_warn "Microphone: not yet granted"
     echo ""
     log_info "Grant the permissions above in System Settings, then press Enter."
-    log_info "Look for \"Python\" in the permission lists; that is Local Whisper's packaged runtime."
+    log_info "Look for \"local-whisper\" in the permission lists; that is Local Whisper's runtime."
     [ "$AX_OK" != "yes" ] && log_info "  → Privacy & Security → Accessibility"
     [ "$MIC_OK" != "yes" ] && log_info "  → Privacy & Security → Microphone"
 

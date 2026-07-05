@@ -654,7 +654,7 @@ def service_main():
 
     if not mic_ok:
         log(f"Microphone permission denied: {mic_msg}", "ERR")
-        log("Grant access: System Settings -> Privacy & Security -> Microphone -> Python", "ERR")
+        log("Grant access: System Settings -> Privacy & Security -> Microphone -> local-whisper", "ERR")
         log("Then run: wh restart", "ERR")
         # Exit 0 so launchd's KeepAlive doesn't hot-loop on user action.
         sys.exit(0)

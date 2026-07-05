@@ -408,10 +408,14 @@ def cmd_start():
             subprocess.run(["launchctl", "start", LAUNCHAGENT_LABEL], capture_output=True)
             print(f"{C_GREEN}Started{C_RESET} (via LaunchAgent)")
     else:
-        # No LaunchAgent installed - spawn directly
+        # No LaunchAgent installed - spawn directly. Prefer the stable runtime
+        # copy so the process keeps the same TCC identity as the LaunchAgent
+        # service (see setup.sh: RUNTIME_BIN).
         wh_path = str(Path(sys.argv[0]).resolve())
+        runtime = Path(sys.executable).with_name("local-whisper")
+        cmd = [str(runtime), wh_path, "_run"] if runtime.is_file() else [wh_path, "_run"]
         subprocess.Popen(
-            [wh_path, "_run"],
+            cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,

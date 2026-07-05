@@ -19,6 +19,18 @@ Enable `wh`, then restart:
 wh restart
 ```
 
+## macOS keeps asking for permissions with new "python3.x" entries
+
+macOS identifies the service by the code hash of the binary it runs. Older installs launched the service through a Python interpreter symlinked into Homebrew, so every Homebrew Python upgrade made macOS treat Local Whisper as a brand-new app: a fresh permission prompt appeared, and the old `python3.x` rows in Privacy & Security went stale.
+
+Current installs run the service through a frozen interpreter copy named `local-whisper`, whose identity survives Python upgrades. To migrate an older install:
+
+```bash
+./setup.sh
+```
+
+Grant Accessibility and Microphone to `local-whisper` one final time, then remove the stale `python3.x` rows in System Settings -> Privacy & Security -> Accessibility (select a row, press the minus button). `wh doctor` reports whether the service runtime identity is stable.
+
 ## Double-tap does not start recording
 
 Tap Right Option twice within the configured threshold. The default is `0.4` seconds.

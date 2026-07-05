@@ -477,6 +477,33 @@ def cmd_doctor(args: list):
         _doctor_fail("LaunchAgent not installed", "Run ./setup.sh to install")
         core_ok = False
 
+    # 11b. Service runtime identity. macOS TCC identifies the service by the
+    # code hash of the binary the LaunchAgent runs. When that is a symlinked
+    # Homebrew python, every Python upgrade resets Accessibility/Microphone
+    # grants and leaves stale "python3.x" rows in Privacy & Security. setup.sh
+    # freezes a private copy at .venv/bin/local-whisper; verify the plist uses it.
+    if install_method != INSTALL_BREW and LAUNCHAGENT_PLIST.exists():
+        try:
+            import plistlib
+
+            with open(LAUNCHAGENT_PLIST, "rb") as f:
+                plist_args = plistlib.load(f).get("ProgramArguments", [])
+            program = Path(plist_args[0]) if plist_args else None
+            if program is None or not program.exists():
+                _doctor_warn(
+                    "Service runtime binary missing",
+                    "Run ./setup.sh to rebuild the service runtime",
+                )
+            elif program.name != "local-whisper" or program.is_symlink():
+                _doctor_warn(
+                    "Service runtime identity is unstable (permission prompts return after Python upgrades)",
+                    "Run ./setup.sh to switch the service to the stable runtime",
+                )
+            else:
+                _doctor_pass("Service runtime identity stable")
+        except Exception as e:
+            _doctor_warn(f"Could not check service runtime identity: {e}")
+
     # 12. Accessibility permission
     try:
         from whisper_voice.utils import check_accessibility_trusted
