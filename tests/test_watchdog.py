@@ -68,3 +68,24 @@ def test_args_and_kwargs_forwarded():
         return a + b + c
 
     assert run_with_timeout(add, 1, 2, c=3, timeout_seconds=1.0, stage="add") == 6
+
+
+def test_worker_is_daemon_so_shutdown_cannot_hang():
+    # Regression: a wedged engine call that outlives its timeout must not
+    # block interpreter exit. That requires the watchdog worker to be a
+    # daemon thread (executor workers are non-daemon and joined at exit).
+    started = threading.Event()
+    release = threading.Event()
+
+    def hang():
+        started.set()
+        release.wait(timeout=5.0)
+
+    result = run_with_timeout(hang, timeout_seconds=0.05, stage="hang")
+    assert isinstance(result, TimedOut)
+    assert started.wait(timeout=1.0)
+
+    workers = [t for t in threading.enumerate() if t.name.startswith("watchdog-hang")]
+    assert workers, "expected the abandoned watchdog worker to still be alive"
+    assert all(t.daemon for t in workers)
+    release.set()

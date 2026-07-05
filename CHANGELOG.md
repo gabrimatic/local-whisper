@@ -4,6 +4,17 @@ This changelog tracks notable Local Whisper changes.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed macOS asking for Accessibility/Microphone again after every Homebrew Python upgrade: the service now runs through a frozen interpreter copy (`.venv/bin/local-whisper`) with a stable TCC identity, permission dialogs show "local-whisper" instead of "python3.x", and `wh doctor` reports whether the runtime identity is stable.
+- Fixed changing the Parakeet model from Settings only taking effect after a service restart: the `[parakeet_v3]` config section now syncs the in-memory config, and a failed engine switch no longer writes the literal string "None" into `config.toml` during rollback.
+- Fixed `wh stop`/restart hanging forever when a transcription or grammar call wedged past its watchdog timeout: abandoned watchdog workers no longer block process exit.
+- Fixed hotkey suppression, shortcuts, and TTS going silently dead until restart when macOS disables the keyboard event tap under load: the tap now re-enables itself.
+- Fixed `config.toml` corruption on crash mid-write: all config rewrites now land atomically via a temp file and rename.
+- Fixed a race where cancelling with Esc at the moment a hold-recording was released could still send the discarded audio through transcription.
+
 ## [1.6.14] - 2026-06-16
 
 ### Fixed

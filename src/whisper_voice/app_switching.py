@@ -286,12 +286,18 @@ class SwitchingMixin:
 
             if rollback_config is not None:
                 section, key, old_value = rollback_config
-                try:
-                    update_config_field(section, key, old_value)
-                    self.config = get_config()
-                    self._send_config_snapshot()
-                except Exception as rollback_err:
-                    log(f"Config rollback failed: {rollback_err}", "ERR")
+                # old_value can be None when the previous value couldn't be
+                # captured; writing it would serialize the literal string
+                # "None" into config.toml.
+                if old_value is None:
+                    log(f"Config rollback skipped for {section}.{key}: no previous value captured", "WARN")
+                else:
+                    try:
+                        update_config_field(section, key, old_value)
+                        self.config = get_config()
+                        self._send_config_snapshot()
+                    except Exception as rollback_err:
+                        log(f"Config rollback failed: {rollback_err}", "ERR")
 
             self._send_engines_status()
 

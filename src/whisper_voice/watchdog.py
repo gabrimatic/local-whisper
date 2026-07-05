@@ -4,7 +4,8 @@
 
 from __future__ import annotations
 
-import concurrent.futures
+import queue
+import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
@@ -27,19 +28,29 @@ def run_with_timeout(
     """Run ``fn`` with a hard timeout. Returns the result or :class:`TimedOut`.
 
     Exceptions propagate. Timeout of 0 / None runs inline.
+
+    The worker is a daemon thread, not a ThreadPoolExecutor: executor workers
+    are non-daemon and joined at interpreter exit, so a wedged engine call
+    that outlived its timeout would block process shutdown forever.
     """
     if timeout_seconds is None or timeout_seconds <= 0:
         return fn(*args, **kwargs)
 
-    executor = concurrent.futures.ThreadPoolExecutor(
-        max_workers=1, thread_name_prefix=f"watchdog-{stage}"
-    )
-    future = executor.submit(fn, *args, **kwargs)
+    result_queue: queue.Queue = queue.Queue(maxsize=1)
+
+    def _worker():
+        try:
+            result_queue.put(("ok", fn(*args, **kwargs)))
+        except BaseException as e:  # noqa: BLE001 - re-raised on the caller thread
+            result_queue.put(("err", e))
+
+    worker = threading.Thread(target=_worker, daemon=True, name=f"watchdog-{stage}")
+    worker.start()
     try:
-        result = future.result(timeout=timeout_seconds)
-        executor.shutdown(wait=True)
-        return result
-    except concurrent.futures.TimeoutError:
+        kind, payload = result_queue.get(timeout=timeout_seconds)
+    except queue.Empty:
         log(f"Watchdog: {stage} exceeded {timeout_seconds:.1f}s, skipping", "WARN")
-        executor.shutdown(wait=False, cancel_futures=True)
         return TimedOut(stage=stage, seconds=timeout_seconds)
+    if kind == "err":
+        raise payload
+    return payload

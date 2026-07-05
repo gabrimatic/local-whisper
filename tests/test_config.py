@@ -280,6 +280,54 @@ class TestUpdateConfigField:
         written = cfg_file.read_text(encoding="utf-8")
         assert "repetition_context_size = 200" in written
 
+    def test_update_parakeet_section_updates_in_memory_config(self, tmp_path):
+        # Regression: the [parakeet_v3] TOML section is backed by the
+        # Config.parakeet attribute. update_config_field must sync BOTH,
+        # otherwise the engine reloads the old model until service restart.
+        toml = '[parakeet_v3]\nmodel = "mlx-community/parakeet-tdt-0.6b-v3"\n'
+        cfg_file = tmp_path / "config.toml"
+        cfg_file.write_text(toml, encoding="utf-8")
+
+        for mod in list(sys.modules.keys()):
+            if "whisper_voice" in mod:
+                del sys.modules[mod]
+
+        import whisper_voice.config.loader as loader_mod
+        import whisper_voice.config.schema as schema_mod
+        from whisper_voice import config as cfg_mod
+        schema_mod.CONFIG_DIR = tmp_path
+        schema_mod.CONFIG_FILE = cfg_file
+        loader_mod._config = None
+        loader_mod.load_config()
+
+        cfg_mod.update_config_field("parakeet_v3", "model", "mlx-community/parakeet-tdt-1.1b")
+        written = cfg_file.read_text(encoding="utf-8")
+        assert 'model = "mlx-community/parakeet-tdt-1.1b"' in written
+        assert cfg_mod.get_config().parakeet.model == "mlx-community/parakeet-tdt-1.1b"
+
+    def test_update_writes_atomically(self, tmp_path):
+        # The rewrite must go through a temp file + os.replace so a crash
+        # mid-write can't truncate config.toml; no temp file may linger.
+        toml = "[grammar]\nbackend = \"apple_intelligence\"\nenabled = false\n"
+        cfg_file = tmp_path / "config.toml"
+        cfg_file.write_text(toml, encoding="utf-8")
+
+        for mod in list(sys.modules.keys()):
+            if "whisper_voice" in mod:
+                del sys.modules[mod]
+
+        import whisper_voice.config.loader as loader_mod
+        import whisper_voice.config.schema as schema_mod
+        from whisper_voice import config as cfg_mod
+        schema_mod.CONFIG_DIR = tmp_path
+        schema_mod.CONFIG_FILE = cfg_file
+        loader_mod._config = None
+        loader_mod.load_config()
+
+        assert cfg_mod.update_config_field("grammar", "enabled", True) is True
+        assert "enabled = true" in cfg_file.read_text(encoding="utf-8")
+        assert not (tmp_path / "config.toml.tmp").exists()
+
 
 # ---------------------------------------------------------------------------
 # Helper function unit tests

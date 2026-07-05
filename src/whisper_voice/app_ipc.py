@@ -258,8 +258,9 @@ class IPCMixin:
             value = msg.get("value")
             if section and key and value is not None:
                 from .config import update_config_field
+                from .config.mutations import config_section_attr
                 old_value = None
-                section_config = getattr(self.config, section, None)
+                section_config = getattr(self.config, config_section_attr(section), None)
                 if section_config is not None:
                     old_value = getattr(section_config, key, None)
                 update_config_field(section, key, value)

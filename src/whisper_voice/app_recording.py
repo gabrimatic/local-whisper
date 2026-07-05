@@ -126,8 +126,8 @@ class RecordingMixin:
     # ------------------------------------------------------------------
 
     def _on_recording_key(self, keycode: int, flags: int):
-        """Called by CGEventTap during recording. All keys are already suppressed.
-        Only the three defined keys act; everything else is swallowed silently."""
+        """Called by CGEventTap during recording for the suppressed control
+        keys (Esc / Space / Right Option). Other keys pass through normally."""
         if keycode == 53:  # Esc -> cancel without transcribing
             self._cancel_recording()
         elif keycode == 49 or keycode == 61:  # Space or Right Option -> stop + transcribe
@@ -142,10 +142,13 @@ class RecordingMixin:
         if self._max_timer:
             self._max_timer.cancel()
             self._max_timer = None
-        if not self.recorder.recording:
-            return
-        self.recorder.stop()
-        self.recorder.start_monitoring()
+        # Hold _state_lock so a concurrent release-stop can't hand the same
+        # audio to the pipeline while we're discarding it.
+        with self._state_lock:
+            if not self.recorder.recording:
+                return
+            self.recorder.stop()
+            self.recorder.start_monitoring()
         self._current_status = "Ready"
         self._send_state_update()
 

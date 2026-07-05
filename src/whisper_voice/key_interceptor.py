@@ -35,6 +35,8 @@ from Quartz import (
     kCGEventFlagMaskControl,
     kCGEventFlagMaskShift,
     kCGEventKeyDown,
+    kCGEventTapDisabledByTimeout,
+    kCGEventTapDisabledByUserInput,
     kCGEventTapOptionDefault,
     kCGHeadInsertEventTap,
     kCGKeyboardEventKeycode,
@@ -70,6 +72,7 @@ class KeyInterceptor:
         self._shortcuts: Dict[str, Tuple[Set[str], Callable]] = {}  # key -> (modifiers, callback)
         self._enabled_guard: Optional[Callable[[], bool]] = None
         self._run_loop = None
+        self._tap = None
         self._thread: Optional[threading.Thread] = None
         self._running = False
         self._lock = threading.Lock()
@@ -198,6 +201,7 @@ class KeyInterceptor:
             CFRunLoopAddSource(self._run_loop, run_loop_source, kCFRunLoopCommonModes)
 
             # Enable the tap
+            self._tap = tap
             CGEventTapEnable(tap, True)
 
             with self._lock:
@@ -211,6 +215,7 @@ class KeyInterceptor:
         except Exception as e:
             log(f"KeyInterceptor error: {e}", "ERR")
         finally:
+            self._tap = None
             with self._lock:
                 self._running = False
             log("KeyInterceptor stopped", "INFO")
@@ -223,6 +228,17 @@ class KeyInterceptor:
             None to suppress the event, or event to pass through.
         """
         try:
+            # macOS disables a tap it considers unresponsive (or on certain
+            # secure input transitions) and delivers these marker events
+            # instead of key events. Without re-enabling, recording-key
+            # suppression and all shortcuts silently die until restart.
+            if event_type in (kCGEventTapDisabledByTimeout, kCGEventTapDisabledByUserInput):
+                tap = self._tap
+                if tap is not None:
+                    CGEventTapEnable(tap, True)
+                    log("KeyInterceptor: event tap disabled by macOS — re-enabled", "WARN")
+                return event
+
             keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
             flags = CGEventGetFlags(event)
 
