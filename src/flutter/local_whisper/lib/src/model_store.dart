@@ -84,6 +84,19 @@ class ModelStore {
           'WhisperKit large-v3 Core ML pack used by the native iOS recorder.',
     ),
     LocalModel(
+      id: 'apple_speech',
+      name: 'Apple SpeechTranscriber',
+      kind: ModelKind.transcription,
+      description:
+          'Apple\'s on-device SpeechAnalyzer model for live and long-form transcription.',
+      sizeLabel: 'Apple managed',
+      state: ModelInstallState.notInstalled,
+      runtime: ModelRuntime.appleSpeech,
+      minimumIosMajor: 26,
+      installNote:
+          'iOS downloads, updates, and shares the selected language asset. Availability depends on the device and locale.',
+    ),
+    LocalModel(
       id: 'parakeet_tdt_v3_sherpa',
       name: 'Parakeet-TDT v3',
       kind: ModelKind.transcription,
@@ -130,6 +143,10 @@ class ModelStore {
     final models = <LocalModel>[];
     var changed = false;
     for (final catalogModel in catalog) {
+      if (catalogModel.runtime == ModelRuntime.appleSpeech) {
+        models.add(catalogModel);
+        continue;
+      }
       final savedModel = saved[catalogModel.id];
       if (savedModel == null ||
           savedModel.state == ModelInstallState.notInstalled ||

@@ -33,6 +33,7 @@ After setup and model downloads, built-in runtime paths stay on-device or localh
 | Parakeet-TDT v3 and Qwen3-ASR transcription | In-process MLX |
 | Android Parakeet-TDT v3 and Qwen3-ASR transcription | On-device sherpa-onnx |
 | WhisperKit transcription | Localhost |
+| Apple SpeechTranscriber | On-device on supported macOS 26 and iOS 26 hardware |
 | Grammar cleanup | Apple Intelligence on-device; Ollama or LM Studio on localhost or private LAN |
 | Text-to-speech | In-process Kokoro MLX |
 | History and backups | `~/.whisper/` |
@@ -43,7 +44,7 @@ After setup and model downloads, built-in runtime paths stay on-device or localh
 | --- | --- |
 | macOS service and CLI | Global dictation hotkey, local transcription, grammar cleanup, replacements, clipboard or paste output, history, TTS, and service control through `wh`. |
 | macOS Swift UI | Menu bar status, engine and grammar switching, overlay states, history, settings, updates, and service controls. |
-| Flutter iOS app and keyboard | Local WhisperKit/Core ML transcription, setup, model packs, local history, modes, punctuation, haptics, and text-field workflows. |
+| Flutter iOS app and keyboard | Local WhisperKit/Core ML or Apple SpeechTranscriber, setup, model packs, local history, modes, punctuation, haptics, and text-field workflows. |
 | Flutter Android app and keyboard | Local WAV recording, sherpa-onnx transcription, model packs, keyboard verification, punctuation, quick insert, and haptics. |
 
 ## Project promise

@@ -17,6 +17,7 @@ struct TranscriptionPanel: View {
                 switch appState.config.transcription.engine {
                 case "parakeet_v3": ParakeetSection()
                 case "qwen3_asr":   Qwen3Section()
+                case "apple_speech": AppleSpeechSection()
                 case "whisperkit":  WhisperKitSection()
                 default:            EmptyView()
                 }
@@ -62,11 +63,15 @@ struct ModelsSection: View {
             SettingsSectionHeader(
                 symbol: "cpu",
                 title: "Speech-to-text model",
-                description: "Pick the engine for transcription. Each model downloads on first use and is kept on disk; switching frees the previous one from memory."
+                description: "Pick the engine for transcription. Model files stay on-device; Apple manages SpeechTranscriber language assets for its engine."
             )
         }
         .confirmationDialog(
-            removalTarget.map { "Remove \($0.name) cache?" } ?? "",
+            removalTarget.map {
+                $0.managedBy == "apple"
+                    ? "Release \($0.name) language reservation?"
+                    : "Remove \($0.name) cache?"
+            } ?? "",
             isPresented: Binding(
                 get: { removalTarget != nil },
                 set: { if !$0 { removalTarget = nil } }
@@ -81,11 +86,14 @@ struct ModelsSection: View {
             }
             Button("Cancel", role: .cancel) { removalTarget = nil }
         } message: {
-            Text("The weights will re-download on next use. This frees disk but not RAM.")
+            Text(removalTarget?.managedBy == "apple"
+                ? "Local Whisper will release its reservation. macOS decides when the shared language asset can be removed."
+                : "The weights will re-download on next use. This frees disk but not RAM.")
         }
     }
 
     private var removalButtonLabel: String {
+        if removalTarget?.managedBy == "apple" { return "Release" }
         guard let mb = removalTarget?.sizeMb, mb > 0 else { return "Remove" }
         return "Remove \(mb) MB"
     }
@@ -170,6 +178,7 @@ private struct EngineCard: View {
         switch engine.id {
         case "parakeet_v3": return "waveform.badge.mic"
         case "qwen3_asr":   return "sparkle"
+        case "apple_speech": return "apple.logo"
         case "whisperkit":  return "server.rack"
         default:            return "cpu"
         }
@@ -184,7 +193,9 @@ private struct EngineCard: View {
         if let d = download, d.phase == "warming" { return "Loading" }
         if isDownloading { return "Downloading" }
         if engine.active { return "In use" }
+        if engine.available == false { return "Unavailable" }
         if engine.downloaded { return "Downloaded" }
+        if engine.managedBy == "apple" { return "Available" }
         if engine.downloadStatus == "partial" { return "Partial" }
         return "Not downloaded"
     }
@@ -193,12 +204,18 @@ private struct EngineCard: View {
         if let d = download, d.phase == "error" { return .danger }
         if isDownloading { return .info }
         if engine.active { return engine.downloaded ? .success : .warning }
+        if engine.available == false { return .warning }
         if engine.downloaded { return .info }
         if engine.downloadStatus == "partial" { return .warning }
         return .neutral
     }
 
     private var detailLine: String {
+        if engine.managedBy == "apple" {
+            var parts = [engine.message ?? "Managed by macOS"]
+            if let locale = engine.locale, !locale.isEmpty { parts.append(locale) }
+            return parts.joined(separator: " · ")
+        }
         var parts: [String] = []
         if engine.downloaded, let mb = engine.sizeMb, mb > 0 {
             parts.append(formatSize(mb: mb))
@@ -255,14 +272,21 @@ private struct EngineCard: View {
             HStack(spacing: Theme.Spacing.xs) {
                 Button("Use") { switchTo(engine.id) }
                 .buttonStyle(.bordered)
-                Button(role: .destructive) {
-                    onRequestRemove(engine)
-                } label: {
-                    Image(systemName: "trash")
+                if engine.removable != false {
+                    Button(role: .destructive) {
+                        onRequestRemove(engine)
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(engine.managedBy == "apple" ? "Release this app's Apple language reservation." : "Remove this engine's weights from disk.")
                 }
-                .buttonStyle(.borderless)
-                .help("Remove this engine's weights from disk.")
             }
+        } else if engine.managedBy == "apple" {
+            Button(engine.available == false ? "Unavailable" : "Download and use") { switchTo(engine.id) }
+                .buttonStyle(.bordered)
+                .disabled(engine.available == false)
+                .help(engine.message ?? "macOS downloads and manages the selected language model.")
         } else if engine.cacheDir != nil {
             Button(engine.downloadStatus == "partial" ? "Resume download" : "Download and use") { switchTo(engine.id) }
             .buttonStyle(.bordered)

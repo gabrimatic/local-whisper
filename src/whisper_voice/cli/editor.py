@@ -47,7 +47,7 @@ def _interactive_config() -> None:
         {"type": "float",   "label": "Double-tap",       "section": "hotkey",        "key": "double_tap_threshold",   "value": _get("hotkey", "double_tap_threshold", 0.4),            "hint": "sec"},
         {"type": "float",   "label": "Hold threshold",   "section": "hotkey",        "key": "hold_threshold",         "value": _get("hotkey", "hold_threshold", 0.0),                  "hint": "sec  0=double-tap"},
         {"type": "header",  "label": "Transcription"},
-        {"type": "choice",  "label": "Engine",           "section": "transcription", "key": "engine",                 "value": _get("transcription", "engine", "parakeet_v3"),        "options": ["parakeet_v3", "qwen3_asr", "whisperkit"]},
+        {"type": "choice",  "label": "Engine",           "section": "transcription", "key": "engine",                 "value": _get("transcription", "engine", "parakeet_v3"),        "options": ["parakeet_v3", "qwen3_asr", "whisperkit", "apple_speech"]},
         {"type": "header",  "label": "Grammar"},
         {"type": "bool",    "label": "Enabled",          "section": "grammar",       "key": "enabled",                "value": _get("grammar", "enabled", False)},
         {"type": "choice",  "label": "Backend",          "section": "grammar",       "key": "backend",                "value": _get("grammar", "backend", "apple_intelligence"),       "options": ["apple_intelligence", "ollama", "lm_studio"]},

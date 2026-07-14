@@ -44,7 +44,7 @@ hold_threshold = 0.0
 
 [transcription]
 # Transcription engine: "parakeet_v3" (default, multilingual),
-# "qwen3_asr" (auto-detect), or "whisperkit"
+# "qwen3_asr" (auto-detect), "whisperkit", or "apple_speech" (macOS 26+)
 engine = "parakeet_v3"
 
 [parakeet_v3]
@@ -91,6 +91,13 @@ repetition_context_size = 100
 repetition_penalty = 1.2
 chunk_duration = 1200.0
 max_tokens = 0
+
+[apple_speech]
+# SpeechTranscriber requires an explicit BCP-47 locale; it does not auto-detect.
+locale = "en-US"
+
+# Native helper timeout in seconds (0 = no limit)
+timeout = 0
 
 [whisper]
 # WhisperKit server URL
@@ -356,6 +363,13 @@ class Qwen3ASRConfig:
 
 
 @dataclass
+class AppleSpeechConfig:
+    """Apple SpeechTranscriber settings."""
+    locale: str = "en-US"
+    timeout: int = 0
+
+
+@dataclass
 class HotkeyConfig:
     key: str = "alt_r"
     double_tap_threshold: float = 0.4
@@ -511,6 +525,7 @@ class Config:
     transcription: TranscriptionConfig = field(default_factory=TranscriptionConfig)
     parakeet: ParakeetConfig = field(default_factory=ParakeetConfig)
     qwen3_asr: Qwen3ASRConfig = field(default_factory=Qwen3ASRConfig)
+    apple_speech: AppleSpeechConfig = field(default_factory=AppleSpeechConfig)
     whisper: WhisperConfig = field(default_factory=WhisperConfig)
     grammar: GrammarConfig = field(default_factory=GrammarConfig)
     ollama: OllamaConfig = field(default_factory=OllamaConfig)

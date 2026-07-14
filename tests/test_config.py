@@ -114,6 +114,28 @@ class TestDefaultValues:
         config, _ = _load_config_from(tmp_path, toml_content="")
         assert config.whisper.model == "large-v3-v20240930_626MB"
 
+    def test_apple_speech_defaults(self, tmp_path):
+        config, _ = _load_config_from(tmp_path, toml_content="")
+        assert config.apple_speech.locale == "en-US"
+        assert config.apple_speech.timeout == 0
+
+    def test_apple_speech_config_loads(self, tmp_path):
+        config, _ = _load_config_from(
+            tmp_path,
+            toml_content='[transcription]\nengine = "apple_speech"\n[apple_speech]\nlocale = "de-DE"\ntimeout = 45\n',
+        )
+        assert config.transcription.engine == "apple_speech"
+        assert config.apple_speech.locale == "de-DE"
+        assert config.apple_speech.timeout == 45
+
+    def test_apple_speech_config_sanitizes_locale_and_timeout(self, tmp_path):
+        config, _ = _load_config_from(
+            tmp_path,
+            toml_content='[apple_speech]\nlocale = "  de_DE  "\ntimeout = -4\n',
+        )
+        assert config.apple_speech.locale == "de-DE"
+        assert config.apple_speech.timeout == 0
+
     def test_repetition_context_size_default(self, tmp_path):
         config, _ = _load_config_from(tmp_path, toml_content="")
         assert config.qwen3_asr.repetition_context_size == 100

@@ -50,7 +50,7 @@ Swift menu bar app
 
 Flutter owns app shell, onboarding, history, modes, model management, settings, clipboard flow, and deterministic text cleanup.
 
-Native iOS owns microphone recording, WhisperKit/Core ML bridge, and keyboard extension behavior.
+Native iOS owns microphone recording, WhisperKit/Core ML, Apple SpeechTranscriber, and keyboard extension behavior. The Apple SpeechAnalyzer core is shared with the macOS helper.
 
 Native Android owns microphone permission/status, WAV recording, app and input-method settings intents, keyboard status, haptics, and input method behavior. Flutter-side sherpa-onnx handles Android transcription after native recording returns the local WAV path.
 

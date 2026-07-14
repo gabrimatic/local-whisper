@@ -50,6 +50,14 @@ After a WhisperKit pack is installed in a simulator:
 flutter test integration_test/native_transcription_test.dart -d <simulator-id> --dart-define=LOCAL_WHISPER_MODEL_PATH=<installed-model-folder>
 ```
 
+Apple SpeechTranscriber uses the same integration test on supported physical iOS 26 hardware:
+
+```bash
+flutter test integration_test/native_transcription_test.dart -d <device-id> --dart-define=LOCAL_WHISPER_E2E_MODEL=apple_speech
+```
+
+An iOS 26 simulator can build and execute the availability path but may report SpeechTranscriber unavailable because the model runtime depends on supported hardware.
+
 ## Documentation
 
 Run from `doc/`:

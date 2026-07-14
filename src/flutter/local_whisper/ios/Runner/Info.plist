@@ -18,6 +18,8 @@
 	<string>Local Whisper</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Local Whisper records your voice so it can transcribe it offline on this device.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Local Whisper uses Apple's on-device SpeechTranscriber when you select the Apple speech model.</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

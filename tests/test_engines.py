@@ -66,6 +66,10 @@ class TestEngineRegistry:
         registry, _ = _import_engine_registry()
         assert "whisperkit" in registry
 
+    def test_apple_speech_registered(self):
+        registry, _ = _import_engine_registry()
+        assert registry["apple_speech"].name == "Apple SpeechTranscriber"
+
     def test_engine_info_has_required_fields(self):
         registry, _ = _import_engine_registry()
         for key, info in registry.items():

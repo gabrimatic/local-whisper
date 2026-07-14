@@ -7,6 +7,18 @@ import 'package:local_whisper_flutter/src/models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  test('Apple SpeechTranscriber is a native installable iOS model', () {
+    final model = ModelStore.catalog.firstWhere(
+      (item) => item.id == 'apple_speech',
+    );
+
+    expect(model.runtime, ModelRuntime.appleSpeech);
+    expect(model.minimumIosMajor, 26);
+    expect(model.canDownload, isTrue);
+    expect(model.repoId, isNull);
+    expect(model.downloadUrl, isNull);
+  });
+
   test('history export renders portable markdown without network services', () {
     final entry = TranscriptEntry(
       id: 'entry-1',
@@ -299,7 +311,8 @@ void main() {
           'repoId': 'argmaxinc/whisperkit-coreml',
           'files': [
             {
-              'sourcePath': 'openai_whisper-large-v3-v20240930_626MB/config.json',
+              'sourcePath':
+                  'openai_whisper-large-v3-v20240930_626MB/config.json',
               'path': 'config.json',
               'size': await modelFile.length(),
             },

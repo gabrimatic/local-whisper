@@ -56,6 +56,15 @@ final class LocalSpeechBridge: NSObject, FlutterStreamHandler {
       result(statusPayload(locale: args?["locale"] as? String ?? selectedLocale))
     case "requestPermissions":
       requestPermissions(result: result)
+    case "appleSpeechModelStatus":
+      let args = call.arguments as? [String: Any]
+      appleSpeechModelStatus(locale: args?["locale"] as? String ?? selectedLocale, result: result)
+    case "installAppleSpeechModel":
+      let args = call.arguments as? [String: Any]
+      installAppleSpeechModel(locale: args?["locale"] as? String ?? selectedLocale, result: result)
+    case "releaseAppleSpeechModel":
+      let args = call.arguments as? [String: Any]
+      releaseAppleSpeechModel(locale: args?["locale"] as? String ?? selectedLocale, result: result)
     case "start":
       let args = call.arguments as? [String: Any]
       let model = args?["model"] as? String ?? selectedModel
@@ -185,7 +194,7 @@ final class LocalSpeechBridge: NSObject, FlutterStreamHandler {
     let locale = selectedLocale
     Task {
       do {
-        let text = try await transcribe(audioURL: audioURL, model: model, modelPath: modelPath)
+        let text = try await transcribe(audioURL: audioURL, model: model, modelPath: modelPath, locale: locale)
         try? FileManager.default.removeItem(at: audioURL)
         await MainActor.run {
           result([
@@ -194,6 +203,8 @@ final class LocalSpeechBridge: NSObject, FlutterStreamHandler {
             "duration": duration,
             "localeId": locale,
             "onDevice": true,
+            "engine": model == "apple_speech" ? "SpeechAnalyzer" : "WhisperKit",
+            "modelId": model,
           ])
         }
       } catch {
@@ -235,7 +246,7 @@ final class LocalSpeechBridge: NSObject, FlutterStreamHandler {
     }
     Task {
       do {
-        let text = try await transcribe(audioURL: URL(fileURLWithPath: audioPath), model: model, modelPath: modelPath)
+        let text = try await transcribe(audioURL: URL(fileURLWithPath: audioPath), model: model, modelPath: modelPath, locale: locale)
         await MainActor.run {
           result([
             "transcript": text,
@@ -243,6 +254,8 @@ final class LocalSpeechBridge: NSObject, FlutterStreamHandler {
             "duration": 0,
             "localeId": locale,
             "onDevice": true,
+            "engine": model == "apple_speech" ? "SpeechAnalyzer" : "WhisperKit",
+            "modelId": model,
           ])
         }
       } catch {
@@ -253,7 +266,20 @@ final class LocalSpeechBridge: NSObject, FlutterStreamHandler {
     }
   }
 
-  private func transcribe(audioURL: URL, model: String, modelPath: String?) async throws -> String {
+  private func transcribe(audioURL: URL, model: String, modelPath: String?, locale: String) async throws -> String {
+    if model == "apple_speech" {
+      guard #available(iOS 26.0, *) else {
+        throw NSError(
+          domain: "LocalWhisper",
+          code: 26,
+          userInfo: [NSLocalizedDescriptionKey: "Apple SpeechTranscriber requires iOS 26 or later."]
+        )
+      }
+      return try await AppleSpeechService.transcribe(
+        audioURL: audioURL,
+        localeIdentifier: locale
+      )
+    }
     let whisperKitModel = try whisperKitModelName(for: model)
     guard let modelPath, !modelPath.isEmpty else {
       throw NSError(
@@ -284,6 +310,80 @@ final class LocalSpeechBridge: NSObject, FlutterStreamHandler {
       .map { $0.text }
       .joined(separator: " ")
       .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private func appleSpeechModelStatus(locale: String, result: @escaping FlutterResult) {
+    guard #available(iOS 26.0, *) else {
+      result(appleSpeechPayload(
+        availability: "unavailable",
+        installed: false,
+        locale: locale,
+        message: "Apple SpeechTranscriber requires iOS 26 or later."
+      ))
+      return
+    }
+    Task {
+      let status = await AppleSpeechService.status(localeIdentifier: locale)
+      await MainActor.run { result(appleSpeechPayload(status)) }
+    }
+  }
+
+  private func installAppleSpeechModel(locale: String, result: @escaping FlutterResult) {
+    guard #available(iOS 26.0, *) else {
+      result(FlutterError(code: "iosVersionUnsupported", message: "Apple SpeechTranscriber requires iOS 26 or later.", details: nil))
+      return
+    }
+    Task {
+      do {
+        let status = try await AppleSpeechService.install(localeIdentifier: locale)
+        await MainActor.run { result(appleSpeechPayload(status)) }
+      } catch {
+        await MainActor.run {
+          result(FlutterError(code: "appleSpeechInstallFailed", message: error.localizedDescription, details: nil))
+        }
+      }
+    }
+  }
+
+  private func releaseAppleSpeechModel(locale: String, result: @escaping FlutterResult) {
+    guard #available(iOS 26.0, *) else {
+      result(FlutterError(code: "iosVersionUnsupported", message: "Apple SpeechTranscriber requires iOS 26 or later.", details: nil))
+      return
+    }
+    Task {
+      do {
+        let status = try await AppleSpeechService.release(localeIdentifier: locale)
+        await MainActor.run { result(appleSpeechPayload(status)) }
+      } catch {
+        await MainActor.run {
+          result(FlutterError(code: "appleSpeechReleaseFailed", message: error.localizedDescription, details: nil))
+        }
+      }
+    }
+  }
+
+  @available(iOS 26.0, *)
+  private func appleSpeechPayload(_ status: AppleSpeechStatus) -> [String: Any] {
+    appleSpeechPayload(
+      availability: status.availability.rawValue,
+      installed: status.installed,
+      locale: status.localeIdentifier,
+      message: status.message
+    )
+  }
+
+  private func appleSpeechPayload(
+    availability: String,
+    installed: Bool,
+    locale: String,
+    message: String
+  ) -> [String: Any] {
+    [
+      "availability": availability,
+      "installed": installed,
+      "locale": locale,
+      "message": message,
+    ]
   }
 
   private func prepareCoreMLModelsIfNeeded(modelPath: String, model: String) throws -> String {

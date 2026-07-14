@@ -10,7 +10,7 @@ Local Whisper is a local-first speech-to-text app and dictation service for macO
 
 On mobile, Local Whisper is both the recorder app and the keyboard. Record in the app, keep model packs and history on the device, then use the keyboard to bring modes, punctuation, and Local Whisper actions into other text fields. Large model-pack installs retry transient download failures and verify files before a pack is marked ready.
 
-iOS transcribes locally with WhisperKit/Core ML. Android records local WAV audio and transcribes on-device through `sherpa_onnx`; Parakeet-TDT v3 INT8 ONNX is the default Android pack, and Qwen3-ASR 0.6B INT8 ONNX is the broader multilingual pack. There is no cloud speech fallback.
+iOS transcribes locally with WhisperKit/Core ML or Apple's SpeechTranscriber on supported iOS 26 devices. Android records local WAV audio and transcribes on-device through `sherpa_onnx`; Parakeet-TDT v3 INT8 ONNX is the default Android pack, and Qwen3-ASR 0.6B INT8 ONNX is the broader multilingual pack. There is no cloud speech fallback.
 
 Download the models once, then run them locally. Built-in runtime paths stay on-device or localhost. Configure LM Studio with a private LAN server only when you want that setup. No hosted speech API. No account. No telemetry. No transcript upload.
 
@@ -32,6 +32,7 @@ Local Whisper uses the network for setup, model downloads, and updates. After th
 |--------------|---------------|
 | Recording and audio cleanup | On device |
 | Parakeet-TDT v3 and Qwen3-ASR transcription | In-process MLX |
+| Apple SpeechTranscriber | On-device SpeechAnalyzer on supported macOS 26 and iOS 26 hardware |
 | Android Parakeet-TDT v3 and Qwen3-ASR transcription | On-device sherpa-onnx |
 | WhisperKit transcription | Localhost |
 | Grammar cleanup | Apple Intelligence on-device; Ollama or LM Studio on localhost or private LAN |
@@ -46,7 +47,7 @@ Local Whisper is speech-to-text for the places you already type. Start recording
 |---------|---------------|--------|
 | macOS global dictation | System-wide hotkey recording from any app, local transcription, grammar cleanup, replacements, selected-text shortcuts, Kokoro TTS, clipboard, and auto-paste output. | Ready. Parakeet-TDT v3 is the default engine. |
 | macOS menu bar and overlay | Live status, engine and backend switching, history, saved audio, settings, updates, service controls, and recording and processing feedback. | Ready. |
-| Flutter iOS app + keyboard | Record and transcribe in the app with WhisperKit/Core ML. Keep model packs and history on the device, then use the native keyboard for modes, punctuation, and text-field workflows. | Native local transcription wired through `AVAudioEngine` plus WhisperKit/Core ML. |
+| Flutter iOS app + keyboard | Record and transcribe in the app with WhisperKit/Core ML or Apple SpeechTranscriber. Keep model packs and history on the device, then use the native keyboard for modes, punctuation, and text-field workflows. | Both native local transcription paths are wired; SpeechTranscriber requires supported iOS 26 hardware. |
 | Flutter Android app + keyboard | Record locally in the app, transcribe on-device with sherpa-onnx model packs, and use the native input method in text fields. The Android app keeps the same local history, modes, setup, and model-pack flow. | Parakeet-TDT v3 INT8 ONNX wired first. Qwen3-ASR 0.6B INT8 ONNX wired as the broader multilingual pack. |
 
 <p align="center">
@@ -114,7 +115,7 @@ Details: [Installation](https://gabrimatic.github.io/local-whisper/reference/ins
 ## Features
 
 - **Global dictation hotkey**: start recording from any app without focusing a Local Whisper window. Double-tap Right Option copies the final text by default; hold Right Option records until release and pastes the final text at the cursor.
-- **Local transcription** via in-process MLX for Parakeet-TDT v3 and Qwen3-ASR. WhisperKit is available through a local server.
+- **Local transcription** via in-process MLX for Parakeet-TDT v3 and Qwen3-ASR, Apple SpeechAnalyzer/SpeechTranscriber on supported macOS 26 hardware, or WhisperKit through a local server.
 - **Local grammar correction** via Apple Intelligence, Ollama, or LM Studio; optional.
 - **Text-to-speech** reads selected text aloud in any app with multiple voices and streaming playback through Kokoro MLX.
 - **Text replacements** for spoken-to-corrected mappings.
@@ -123,7 +124,7 @@ Details: [Installation](https://gabrimatic.github.io/local-whisper/reference/ins
 - **CLI**: `wh whisper`, `wh listen`, `wh transcribe` for scripting and automation.
 - **Native macOS UI**: menu bar status/control, floating overlay, and settings window.
 - **Mobile app and keyboards**: iOS and Android include the Flutter app plus native keyboard surfaces. Mobile manages model packs, local history export/delete controls, modes, settings, clipboard output, and setup replay.
-- **Mobile local models**: iOS uses WhisperKit/Core ML today. Android uses sherpa-onnx with Parakeet-TDT v3 INT8 ONNX first and Qwen3-ASR 0.6B INT8 ONNX for broader multilingual coverage. These are local model packs, not hosted APIs.
+- **Mobile local models**: iOS uses WhisperKit/Core ML or Apple SpeechTranscriber on supported iOS 26 hardware. Android uses sherpa-onnx with Parakeet-TDT v3 INT8 ONNX first and Qwen3-ASR 0.6B INT8 ONNX for broader multilingual coverage. These are local model packs, not hosted APIs.
 - **No cloud speech fallback**: no hosted speech API, no account, no telemetry, no transcript upload.
 - **Automatic backup** for every recording and transcription.
 
@@ -180,6 +181,17 @@ In-process via [qwen3-asr-mlx](https://github.com/gabrimatic/qwen3-asr-mlx). No 
 | `repetition_context_size` | `100` | Tokens considered for repetition penalty |
 | `chunk_duration` | `1200` | Seconds per internal chunk for long audio |
 | `max_tokens` | `0` | `0` = auto-scale from duration. Cap for faster short-clip decode. |
+
+### Apple SpeechTranscriber
+
+Apple's SpeechAnalyzer API runs its SpeechTranscriber module on-device on supported macOS 26 and iOS 26 hardware. Local Whisper uses the final `transcription` preset for completed recordings, requires an explicit locale, and supports long audio without a Local Whisper chunk limit. Apple downloads, updates, shares, and eventually removes the language asset; Local Whisper tracks the real `AssetInventory` state and only releases its own reservation.
+
+Switch with `wh engine apple_speech`. The current engine stays loaded until the selected language asset is ready.
+
+| Setting | Default | Notes |
+|---------|---------|-------|
+| `locale` | `en-US` | Explicit BCP 47 locale. Automatic language detection is not available in SpeechTranscriber. |
+| `timeout` | `0` | No limit. |
 
 ### WhisperKit
 
@@ -397,7 +409,7 @@ Common fields:
 | Section | What to change |
 |---------|----------------|
 | `[hotkey]` | Trigger key and double-tap timing |
-| `[transcription]` | Active engine: `parakeet_v3`, `qwen3_asr`, or `whisperkit` |
+| `[transcription]` | Active engine: `parakeet_v3`, `qwen3_asr`, `apple_speech`, or `whisperkit` |
 | `[grammar]` | Grammar backend and enable/disable state |
 | `[audio]` | VAD, noise reduction, normalization, pre-buffer, and duration limits |
 | `[service]` | Idle model unload timing for memory versus next-dictation latency |
@@ -416,6 +428,7 @@ Audio recording, transcription, replacements, and text-to-speech run on-device o
 |-----------|---------|
 | Parakeet-TDT v3 | In-process MLX |
 | Qwen3-ASR | In-process MLX |
+| Apple SpeechTranscriber | On-device SpeechAnalyzer |
 | Kokoro TTS | In-process MLX |
 | WhisperKit | localhost:50060 |
 | Apple Intelligence | On-device |
@@ -468,9 +481,9 @@ Recordings longer than five minutes use the chunked pipeline. Each VAD segment i
 ┌───────────────────────────────────────────────────────────┐
 │  Transcription Engine                                     │
 │                                                           │
-│  Parakeet-TDT v3 (default) │ Qwen3-ASR  │ WhisperKit     │
-│  Multilingual, MLX         │ English, MLX│ localhost:50060│
-│  120s chunked              │ Long audio  │ Split at 28s   │
+│  Parakeet-TDT v3 │ Qwen3-ASR │ Apple Speech │ WhisperKit   │
+│  MLX, default     │ MLX       │ On-device    │ localhost    │
+│  Chunked long form│ Long audio│ SpeechAnalyzer│ Local server │
 └──────────────────────────┬────────────────────────────────┘
                            ▼
 ┌───────────────────────────────────────────────────────────┐
@@ -554,7 +567,7 @@ Loading a model does **not** start the server.
 <details>
 <summary><strong>Slow first transcription</strong></summary>
 
-`setup.sh` downloads and warms the active transcription engine. Fresh installs use Parakeet by default. Qwen3-ASR downloads when you switch to it, WhisperKit manages its own models, and Kokoro downloads only after text-to-speech is enabled. Settings verifies complete Hugging Face snapshots before marking a model downloaded; partial caches show as resumable instead of ready. After a model is cached, later runs load it from disk.
+`setup.sh` downloads and warms the active transcription engine. Fresh installs use Parakeet by default. Qwen3-ASR downloads when you switch to it, macOS manages Apple SpeechTranscriber language assets, WhisperKit manages its own models, and Kokoro downloads only after text-to-speech is enabled. Settings verifies each runtime's real ready state before switching.
 
 If idle model unload is enabled, Local Whisper can release the model from RAM while the service stays ready. The next transcription reloads the model on demand. Setup, update, and restart checks wait for the service command socket, not for the model to remain resident in memory.
 
@@ -596,7 +609,7 @@ The Flutter app lives in `src/flutter/local_whisper`.
 
 | Surface | Status | Notes |
 |---------|--------|-------|
-| Flutter iOS app | Native transcription wired | Uses `AVAudioEngine` plus WhisperKit/Core ML through the native Swift bridge. |
+| Flutter iOS app | Native transcription wired | Uses `AVAudioEngine` plus WhisperKit/Core ML or the shared Apple SpeechAnalyzer core. |
 | Flutter Android app + keyboard | Native transcription wired | Uses local WAV recording plus sherpa-onnx. Parakeet-TDT v3 INT8 ONNX is the default Android model, with Qwen3-ASR 0.6B INT8 ONNX available for broader language coverage. |
 
 See [Mobile apps](https://gabrimatic.github.io/local-whisper/product/mobile/) for setup flow, keyboard behavior, model packs, Android notes, and mobile checks.
@@ -654,7 +667,7 @@ local-whisper/
 │   │       ├── history_store.dart    # Local persistence
 │   │       └── models.dart
 │   ├── ios/Runner/
-│   │   ├── LocalSpeechBridge.swift   # AVAudioEngine + WhisperKit bridge
+│   │   ├── LocalSpeechBridge.swift   # AVAudioEngine + WhisperKit/Apple Speech bridge
 │   │   ├── AppDelegate.swift
 │   │   └── SceneDelegate.swift
 │   ├── ios/LocalWhisperKeyboard/     # Native keyboard extension

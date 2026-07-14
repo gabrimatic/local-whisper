@@ -147,6 +147,22 @@ struct Qwen3ASRConfig: Codable, Sendable {
     }
 }
 
+struct AppleSpeechConfig: Codable, Sendable {
+    var locale: String = "en-US"
+    var timeout: Double = 0
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        locale = c.decodeOr(String.self, .locale, d.locale)
+        timeout = c.decodeOr(Double.self, .timeout, d.timeout)
+    }
+
+    enum CodingKeys: String, CodingKey { case locale, timeout }
+}
+
 struct WhisperConfig: Codable, Sendable {
     var url: String = "http://localhost:50060/v1/audio/transcriptions"
     var checkUrl: String = "http://localhost:50060/"
@@ -512,6 +528,7 @@ struct AppConfig: Codable, Sendable {
     var transcription = TranscriptionConfig()
     var parakeet = ParakeetConfig()
     var qwen3Asr = Qwen3ASRConfig()
+    var appleSpeech = AppleSpeechConfig()
     var whisper = WhisperConfig()
     var grammar = GrammarConfig()
     var ollama = OllamaConfig()
@@ -531,6 +548,7 @@ struct AppConfig: Codable, Sendable {
         case hotkey, transcription, whisper, grammar, ollama, audio, ui, backup, service, shortcuts, tts, replacements, dictation
         case parakeet = "parakeet_v3"
         case qwen3Asr = "qwen3_asr"
+        case appleSpeech = "apple_speech"
         case appleIntelligence = "apple_intelligence"
         case lmStudio = "lm_studio"
         case kokoroTts = "kokoro_tts"
@@ -545,6 +563,7 @@ struct AppConfig: Codable, Sendable {
         transcription = c.decodeOr(TranscriptionConfig.self, .transcription, d.transcription)
         parakeet = c.decodeOr(ParakeetConfig.self, .parakeet, d.parakeet)
         qwen3Asr = c.decodeOr(Qwen3ASRConfig.self, .qwen3Asr, d.qwen3Asr)
+        appleSpeech = c.decodeOr(AppleSpeechConfig.self, .appleSpeech, d.appleSpeech)
         whisper = c.decodeOr(WhisperConfig.self, .whisper, d.whisper)
         grammar = c.decodeOr(GrammarConfig.self, .grammar, d.grammar)
         ollama = c.decodeOr(OllamaConfig.self, .ollama, d.ollama)
@@ -577,6 +596,11 @@ struct EngineStatus: Codable, Sendable, Identifiable {
     var warmed: Bool
     var cacheDir: String?
     var hfRepo: String?
+    var managedBy: String?
+    var available: Bool?
+    var removable: Bool?
+    var locale: String?
+    var message: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, description, active, downloaded, warmed
@@ -584,6 +608,8 @@ struct EngineStatus: Codable, Sendable, Identifiable {
         case sizeMb = "size_mb"
         case cacheDir = "cache_dir"
         case hfRepo = "hf_repo"
+        case managedBy = "managed_by"
+        case available, removable, locale, message
     }
 }
 

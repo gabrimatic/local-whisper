@@ -4,6 +4,22 @@ This changelog tracks notable Local Whisper changes.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.0] - 2026-07-14
+
+### Added
+
+- Added Apple SpeechTranscriber as a first-class on-device transcription engine on supported macOS 26 and iOS 26 hardware, using Apple's final-transcription preset and an explicit locale for highest-quality completed recordings.
+- Added a shared native Swift speech core plus a bundled macOS helper, so the Python service can use SpeechAnalyzer without a cloud service or a second model server while preserving lazy loading.
+- Added real Apple language-asset management through `AssetInventory`: Settings and model management report support, availability, download progress, installation state, and Local Whisper's reservation release instead of inferring readiness from files.
+- Added Apple Speech settings and status across the CLI, config, IPC, macOS app, Flutter model library, and native iOS bridge, with locale-aware model preparation and clear unsupported-device guidance.
+- Added native Swift unit coverage, Python engine/config/switching/IPC tests, Flutter model tests, and an iOS integration path for Apple SpeechTranscriber capability and transcription behavior.
+
+### Changed
+
+- Engine switching now prepares the selected Apple locale before unloading the current transcription engine and preserves the exact installation error when preparation fails.
+- iOS refreshes Apple speech asset state when the selected locale changes; Android hides the Apple-only engine while retaining the existing on-device sherpa-onnx path.
+- Updated product, architecture, privacy, configuration, testing, CLI, mobile, and troubleshooting documentation for Apple's managed on-device speech assets and supported-platform boundaries.
+
 ## [1.7.0] - 2026-07-14
 
 ### Added

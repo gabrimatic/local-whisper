@@ -4,7 +4,7 @@ enum RecorderPhase { idle, checking, recording, processing, result, error }
 
 enum ModelKind { transcription, cleanup, tts }
 
-enum ModelRuntime { mlx, coreMl, whisperKit, sherpaOnnx, bundled }
+enum ModelRuntime { mlx, coreMl, whisperKit, appleSpeech, sherpaOnnx, bundled }
 
 enum ModelInstallState {
   bundled,
@@ -114,6 +114,33 @@ class NativeSpeechResult {
       modelId: modelId ?? this.modelId,
       elapsedMs: elapsedMs ?? this.elapsedMs,
       rtf: rtf ?? this.rtf,
+    );
+  }
+}
+
+class NativeAppleSpeechModelStatus {
+  const NativeAppleSpeechModelStatus({
+    required this.availability,
+    required this.installed,
+    required this.localeId,
+    required this.message,
+  });
+
+  final String availability;
+  final bool installed;
+  final String localeId;
+  final String message;
+
+  bool get available => availability != 'unavailable';
+
+  factory NativeAppleSpeechModelStatus.fromJson(Map<Object?, Object?> json) {
+    return NativeAppleSpeechModelStatus(
+      availability: json['availability'] as String? ?? 'unavailable',
+      installed: json['installed'] == true,
+      localeId: json['locale'] as String? ?? 'en-US',
+      message:
+          json['message'] as String? ??
+          'Apple SpeechTranscriber is unavailable.',
     );
   }
 }
@@ -297,7 +324,9 @@ class LocalModel {
   final double progress;
 
   bool get canDownload =>
-      (downloadUrl != null || repoId != null) &&
+      (downloadUrl != null ||
+          repoId != null ||
+          runtime == ModelRuntime.appleSpeech) &&
       state == ModelInstallState.notInstalled;
 
   bool get canRemove => state == ModelInstallState.installed;

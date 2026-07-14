@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from . import schema as _schema
 from .schema import (
     AppleIntelligenceConfig,
+    AppleSpeechConfig,
     AudioConfig,
     BackupConfig,
     Config,
@@ -110,6 +111,19 @@ def _validate_config(config: Config):
         config.parakeet.overlap_duration = 0.0
     if config.parakeet.beam_size < 1:
         config.parakeet.beam_size = 5
+
+    if not isinstance(config.apple_speech.locale, str) or not config.apple_speech.locale.strip():
+        print(
+            "Config warning: Apple SpeechTranscriber locale is empty, using 'en-US'",
+            file=sys.stderr,
+        )
+        config.apple_speech.locale = "en-US"
+    else:
+        config.apple_speech.locale = (
+            config.apple_speech.locale.strip().replace("_", "-")
+        )
+    if not isinstance(config.apple_speech.timeout, (int, float)) or config.apple_speech.timeout < 0:
+        config.apple_speech.timeout = 0
 
     # Hotkey validation
     if config.hotkey.key not in _schema.VALID_HOTKEY_KEYS:
@@ -340,6 +354,12 @@ def load_config() -> Config:
             repetition_penalty=data['qwen3_asr'].get('repetition_penalty', config.qwen3_asr.repetition_penalty),
             chunk_duration=data['qwen3_asr'].get('chunk_duration', config.qwen3_asr.chunk_duration),
             max_tokens=data['qwen3_asr'].get('max_tokens', config.qwen3_asr.max_tokens),
+        )
+
+    if 'apple_speech' in data:
+        config.apple_speech = AppleSpeechConfig(
+            locale=data['apple_speech'].get('locale', config.apple_speech.locale),
+            timeout=data['apple_speech'].get('timeout', config.apple_speech.timeout),
         )
 
     # Whisper settings

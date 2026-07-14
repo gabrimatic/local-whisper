@@ -34,6 +34,36 @@ class NativeSpeechService {
     return await _method.invokeMethod<bool>('requestPermissions') ?? false;
   }
 
+  Future<NativeAppleSpeechModelStatus> appleSpeechModelStatus({
+    required String locale,
+  }) async {
+    final value = await _method.invokeMapMethod<Object?, Object?>(
+      'appleSpeechModelStatus',
+      {'locale': locale},
+    );
+    return NativeAppleSpeechModelStatus.fromJson(value ?? const {});
+  }
+
+  Future<NativeAppleSpeechModelStatus> installAppleSpeechModel({
+    required String locale,
+  }) async {
+    final value = await _method.invokeMapMethod<Object?, Object?>(
+      'installAppleSpeechModel',
+      {'locale': locale},
+    );
+    return NativeAppleSpeechModelStatus.fromJson(value ?? const {});
+  }
+
+  Future<NativeAppleSpeechModelStatus> releaseAppleSpeechModel({
+    required String locale,
+  }) async {
+    final value = await _method.invokeMapMethod<Object?, Object?>(
+      'releaseAppleSpeechModel',
+      {'locale': locale},
+    );
+    return NativeAppleSpeechModelStatus.fromJson(value ?? const {});
+  }
+
   Future<void> start({
     required String locale,
     required String model,
@@ -75,7 +105,7 @@ class NativeSpeechService {
     required String audioPath,
     required String locale,
     required String model,
-    required String modelPath,
+    String modelPath = '',
   }) async {
     var debugMode = false;
     assert(() {

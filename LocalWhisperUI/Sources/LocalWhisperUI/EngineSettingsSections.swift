@@ -349,6 +349,56 @@ struct Qwen3Section: View {
     }
 }
 
+// MARK: - Apple SpeechTranscriber
+
+struct AppleSpeechSection: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        Section {
+            LabeledContent("Language") {
+                DeferredTextField(
+                    label: "Locale",
+                    initialValue: appState.config.appleSpeech.locale
+                ) { value in
+                    let locale = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                    appState.config.appleSpeech.locale = locale
+                    appState.ipcClient?.sendConfigUpdate(section: "apple_speech", key: "locale", value: locale)
+                }
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 180)
+            }
+            .help("BCP 47 locale such as en-US, de-DE, or fa-IR. SpeechTranscriber requires an explicit supported locale.")
+
+            LabeledContent("Timeout") {
+                HStack {
+                    Stepper("", value: Binding(
+                        get: { appState.config.appleSpeech.timeout },
+                        set: { value in
+                            appState.config.appleSpeech.timeout = value
+                            appState.ipcClient?.sendConfigUpdate(section: "apple_speech", key: "timeout", value: value)
+                        }
+                    ), in: 0...3600, step: 30)
+                    .labelsHidden()
+                    Text(appState.config.appleSpeech.timeout == 0 ? "Unlimited" : "\(Int(appState.config.appleSpeech.timeout))s")
+                        .monoStat(width: 70)
+                }
+            }
+            .help("Maximum time to wait for a completed transcription. 0 = no limit.")
+
+            Text("Audio stays on-device. Apple downloads, updates, and shares the language asset through macOS; Local Whisper does not manage the model files directly.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } header: {
+            SettingsSectionHeader(
+                symbol: "apple.logo",
+                title: "Apple SpeechTranscriber settings",
+                description: "On-device transcription through SpeechAnalyzer on macOS 26 or later."
+            )
+        }
+    }
+}
+
 // MARK: - WhisperKit
 
 struct WhisperKitSection: View {

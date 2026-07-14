@@ -30,8 +30,9 @@ bool _canRecordWithModelOnCurrentPlatform(LocalModel model, int iosMajor) {
   return model.kind == ModelKind.transcription &&
       model.state == ModelInstallState.installed &&
       model.supportsIosMajor(iosMajor) &&
-      model.runtime == ModelRuntime.whisperKit &&
-      (model.localPath?.isNotEmpty ?? false);
+      ((model.runtime == ModelRuntime.whisperKit &&
+              (model.localPath?.isNotEmpty ?? false)) ||
+          model.runtime == ModelRuntime.appleSpeech);
 }
 
 class AppPalette {
@@ -147,6 +148,7 @@ class _AppControllerState extends State<AppController>
           model.runtime == ModelRuntime.sherpaOnnx;
     }
     return model.runtime == ModelRuntime.whisperKit ||
+        model.runtime == ModelRuntime.appleSpeech ||
         model.runtime == ModelRuntime.bundled;
   }
 
@@ -209,8 +211,29 @@ class _AppControllerState extends State<AppController>
       modesFuture,
       modelsFuture,
     ).wait;
+    var effectiveModels = models;
+    if (Platform.isIOS) {
+      try {
+        final appleStatus = await _speech.appleSpeechModelStatus(
+          locale: settings.localeId,
+        );
+        effectiveModels = _withAppleSpeechStatus(effectiveModels, appleStatus);
+      } catch (_) {
+        effectiveModels = _withAppleSpeechStatus(
+          effectiveModels,
+          NativeAppleSpeechModelStatus(
+            availability: 'unavailable',
+            installed: false,
+            localeId: settings.localeId,
+            message: 'Apple SpeechTranscriber is unavailable on this device.',
+          ),
+        );
+      }
+    }
     final visibleModels = _modelsForCurrentPlatform(
-      _androidQaRuntimeEnabled ? _seedAndroidQaModel(models) : models,
+      _androidQaRuntimeEnabled
+          ? _seedAndroidQaModel(effectiveModels)
+          : effectiveModels,
     );
     final normalizedSettings = _normalizeSettingsForCurrentPlatform(
       settings,
@@ -261,6 +284,25 @@ class _AppControllerState extends State<AppController>
               model.kind != ModelKind.transcription ||
               model.runtime == ModelRuntime.sherpaOnnx,
         )
+        .toList(growable: false);
+  }
+
+  List<LocalModel> _withAppleSpeechStatus(
+    List<LocalModel> models,
+    NativeAppleSpeechModelStatus status,
+  ) {
+    return models
+        .map((model) {
+          if (model.runtime != ModelRuntime.appleSpeech) return model;
+          return model.copyWith(
+            state: status.installed
+                ? ModelInstallState.installed
+                : status.available
+                ? ModelInstallState.notInstalled
+                : ModelInstallState.unavailable,
+            progress: status.installed ? 1 : 0,
+          );
+        })
         .toList(growable: false);
   }
 
@@ -565,10 +607,31 @@ class _AppControllerState extends State<AppController>
     await _historyStore.saveSettings(settings);
     await _syncKeyboardSettings(settings);
     final status = await _speech.status(locale: settings.localeId);
+    var models = _models;
+    if (Platform.isIOS && settings.localeId != _settings.localeId) {
+      try {
+        final appleStatus = await _speech.appleSpeechModelStatus(
+          locale: settings.localeId,
+        );
+        models = _withAppleSpeechStatus(models, appleStatus);
+      } catch (_) {
+        models = _withAppleSpeechStatus(
+          models,
+          NativeAppleSpeechModelStatus(
+            availability: 'unavailable',
+            installed: false,
+            localeId: settings.localeId,
+            message:
+                'Apple SpeechTranscriber is unavailable for this language.',
+          ),
+        );
+      }
+    }
     if (!mounted) return;
     setState(() {
       _settings = settings;
       _nativeStatus = status;
+      _models = models;
       _selectedMode = _modes.firstWhere(
         (mode) => mode.id == settings.selectedModeId,
         orElse: () => _modes.first,
@@ -682,6 +745,22 @@ class _AppControllerState extends State<AppController>
       _downloadCancelTokens[model.id] = cancelToken;
     });
     try {
+      if (model.runtime == ModelRuntime.appleSpeech) {
+        final status = await _speech.installAppleSpeechModel(
+          locale: _settings.localeId,
+        );
+        if (!status.installed) {
+          throw LocalWhisperException(status.message);
+        }
+        if (!mounted) return;
+        setState(() {
+          _models = _withAppleSpeechStatus(_models, status);
+          _settings = _settings.copyWith(selectedModelId: model.id);
+        });
+        await _historyStore.saveSettings(_settings);
+        _toast('${model.name} installed');
+        return;
+      }
       final models = await _modelStore.downloadModel(
         model,
         cancelToken: cancelToken,
@@ -730,6 +809,19 @@ class _AppControllerState extends State<AppController>
   }
 
   Future<void> _removeModel(LocalModel model) async {
+    if (model.runtime == ModelRuntime.appleSpeech) {
+      try {
+        final status = await _speech.releaseAppleSpeechModel(
+          locale: _settings.localeId,
+        );
+        if (!mounted) return;
+        setState(() => _models = _withAppleSpeechStatus(_models, status));
+        _toast('${model.name} reservation released');
+      } on Object catch (error) {
+        _showError(_friendlyError(error));
+      }
+      return;
+    }
     final models = await _modelStore.removeModel(model);
     if (!mounted) return;
     setState(() {
@@ -1437,6 +1529,7 @@ class _SetupModelChoicesSheet extends StatelessWidget {
       ModelRuntime.mlx => 'MLX',
       ModelRuntime.coreMl => 'Core ML',
       ModelRuntime.whisperKit => 'WhisperKit',
+      ModelRuntime.appleSpeech => 'Apple Speech',
       ModelRuntime.sherpaOnnx => 'Sherpa ONNX',
       ModelRuntime.bundled => 'Bundled',
     };
@@ -2798,6 +2891,7 @@ class _ModelCard extends StatelessWidget {
       ModelRuntime.mlx => 'MLX',
       ModelRuntime.coreMl => 'Core ML',
       ModelRuntime.whisperKit => 'WhisperKit',
+      ModelRuntime.appleSpeech => 'Apple Speech',
       ModelRuntime.sherpaOnnx => 'Sherpa ONNX',
       ModelRuntime.bundled => 'Bundled',
     };
@@ -2812,7 +2906,8 @@ class _ModelCard extends StatelessWidget {
         ? 'Requires iOS ${model.minimumIosMajor}+.'
         : model.kind == ModelKind.transcription &&
               model.state == ModelInstallState.installed &&
-              model.runtime != ModelRuntime.whisperKit
+              model.runtime != ModelRuntime.whisperKit &&
+              model.runtime != ModelRuntime.appleSpeech
         ? 'Installed pack. Native iOS runtime adapter still required.'
         : null;
     final actions = _modelActionButtons(

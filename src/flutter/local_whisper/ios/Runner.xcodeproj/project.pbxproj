@@ -12,6 +12,7 @@
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
 		4F6A03F02CDA8001007B0001 /* LocalSpeechBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F6A03EF2CDA8001007B0001 /* LocalSpeechBridge.swift */; };
+		4F6A03F22CDA8001007B0001 /* AppleSpeechCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F6A03F12CDA8001007B0001 /* AppleSpeechCore.swift */; };
 		51BB18FAC4254106DEAEC6B4 /* LWKeyboard.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = E0841B72BD08844214DE1A69 /* LWKeyboard.appex */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
@@ -79,6 +80,7 @@
 		39231428CC24F13E0719A2EA /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		4F6A03EF2CDA8001007B0001 /* LocalSpeechBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSpeechBridge.swift; sourceTree = "<group>"; };
+		4F6A03F12CDA8001007B0001 /* AppleSpeechCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppleSpeechCore.swift; path = ../../../../LocalWhisperUI/Sources/AppleSpeechCore/AppleSpeechCore.swift; sourceTree = SOURCE_ROOT; };
 		51ED6742D75F0AF13B5F4ABB /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
 		6A09157823334668C73A7C0C /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		6D4C59CDDC5C1E4A3C6B597F /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
@@ -222,6 +224,7 @@
 				1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */,
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				4F6A03EF2CDA8001007B0001 /* LocalSpeechBridge.swift */,
+				4F6A03F12CDA8001007B0001 /* AppleSpeechCore.swift */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 				39231428CC24F13E0719A2EA /* PrivacyInfo.xcprivacy */,
@@ -498,6 +501,7 @@
 			files = (
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				4F6A03F02CDA8001007B0001 /* LocalSpeechBridge.swift in Sources */,
+				4F6A03F22CDA8001007B0001 /* AppleSpeechCore.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 			);

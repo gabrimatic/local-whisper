@@ -10,24 +10,41 @@ import 'package:path_provider/path_provider.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('native WhisperKit transcribes bundled mock speech audio', (
+  testWidgets('selected native engine transcribes bundled speech audio', (
     tester,
   ) async {
     app.main();
     await tester.pumpAndSettle();
 
-    final modelPath = await _resolveModelPath();
-    await _waitForModelFolder(modelPath);
+    const model = String.fromEnvironment(
+      'LOCAL_WHISPER_E2E_MODEL',
+      defaultValue: 'whisperkit_large_v3_turbo',
+    );
+    final service = NativeSpeechService();
+    var modelPath = '';
+    if (model == 'apple_speech') {
+      final status = await service.appleSpeechModelStatus(locale: 'en-US');
+      if (!status.available) {
+        expect(status.installed, isFalse);
+        return;
+      }
+      final installed = await service.installAppleSpeechModel(locale: 'en-US');
+      expect(installed.installed, isTrue);
+    } else {
+      modelPath = await _resolveModelPath();
+      await _waitForModelFolder(modelPath);
+    }
 
     final audioPath = await _copyFixtureToTemporaryFile();
-    final result = await NativeSpeechService().transcribeFileForTesting(
+    final result = await service.transcribeFileForTesting(
       audioPath: audioPath,
       locale: 'en-US',
-      model: 'whisperkit_large_v3_turbo',
+      model: model,
       modelPath: modelPath,
     );
 
     expect(result.onDevice, isTrue);
+    expect(result.modelId, model);
     expect(result.transcript.trim(), isNotEmpty);
     expect(
       result.transcript.toLowerCase(),

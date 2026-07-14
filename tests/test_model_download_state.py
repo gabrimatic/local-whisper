@@ -71,6 +71,92 @@ def test_engine_status_uses_configured_qwen_model_cache(monkeypatch, tmp_path):
     assert state["cache_dir"].endswith("models--mlx-community--Qwen3-ASR-1.7B-8bit")
 
 
+def test_apple_speech_status_reports_system_managed_asset(monkeypatch):
+    import whisper_voice.engines.status as status_mod
+
+    monkeypatch.setattr(
+        "whisper_voice.engines.apple_speech.apple_speech_model_status",
+        lambda: {
+            "availability": "installed",
+            "installed": True,
+            "locale": "en-US",
+            "message": "Ready",
+        },
+    )
+
+    state = status_mod.engine_model_status("apple_speech")
+
+    assert state["downloaded"] is True
+    assert state["download_status"] == "installed"
+    assert state["managed_by"] == "apple"
+    assert state["available"] is True
+    assert state["removable"] is True
+    assert state["locale"] == "en-US"
+    assert state["cache_dir"] is None
+
+
+def test_apple_speech_switch_prepares_asset_before_unloading_current_engine(monkeypatch):
+    import whisper_voice.app_switching as switching_mod
+    from whisper_voice.app_switching import SwitchingMixin
+
+    calls = []
+
+    class FakeTranscriber:
+        def __init__(self, engine_id):
+            self.engine_id = engine_id
+
+        def start(self):
+            calls.append(("start", self.engine_id))
+            return True
+
+        def close(self):
+            calls.append(("close", self.engine_id))
+
+    class DummyApp(SwitchingMixin):
+        pass
+
+    app = DummyApp()
+    app._busy = False
+    app._state_lock = threading.Lock()
+    app._download_cancel_lock = threading.Lock()
+    app._download_cancel_events = {}
+    app.config = SimpleNamespace(transcription=SimpleNamespace(engine="parakeet_v3"))
+    app.transcriber = FakeTranscriber("parakeet_v3")
+    app.recorder = SimpleNamespace(recording=False)
+    app.ipc = SimpleNamespace(send=Mock())
+    app._current_status = "Ready"
+    app._send_state_update = Mock()
+    app._send_state_error = Mock()
+    app._send_engines_status = Mock()
+    app._send_config_snapshot = Mock()
+
+    monkeypatch.setattr(
+        switching_mod,
+        "engine_model_status",
+        Mock(return_value={
+            "downloaded": False,
+            "cache_dir": None,
+            "hf_repo": None,
+            "managed_by": "apple",
+        }),
+    )
+    monkeypatch.setattr(switching_mod, "Transcriber", FakeTranscriber)
+    monkeypatch.setattr(
+        "whisper_voice.engines.apple_speech.AppleSpeechEngine",
+        lambda: FakeTranscriber("apple_speech"),
+    )
+    monkeypatch.setattr(switching_mod, "get_config", lambda: app.config)
+    monkeypatch.setattr(
+        "whisper_voice.config.update_config_field",
+        lambda section, key, value: setattr(app.config.transcription, key, value),
+    )
+
+    app._switch_engine("apple_speech")
+
+    assert calls.index(("start", "apple_speech")) < calls.index(("close", "parakeet_v3"))
+    assert calls[-1] == ("start", "apple_speech")
+
+
 def test_download_watcher_reports_aggregate_cache_bytes(tmp_path):
     from whisper_voice.engines.download_progress import DownloadWatcher
 

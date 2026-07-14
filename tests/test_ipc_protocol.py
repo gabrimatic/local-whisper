@@ -235,6 +235,7 @@ class TestConfigSnapshot:
         payload = sent[-1]["config"]
         assert payload["service"]["idle_unload_minutes"] == 20
         assert payload["qwen3_asr"]["max_tokens"] == 0
+        assert payload["apple_speech"] == {"locale": "en-US", "timeout": 0}
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +243,19 @@ class TestConfigSnapshot:
 # ---------------------------------------------------------------------------
 
 class TestIncomingMessageParsing:
+    def test_apple_speech_locale_update_is_trimmed_and_canonicalized(self):
+        from whisper_voice.app_ipc import IPCMixin
+
+        fake = SimpleNamespace(_SHORTCUT_FIELDS=set())
+        assert IPCMixin._validate_config_update(fake, "apple_speech", "locale", "  de_DE  ") == (
+            "de-DE",
+            None,
+        )
+        assert IPCMixin._validate_config_update(fake, "apple_speech", "locale", "   ") == (
+            "   ",
+            "Choose an Apple SpeechTranscriber locale",
+        )
+
     def test_parse_action(self):
         raw = json.dumps({"type": "action", "action": "cancel"}) + "\n"
         msg = json.loads(raw.strip())

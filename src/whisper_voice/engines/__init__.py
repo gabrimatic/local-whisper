@@ -45,6 +45,11 @@ def _create_whisperkit() -> TranscriptionEngine:
     return WhisperKitEngine()
 
 
+def _create_apple_speech() -> TranscriptionEngine:
+    from .apple_speech import AppleSpeechEngine
+    return AppleSpeechEngine()
+
+
 # ============================================================================
 # ENGINE REGISTRY - Add new engines here
 # ============================================================================
@@ -66,6 +71,12 @@ ENGINE_REGISTRY: Dict[str, EngineInfo] = {
         name="WhisperKit",
         description="Local WhisperKit server",
         factory=_create_whisperkit,
+    ),
+    "apple_speech": EngineInfo(
+        id="apple_speech",
+        name="Apple SpeechTranscriber",
+        description="Apple-managed on-device transcription for macOS 26+",
+        factory=_create_apple_speech,
     ),
 }
 

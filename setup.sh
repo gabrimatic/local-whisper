@@ -476,12 +476,14 @@ if [[ -d "$SWIFT_UI_DIR" ]]; then
             fi
             rm -f "$SWIFT_BUILD_LOG"
             SWIFT_BIN="$SWIFT_UI_DIR/.build/release/LocalWhisperUI"
-            if [[ -f "$SWIFT_BIN" ]]; then
+            SWIFT_SPEECH_BIN="$SWIFT_UI_DIR/.build/release/LocalWhisperSpeech"
+            if [[ -f "$SWIFT_BIN" && -f "$SWIFT_SPEECH_BIN" ]]; then
                 rm -rf "$SWIFT_UI_DEST"
                 APP_MACOS="$SWIFT_UI_DEST/Contents/MacOS"
                 APP_RES="$SWIFT_UI_DEST/Contents/Resources"
                 mkdir -p "$APP_MACOS" "$APP_RES"
                 cp "$SWIFT_BIN" "$APP_MACOS/LocalWhisperUI"
+                cp "$SWIFT_SPEECH_BIN" "$APP_MACOS/LocalWhisperSpeech"
 
                 cat > "$SWIFT_UI_DEST/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -495,15 +497,17 @@ if [[ -d "$SWIFT_UI_DIR" ]]; then
     <key>CFBundleName</key>
     <string>Local Whisper</string>
     <key>CFBundleVersion</key>
-    <string>1.7.0</string>
+    <string>1.8.0</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.7.0</string>
+    <string>1.8.0</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Local Whisper uses Apple's on-device SpeechTranscriber when you select the Apple speech model.</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleIconFile</key>

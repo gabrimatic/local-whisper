@@ -1,6 +1,6 @@
 ---
 title: "Transcription engines"
-description: "Choose and configure Parakeet-TDT v3, Qwen3-ASR, or WhisperKit."
+description: "Choose and configure Parakeet-TDT v3, Qwen3-ASR, Apple SpeechTranscriber, or WhisperKit."
 ---
 
 Transcription engines are selected by `transcription.engine` in `~/.whisper/config.toml`, the macOS Settings app, the menu bar, or `wh engine <name>`.
@@ -55,6 +55,17 @@ You can also install the CLI directly with `brew install whisperkit-cli`.
 | `check_url` | `http://localhost:50060/` | Health check. |
 
 Settings also exposes WhisperKit presets for `large-v3-v20240930_turbo_632MB`, `large-v3-v20240930_turbo`, `large-v3-v20240930`, `small`, and `base`, plus a custom model field.
+
+## Apple SpeechTranscriber
+
+`apple_speech` uses Apple's SpeechAnalyzer session API with its on-device SpeechTranscriber module. It requires macOS 26, supported Apple hardware, and an explicit locale. The same shared Swift core is used by the iOS app on supported iOS 26 devices.
+
+Apple manages language assets through `AssetInventory`. Local Whisper reports whether the locale is unsupported, available, downloading, or installed; it does not infer readiness from a private file path. Switching prepares the asset before unloading the current engine. Removing the model releases Local Whisper's reservation and leaves final storage reclamation to the operating system.
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `locale` | `en-US` | Explicit BCP 47 locale. |
+| `timeout` | `0` | No limit. |
 
 ## Adding an engine
 

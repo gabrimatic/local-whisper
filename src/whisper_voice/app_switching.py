@@ -202,6 +202,18 @@ class SwitchingMixin:
                 _status("Checking WhisperKit CLI...")
                 require_whisperkit_cli()
 
+            if engine_name == "apple_speech" and needs_download:
+                from .engines.apple_speech import AppleSpeechEngine
+
+                _status("Preparing Apple SpeechTranscriber model...")
+                preflight = AppleSpeechEngine()
+                if not preflight.start():
+                    raise RuntimeError(
+                        preflight.last_error
+                        or "Apple SpeechTranscriber could not install its language model."
+                    )
+                preflight.close()
+
             # Download before unloading the currently working engine. If the
             # network fails or the user cancels, dictation remains on the old
             # model instead of being left with no transcriber.
@@ -322,10 +334,24 @@ class SwitchingMixin:
             self._send_state_error("Switch engines before removing the active cache.")
             return
         name = _engine_display_name(engine_name)
-        removed = remove_engine_cache(engine_name)
+        try:
+            removed = remove_engine_cache(engine_name)
+        except Exception as exc:
+            self._send_state_error(str(exc))
+            self._send_engines_status()
+            return
         if removed:
-            log(f"Removed {name} model cache", "OK")
-            msg = f"{name} cache removed"
+            log(
+                f"Released {name} language reservation"
+                if engine_name == "apple_speech"
+                else f"Removed {name} model cache",
+                "OK",
+            )
+            msg = (
+                f"{name} language reservation released"
+                if engine_name == "apple_speech"
+                else f"{name} cache removed"
+            )
         else:
             msg = f"{name} cache was already empty"
         # Don't clobber an active recording/processing state with "idle".

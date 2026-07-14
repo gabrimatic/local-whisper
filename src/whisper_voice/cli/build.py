@@ -24,10 +24,14 @@ def _local_whisper_ui_binary() -> Path:
     return Path.home() / ".whisper" / "LocalWhisperUI.app" / "Contents" / "MacOS" / "LocalWhisperUI"
 
 
+def _local_whisper_speech_binary() -> Path:
+    return Path.home() / ".whisper" / "LocalWhisperUI.app" / "Contents" / "MacOS" / "LocalWhisperSpeech"
+
+
 def _local_whisper_ui_sources_newer_than_binary() -> bool:
     """Return True if any LocalWhisperUI Swift source is newer than the installed binary."""
     binary = _local_whisper_ui_binary()
-    if not binary.exists():
+    if not binary.exists() or not _local_whisper_speech_binary().exists():
         return True
     binary_mtime = binary.stat().st_mtime
     sources_dir = _local_whisper_ui_dir() / "Sources"
@@ -51,15 +55,17 @@ _LOCAL_WHISPER_UI_INFO_PLIST = """\
     <key>CFBundleName</key>
     <string>Local Whisper</string>
     <key>CFBundleVersion</key>
-    <string>1.7.0</string>
+    <string>1.8.0</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.7.0</string>
+    <string>1.8.0</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Local Whisper uses Apple's on-device SpeechTranscriber when you select the Apple speech model.</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleIconFile</key>
@@ -90,8 +96,12 @@ def _build_local_whisper_ui(swift: str) -> bool:
 
     # Assemble .app bundle
     built_binary = ui_dir / ".build" / "release" / "LocalWhisperUI"
+    built_speech = ui_dir / ".build" / "release" / "LocalWhisperSpeech"
     if not built_binary.exists():
         print(f"{C_RED}Built binary not found: {built_binary}{C_RESET}", file=sys.stderr)
+        return False
+    if not built_speech.exists():
+        print(f"{C_RED}Built speech helper not found: {built_speech}{C_RESET}", file=sys.stderr)
         return False
 
     macos_dir = Path.home() / ".whisper" / "LocalWhisperUI.app" / "Contents" / "MacOS"
@@ -102,6 +112,9 @@ def _build_local_whisper_ui(swift: str) -> bool:
     dest_binary = macos_dir / "LocalWhisperUI"
     shutil.copy2(str(built_binary), str(dest_binary))
     dest_binary.chmod(0o755)
+    dest_speech = macos_dir / "LocalWhisperSpeech"
+    shutil.copy2(str(built_speech), str(dest_speech))
+    dest_speech.chmod(0o755)
 
     info_plist_path = macos_dir.parent / "Info.plist"
     info_plist_path.write_text(_LOCAL_WHISPER_UI_INFO_PLIST)

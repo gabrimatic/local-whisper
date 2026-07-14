@@ -4,7 +4,7 @@ This Flutter app is Local Whisper's mobile speech-to-text implementation for iOS
 
 Mobile is both the recorder app and the keyboard. Record in the app, keep model packs and history on the device, and use modes to shape the finished text. The iOS keyboard extension and Android input method bring Local Whisper actions into other apps.
 
-iOS records with `AVAudioEngine` and transcribes locally with WhisperKit/Core ML. Android records 16 kHz mono WAV audio, transcribes on-device with `sherpa_onnx`, and owns the native input method and setup path. There is no Apple Speech framework path and no cloud speech fallback.
+iOS records with `AVAudioEngine` and transcribes locally with WhisperKit/Core ML or Apple SpeechTranscriber on supported iOS 26 hardware. Android records 16 kHz mono WAV audio, transcribes on-device with `sherpa_onnx`, and owns the native input method and setup path. There is no cloud speech fallback.
 
 ## Checks
 
@@ -16,6 +16,8 @@ flutter build ios --simulator --debug
 flutter build apk --debug
 # after WhisperKit is installed on a simulator:
 flutter test integration_test/native_transcription_test.dart -d <simulator-id> --dart-define=LOCAL_WHISPER_MODEL_PATH=<installed-model-folder>
+# on supported physical iOS 26 hardware:
+flutter test integration_test/native_transcription_test.dart -d <device-id> --dart-define=LOCAL_WHISPER_E2E_MODEL=apple_speech
 # Android emulator QA seed:
 flutter build apk --debug --dart-define=LOCAL_WHISPER_QA_SEED=true
 ```
@@ -27,7 +29,8 @@ flutter build apk --debug --dart-define=LOCAL_WHISPER_QA_SEED=true
 - `lib/src/text_polisher.dart`: local grammar cleanup, spoken punctuation, filler removal, built-in modes.
 - `lib/src/history_store.dart`: on-device settings/history/mode persistence.
 - `lib/src/model_store.dart`: Local Whisper model catalog, cancelable Hugging Face snapshot installer, manifest verification, and install/remove state.
-- `ios/Runner/LocalSpeechBridge.swift`: native iOS recording plus WhisperKit bridge.
+- `ios/Runner/LocalSpeechBridge.swift`: native iOS recording plus WhisperKit and Apple SpeechTranscriber bridges.
+- `../../../LocalWhisperUI/Sources/AppleSpeechCore/AppleSpeechCore.swift`: shared SpeechAnalyzer implementation.
 - `ios/LocalWhisperKeyboard/`: native Local Whisper keyboard extension.
 - `android/app/src/main/kotlin/info/gabrimatic/localwhisper/MainActivity.kt`: native Android method/event channel bridge.
 - `android/app/src/main/kotlin/info/gabrimatic/localwhisper/LocalWhisperInputMethodService.kt`: native Android Local Whisper input method.
@@ -54,11 +57,12 @@ flutter build apk --debug --dart-define=LOCAL_WHISPER_QA_SEED=true
 - Parakeet-TDT v3 MLX: `mlx-community/parakeet-tdt-0.6b-v3` (~2.3 GB snapshot).
 - Kokoro-82M TTS: `mlx-community/Kokoro-82M-bf16` (~371 MB snapshot).
 - WhisperKit Large v3: `argmaxinc/whisperkit-coreml`, wired to `openai_whisper-large-v3-v20240930_626MB`.
+- Apple SpeechTranscriber: iOS 26 language asset managed by `AssetInventory`; support is checked for the current device and locale.
 - Bundled deterministic cleanup engine.
 
 The setup model step shows the recommended pack inline with install progress: WhisperKit on iOS and Parakeet-TDT v3 INT8 ONNX on Android. The optional model list opens as an in-place sheet, so first-run setup does not detour to the Models tab.
 
-WhisperKit Large v3 is wired for iOS transcription today. Parakeet-TDT v3 INT8 ONNX and Qwen3-ASR 0.6B INT8 ONNX are wired for Android through sherpa-onnx. These are local packs, not hosted APIs.
+WhisperKit Large v3 and Apple SpeechTranscriber are wired for iOS transcription. Parakeet-TDT v3 INT8 ONNX and Qwen3-ASR 0.6B INT8 ONNX are wired for Android through sherpa-onnx. These are local packs, not hosted APIs.
 
 ## Brand System
 

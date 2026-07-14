@@ -178,6 +178,10 @@ class IPCMixin:
                 "chunk_duration": cfg.qwen3_asr.chunk_duration,
                 "max_tokens": cfg.qwen3_asr.max_tokens,
             },
+            "apple_speech": {
+                "locale": cfg.apple_speech.locale,
+                "timeout": cfg.apple_speech.timeout,
+            },
             "whisper": {
                 "url": cfg.whisper.url,
                 "check_url": cfg.whisper.check_url,
@@ -299,6 +303,10 @@ class IPCMixin:
             from .config.schema import VALID_HOTKEY_KEYS
             if value not in VALID_HOTKEY_KEYS:
                 return value, f"Unknown trigger key: {value}"
+        if section == "apple_speech" and key == "locale":
+            if not isinstance(value, str) or not value.strip():
+                return value, "Choose an Apple SpeechTranscriber locale"
+            return value.strip().replace("_", "-"), None
         return value, None
 
     def _handle_ipc_message(self, msg: dict):
@@ -416,6 +424,14 @@ class IPCMixin:
                         threading.Thread(
                             target=self._switch_engine,
                             args=("whisperkit", (section, key, old_value)),
+                            daemon=True,
+                        ).start()
+                elif section == "apple_speech" and key == "locale":
+                    self._send_engines_status()
+                    if self.config.transcription.engine == "apple_speech":
+                        threading.Thread(
+                            target=self._switch_engine,
+                            args=("apple_speech", (section, key, old_value)),
                             daemon=True,
                         ).start()
         elif msg_type == "replacement_add":

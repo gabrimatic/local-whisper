@@ -78,7 +78,7 @@ Loading a model is not enough. The local server must be running.
 
 Fresh setup downloads and warms the active engine. Later runs load cached models from disk.
 
-Qwen3-ASR downloads when you switch to it. WhisperKit manages its own model folder. Kokoro downloads only after text-to-speech is enabled. Settings marks a managed MLX model as downloaded only after a complete Hugging Face snapshot is present. Partial caches show as partial and can be resumed from the Transcription panel.
+Qwen3-ASR downloads when you switch to it. macOS manages Apple SpeechTranscriber assets per locale, and Local Whisper shows Apple's real supported, downloading, or installed state. WhisperKit manages its own model folder. Kokoro downloads only after text-to-speech is enabled. Settings marks a managed MLX model as downloaded only after a complete Hugging Face snapshot is present. Partial caches show as partial and can be resumed from the Transcription panel.
 
 If idle model unload is enabled, Local Whisper may release the active model from RAM while the background service stays ready. The next transcription reloads the model on demand. `wh setup`, `wh update`, and `wh restart` treat the service as ready once the command socket is accepting commands, even if the model is currently unloaded.
 

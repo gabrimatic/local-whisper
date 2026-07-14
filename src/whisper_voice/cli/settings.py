@@ -19,6 +19,17 @@ from .lifecycle import (
 
 def _ensure_engine_ready_for_cli(engine_id: str) -> None:
     """Prepare managed engine weights before writing config/restarting."""
+    if engine_id == "apple_speech":
+        from whisper_voice.engines.apple_speech import AppleSpeechEngine
+
+        engine = AppleSpeechEngine()
+        try:
+            if not engine.start():
+                raise RuntimeError(engine.last_error or "Apple speech model installation failed.")
+        finally:
+            engine.close()
+        return
+
     if engine_id == "whisperkit":
         from whisper_voice.engines.whisperkit_runtime import require_whisperkit_cli
 

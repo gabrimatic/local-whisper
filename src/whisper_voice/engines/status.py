@@ -128,6 +128,26 @@ def engine_model_status(engine_id: str) -> Dict:
       cache_dir:  str|None -- absolute path to the HF cache folder
       hf_repo:    str|None -- which HF repo the engine uses
     """
+    if engine_id == "apple_speech":
+        from .apple_speech import apple_speech_model_status
+
+        native = apple_speech_model_status()
+        availability = str(native.get("availability") or "unavailable")
+        installed = availability == "installed" and native.get("installed") is True
+        return {
+            "downloaded": installed,
+            "download_status": availability,
+            "size_mb": None,
+            "warmed": installed,
+            "cache_dir": None,
+            "hf_repo": None,
+            "managed_by": "apple",
+            "available": availability != "unavailable",
+            "removable": installed,
+            "locale": native.get("locale"),
+            "message": native.get("message"),
+        }
+
     info = engine_model_metadata(engine_id)
     if info is None:
         return {
@@ -207,6 +227,17 @@ def all_engine_statuses(active_id: Optional[str]) -> Dict[str, Dict]:
 
 def remove_engine_cache(engine_id: str) -> bool:
     """Delete the on-disk weights + warm sentinel for an engine. Returns True if anything removed."""
+    if engine_id == "apple_speech":
+        from .apple_speech import AppleSpeechEngine
+
+        engine = AppleSpeechEngine()
+        status = engine_model_status(engine_id)
+        if not status.get("downloaded", False):
+            return False
+        if not engine.release():
+            raise RuntimeError(engine.last_error or "Apple speech model reservation could not be released.")
+        return True
+
     info = engine_model_metadata(engine_id)
     if info is None:
         return False

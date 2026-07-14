@@ -135,6 +135,30 @@ class TestPendingWorkSummary:
 
 
 class TestEngineSwitchModelPreparation:
+    def test_apple_speech_prepares_native_asset(self, monkeypatch):
+        from whisper_voice.cli import settings
+
+        calls = []
+
+        class FakeAppleSpeechEngine:
+            last_error = ""
+
+            def start(self):
+                calls.append("install")
+                return True
+
+            def close(self):
+                calls.append("close")
+
+        monkeypatch.setattr(
+            "whisper_voice.engines.apple_speech.AppleSpeechEngine",
+            FakeAppleSpeechEngine,
+        )
+
+        settings._ensure_engine_ready_for_cli("apple_speech")
+
+        assert calls == ["install", "close"]
+
     def test_cmd_engine_prefetches_managed_model_before_writing_config(self, monkeypatch):
         from whisper_voice.cli import settings
 
