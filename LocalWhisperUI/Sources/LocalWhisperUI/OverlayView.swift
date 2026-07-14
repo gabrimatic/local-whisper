@@ -233,7 +233,11 @@ struct OverlayView: View {
         case .idle:       return "Local Whisper idle"
         case .recording:  return "Recording"
         case .processing: return processingLabel
-        case .done:       return "Transcription complete, copied to clipboard"
+        case .done:
+            // Shortcut transforms and paste-mode dictation are not "copied
+            // to clipboard" — read out what actually happened.
+            let done = appState.doneStatusText
+            return done.isEmpty ? "Transcription complete, copied to clipboard" : done
         case .error:      return errorLabel
         case .speaking:   return speakingLabel
         }

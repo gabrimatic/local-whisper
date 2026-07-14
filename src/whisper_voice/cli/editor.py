@@ -32,10 +32,20 @@ def _interactive_config() -> None:
     def _get(section, key, default):
         return data.get(section, {}).get(key, default)
 
+    def _validate_shortcut_value(value: str):
+        from whisper_voice.shortcuts import validate_shortcut
+        return validate_shortcut(value)
+
+    _HOTKEY_OPTIONS = [
+        "alt_r", "alt_l", "ctrl_r", "ctrl_l", "cmd_r", "cmd_l",
+        "shift_r", "shift_l", "caps_lock",
+    ] + [f"f{n}" for n in range(1, 13)]
+
     ITEMS = [
         {"type": "header",  "label": "Recording"},
-        {"type": "choice",  "label": "Hotkey",          "section": "hotkey",        "key": "key",                    "value": _get("hotkey", "key", "alt_r"),                         "options": ["alt_r","alt_l","ctrl_r","ctrl_l","cmd_r","cmd_l","shift_r","shift_l","caps_lock"]},
+        {"type": "choice",  "label": "Hotkey",          "section": "hotkey",        "key": "key",                    "value": _get("hotkey", "key", "alt_r"),                         "options": _HOTKEY_OPTIONS},
         {"type": "float",   "label": "Double-tap",       "section": "hotkey",        "key": "double_tap_threshold",   "value": _get("hotkey", "double_tap_threshold", 0.4),            "hint": "sec"},
+        {"type": "float",   "label": "Hold threshold",   "section": "hotkey",        "key": "hold_threshold",         "value": _get("hotkey", "hold_threshold", 0.0),                  "hint": "sec  0=double-tap"},
         {"type": "header",  "label": "Transcription"},
         {"type": "choice",  "label": "Engine",           "section": "transcription", "key": "engine",                 "value": _get("transcription", "engine", "parakeet_v3"),        "options": ["parakeet_v3", "qwen3_asr", "whisperkit"]},
         {"type": "header",  "label": "Grammar"},
@@ -44,7 +54,7 @@ def _interactive_config() -> None:
         {"type": "header",  "label": "Text to Speech"},
         {"type": "bool",    "label": "Enabled",          "section": "tts",           "key": "enabled",                "value": _get("tts", "enabled", False)},
         {"type": "string",  "label": "Voice",            "section": "kokoro_tts",    "key": "voice",                  "value": _get("kokoro_tts", "voice", "af_sky"),                  "hint": "af_sky  bf_emma  am_adam"},
-        {"type": "string",  "label": "Shortcut",         "section": "tts",           "key": "speak_shortcut",         "value": _get("tts", "speak_shortcut", "alt+t")},
+        {"type": "string",  "label": "Shortcut",         "section": "tts",           "key": "speak_shortcut",         "value": _get("tts", "speak_shortcut", "alt+t"),                 "validate": _validate_shortcut_value},
         {"type": "header",  "label": "UI"},
         {"type": "bool",    "label": "Auto-paste",       "section": "ui",            "key": "auto_paste",             "value": _get("ui", "auto_paste", False)},
         {"type": "bool",    "label": "Overlay",          "section": "ui",            "key": "show_overlay",           "value": _get("ui", "show_overlay", True)},
@@ -54,8 +64,15 @@ def _interactive_config() -> None:
         {"type": "int",     "label": "Idle unload",      "section": "service",       "key": "idle_unload_minutes",    "value": _get("service", "idle_unload_minutes", 20),             "hint": "min  0=never"},
         {"type": "header",  "label": "Shortcuts"},
         {"type": "bool",    "label": "Enabled",          "section": "shortcuts",     "key": "enabled",                "value": _get("shortcuts", "enabled", True)},
+        {"type": "string",  "label": "Proofread",        "section": "shortcuts",     "key": "proofread",              "value": _get("shortcuts", "proofread", "ctrl+shift+g"),         "validate": _validate_shortcut_value},
+        {"type": "string",  "label": "Rewrite",          "section": "shortcuts",     "key": "rewrite",                "value": _get("shortcuts", "rewrite", "ctrl+shift+r"),           "validate": _validate_shortcut_value},
+        {"type": "string",  "label": "Prompt engineer",  "section": "shortcuts",     "key": "prompt_engineer",        "value": _get("shortcuts", "prompt_engineer", "ctrl+shift+p"),   "validate": _validate_shortcut_value},
+        {"type": "bool",    "label": "Paste result",     "section": "shortcuts",     "key": "paste_result",           "value": _get("shortcuts", "paste_result", True)},
         {"type": "header",  "label": "Replacements"},
         {"type": "bool",    "label": "Enabled",          "section": "replacements",  "key": "enabled",                "value": _get("replacements", "enabled", False)},
+        {"type": "header",  "label": "Dictation"},
+        {"type": "bool",    "label": "Commands",         "section": "dictation",     "key": "enabled",                "value": _get("dictation", "enabled", True)},
+        {"type": "bool",    "label": "Strip fillers",    "section": "dictation",     "key": "strip_fillers",          "value": _get("dictation", "strip_fillers", True)},
         {"type": "header",  "label": "Audio"},
         {"type": "bool",    "label": "VAD",              "section": "audio",         "key": "vad_enabled",            "value": _get("audio", "vad_enabled", True)},
         {"type": "bool",    "label": "Noise reduction",  "section": "audio",         "key": "noise_reduction",        "value": _get("audio", "noise_reduction", True)},
@@ -179,6 +196,22 @@ def _interactive_config() -> None:
         except Exception:
             return False
 
+    def _reload_service() -> bool:
+        """Hot-reload the running service so edits apply immediately."""
+        try:
+            from .client import send_service_request
+            result = send_service_request({"action": "reload_config"}, timeout=5.0)
+            return bool(result and result.get("success"))
+        except Exception:
+            return False
+
+    def _saved_message(ok: bool) -> tuple:
+        if not ok:
+            return ("not saved", RD)
+        if _reload_service():
+            return ("saved · applied live", GN)
+        return ("saved", GN)
+
     def _toggle() -> tuple:
         item = ITEMS[selectable[cursor[0]]]
         if item["type"] == "bool":
@@ -189,8 +222,7 @@ def _interactive_config() -> None:
             item["value"] = opts[(idx + 1) % len(opts)]
         else:
             return ("", DM)
-        ok = _save(item)
-        return ("", DM) if ok else ("not saved", RD)
+        return _saved_message(_save(item))
 
     def _edit() -> tuple:
         item = ITEMS[selectable[cursor[0]]]
@@ -231,8 +263,12 @@ def _interactive_config() -> None:
                 item["value"] = v
         except ValueError:
             return ("invalid value", YL)
-        ok = _save(item)
-        return ("saved", GN) if ok else ("not saved", RD)
+        validate = item.get("validate")
+        if validate is not None:
+            error = validate(item["value"])
+            if error:
+                return (str(error), YL)
+        return _saved_message(_save(item))
 
     msg, msg_color = "", DM
     try:
@@ -276,10 +312,16 @@ def cmd_config(args: list):
                 print(f"{C_RED}Error reading config: {e}{C_RESET}", file=sys.stderr)
                 return
             engine = data.get("transcription", {}).get("engine", "parakeet_v3")
-            language = data.get(engine, {}).get("language", "auto")
+            # Only WhisperKit has a language setting; MLX engines manage
+            # language themselves.
+            if engine == "whisperkit":
+                language = data.get("whisper", {}).get("language", "auto")
+                engine_label = f"{C_GREEN}{engine}{C_RESET}  {C_DIM}({language}){C_RESET}"
+            else:
+                engine_label = f"{C_GREEN}{engine}{C_RESET}"
             def _on_off(v): return f"{C_GREEN}on{C_RESET}" if v else f"{C_DIM}off{C_RESET}"
             print()
-            print(f"  {C_DIM}Engine{C_RESET}      {C_GREEN}{engine}{C_RESET}  {C_DIM}({language}){C_RESET}")
+            print(f"  {C_DIM}Engine{C_RESET}      {engine_label}")
             print(f"  {C_DIM}Grammar{C_RESET}     {_on_off(data.get('grammar',{}).get('enabled',False))}  {C_DIM}{data.get('grammar',{}).get('backend','')}{C_RESET}")
             print(f"  {C_DIM}TTS{C_RESET}         {_on_off(data.get('tts',{}).get('enabled',False))}  {C_DIM}{data.get('kokoro_tts',{}).get('voice','af_sky')}{C_RESET}")
             idle = data.get("service", {}).get("idle_unload_minutes", 20)

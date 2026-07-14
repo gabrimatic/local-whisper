@@ -15,6 +15,12 @@ final class IPCClient: @unchecked Sendable {
     private let maxReconnectDelay: Double = 10.0
     private var buffer = Data()
     private var isRunning = false
+    private var isReady = false
+    // Writes issued while the service is down/restarting queue here and
+    // flush on reconnect — otherwise a toggle flipped during the ~3s restart
+    // gap silently vanished and snapped back on the next snapshot.
+    private var pendingOutgoing: [Data] = []
+    private let maxPendingOutgoing = 128
     private weak var appState: AppState?
 
     // Serial queue so state_update ordering survives even when multiple
@@ -80,14 +86,18 @@ final class IPCClient: @unchecked Sendable {
             case .ready:
                 self.reconnectDelay = 0.5
                 self.buffer = Data()
+                self.isReady = true
                 self.publishConnectionState(.connected)
+                self.flushPendingOutgoing()
                 self.receiveNext()
             case .failed, .cancelled:
+                self.isReady = false
                 self.publishConnectionState(.disconnected)
                 if self.isRunning {
                     self.scheduleReconnect()
                 }
             case .preparing, .setup, .waiting:
+                self.isReady = false
                 self.publishConnectionState(.connecting)
             default:
                 break
@@ -151,16 +161,43 @@ final class IPCClient: @unchecked Sendable {
 
     // MARK: - Sending
 
-    func send<T: Encodable & Sendable>(_ message: T) {
+    /// `queueWhenDisconnected` must ONLY be set for idempotent config-style
+    /// writes (config_update, replacement/dictation edits). One-shot actions
+    /// (quit, restart, update, engine_switch, testers) are dropped while
+    /// disconnected — replaying a stale "quit" minutes later against a
+    /// freshly started service would be far worse than losing the click.
+    func send<T: Encodable & Sendable>(_ message: T, queueWhenDisconnected: Bool = false) {
         queue.async { [weak self] in
             guard let self else { return }
             do {
                 var data = try JSONEncoder().encode(message)
                 data.append(0x0A)
-                self.connection?.send(content: data, completion: .idempotent)
+                if self.isReady, let connection = self.connection {
+                    connection.send(content: data, completion: .idempotent)
+                } else if queueWhenDisconnected {
+                    // Service down/restarting: hold the write and replay it
+                    // on reconnect instead of silently dropping the edit.
+                    if self.pendingOutgoing.count < self.maxPendingOutgoing {
+                        self.pendingOutgoing.append(data)
+                    } else {
+                        ipcLogger.error("IPC outgoing queue full; dropping message")
+                    }
+                } else {
+                    ipcLogger.warning("IPC not connected; dropping one-shot message")
+                }
             } catch {
                 ipcLogger.error("IPC encode failed: \(error.localizedDescription)")
             }
+        }
+    }
+
+    private func flushPendingOutgoing() {
+        guard !pendingOutgoing.isEmpty, let connection else { return }
+        let queued = pendingOutgoing
+        pendingOutgoing = []
+        ipcLogger.info("Flushing \(queued.count) queued IPC message(s) after reconnect")
+        for data in queued {
+            connection.send(content: data, completion: .idempotent)
         }
     }
 
@@ -181,15 +218,35 @@ final class IPCClient: @unchecked Sendable {
     }
 
     func sendConfigUpdate<T: Encodable>(section: String, key: String, value: T) {
-        send(ConfigUpdateMessage(section: section, key: key, value: AnyEncodable(value)))
+        send(ConfigUpdateMessage(section: section, key: key, value: AnyEncodable(value)), queueWhenDisconnected: true)
     }
 
     func sendReplacementAdd(spoken: String, replacement: String) {
-        send(ReplacementAddMessage(spoken: spoken, replacement: replacement))
+        send(ReplacementAddMessage(spoken: spoken, replacement: replacement), queueWhenDisconnected: true)
     }
 
     func sendReplacementRemove(spoken: String) {
-        send(ReplacementRemoveMessage(spoken: spoken))
+        send(ReplacementRemoveMessage(spoken: spoken), queueWhenDisconnected: true)
+    }
+
+    func sendReplacementImport(rules: [String: String]) {
+        send(ReplacementImportMessage(rules: rules), queueWhenDisconnected: true)
+    }
+
+    func sendReplacementTest(text: String) {
+        send(ReplacementTestMessage(text: text))
+    }
+
+    func sendDictationCommandAdd(spoken: String, replacement: String) {
+        send(DictationCommandAddMessage(spoken: spoken, replacement: replacement), queueWhenDisconnected: true)
+    }
+
+    func sendDictationCommandRemove(spoken: String) {
+        send(DictationCommandRemoveMessage(spoken: spoken), queueWhenDisconnected: true)
+    }
+
+    func sendDictationTest(text: String) {
+        send(DictationTestMessage(text: text))
     }
 
     // MARK: - Connection state plumbing

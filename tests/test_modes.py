@@ -4,7 +4,7 @@
 Unit tests for backends/modes.py.
 
 Covers the mode registry, lookup helpers, and the three prompt-builder
-functions (Ollama, LM Studio, Apple Intelligence). No hardware, network,
+functions (shared pair builder, Ollama, LM Studio). No hardware, network,
 or macOS frameworks involved.
 """
 
@@ -35,9 +35,9 @@ def _import_modes():
             ModeNotFoundError,
             get_all_modes,
             get_mode,
-            get_mode_apple_intelligence_input,
             get_mode_lm_studio_messages,
             get_mode_ollama_prompt,
+            get_mode_prompts,
         )
     return (
         MODE_REGISTRY,
@@ -45,7 +45,7 @@ def _import_modes():
         get_all_modes,
         get_mode_ollama_prompt,
         get_mode_lm_studio_messages,
-        get_mode_apple_intelligence_input,
+        get_mode_prompts,
         ModeNotFoundError,
         Mode,
     )
@@ -68,8 +68,8 @@ class TestModeRegistry:
             assert mode.description, f"{key}: description is empty"
             assert mode.system_prompt, f"{key}: system_prompt is empty"
             assert mode.user_prompt_template, f"{key}: user_prompt_template is empty"
-            # shortcut may be empty for transcription; just check it exists
-            assert hasattr(mode, "shortcut")
+            # Key bindings live in [shortcuts] config, not on the mode.
+            assert not hasattr(mode, "shortcut")
 
     def test_mode_ids_match_keys(self):
         registry, *_ = _import_modes()
@@ -187,28 +187,30 @@ class TestGetModeLmStudioMessages:
 
 
 # ---------------------------------------------------------------------------
-# TestGetModeAppleIntelligenceInput
+# TestGetModePrompts (shared builder used by the Apple backend directly)
 # ---------------------------------------------------------------------------
 
-class TestGetModeAppleIntelligenceInput:
-    def test_contains_separator(self):
-        _, _, _, _, _, get_mode_apple_intelligence_input, *_ = _import_modes()
-        result = get_mode_apple_intelligence_input("proofread", "hello")
-        assert "\n---SEPARATOR---\n" in result
-
-    def test_contains_text_and_system_prompt(self):
-        registry, _, _, _, _, get_mode_apple_intelligence_input, *_ = _import_modes()
+class TestGetModePrompts:
+    def test_returns_system_and_user_pair(self):
+        registry, _, _, _, _, get_mode_prompts, *_ = _import_modes()
         mode = registry["proofread"]
-        result = get_mode_apple_intelligence_input("proofread", "hello world")
-        assert "hello world" in result
-        assert mode.system_prompt in result
+        system, user = get_mode_prompts("proofread", "hello world")
+        assert system == mode.system_prompt
+        assert "hello world" in user
+
+    def test_all_modes_produce_pairs(self):
+        _, _, _, _, _, get_mode_prompts, *_ = _import_modes()
+        for mode_id in ("proofread", "rewrite", "prompt_engineer", "transcription"):
+            system, user = get_mode_prompts(mode_id, "sample text")
+            assert system
+            assert "sample text" in user
 
     def test_unknown_mode_raises(self):
-        _, _, _, _, _, get_mode_apple_intelligence_input, ModeNotFoundError, _ = _import_modes()
+        _, _, _, _, _, get_mode_prompts, ModeNotFoundError, _ = _import_modes()
         with pytest.raises(ModeNotFoundError):
-            get_mode_apple_intelligence_input("nonexistent", "hello")
+            get_mode_prompts("nonexistent", "hello")
 
     def test_empty_text_raises(self):
-        _, _, _, _, _, get_mode_apple_intelligence_input, *_ = _import_modes()
+        _, _, _, _, _, get_mode_prompts, *_ = _import_modes()
         with pytest.raises(ValueError):
-            get_mode_apple_intelligence_input("proofread", "")
+            get_mode_prompts("proofread", "")

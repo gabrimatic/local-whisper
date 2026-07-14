@@ -6,6 +6,7 @@ LM Studio backend implementation for grammar correction.
 Handles grammar correction via LM Studio's OpenAI-compatible API.
 """
 
+import time
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
@@ -88,26 +89,17 @@ class LMStudioBackend(GrammarBackend):
             log("Text too short for mode processing, returning as-is", "INFO")
             return text, None
 
+        # Chunk before building any messages: each chunk builds its own.
+        max_chars = config.lm_studio.max_chars
+        if max_chars > 0 and len(text) > max_chars:
+            return self._fix_in_chunks(text, max_chars, mode_id)
+
         # Build messages with error handling
         try:
             messages = get_mode_lm_studio_messages(mode_id, text)
         except ValueError as e:
             log(f"Failed to build messages for mode {mode_id}: {e}", "ERR")
             return text, f"Prompt error: {e}"
-
-        # Handle max_chars chunking
-        max_chars = config.lm_studio.max_chars
-        if max_chars > 0 and len(text) > max_chars:
-            log(f"LM Studio: splitting {len(text)} chars into chunks of {max_chars}", "INFO")
-            chunks = self._split_text(text, max_chars)
-            results = []
-            for i, chunk in enumerate(chunks):
-                log(f"LM Studio: processing chunk {i+1}/{len(chunks)} ({len(chunk)} chars)", "INFO")
-                result, err = self.fix_with_mode(chunk, mode_id)
-                if err:
-                    return text, err
-                results.append(result)
-            return "\n\n".join(results), None
 
         log(f"LM Studio fix_with_mode: {mode.name} ({len(text)} chars)", "INFO")
 
@@ -130,15 +122,20 @@ class LMStudioBackend(GrammarBackend):
                 "stream": False
             }
 
-            r = self._session.post(
-                config.lm_studio.url,
-                json=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": "Bearer lm-studio"
-                },
-                timeout=timeout
-            )
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer lm-studio",
+            }
+            try:
+                r = self._session.post(
+                    config.lm_studio.url, json=payload, headers=headers, timeout=timeout
+                )
+            except requests.exceptions.ConnectionError:
+                # One silent retry for transient connection resets.
+                time.sleep(0.5)
+                r = self._session.post(
+                    config.lm_studio.url, json=payload, headers=headers, timeout=timeout
+                )
             r.raise_for_status()
 
             # Parse OpenAI chat completion response
@@ -163,7 +160,7 @@ class LMStudioBackend(GrammarBackend):
                 log("LM Studio returned empty content", "WARN")
                 return text, "Empty response"
 
-            result = self._clean_result(result)
+            result = self._clean_result(result, text)
             result = self._normalize_leading_spaces(result)
 
             log(f"LM Studio {mode.name} complete: {len(text)} -> {len(result)} chars", "OK")

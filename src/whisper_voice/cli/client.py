@@ -18,6 +18,51 @@ def _cmd_connect():
     return sock
 
 
+def send_service_request(request: dict, timeout: float = 10.0):
+    """Best-effort request to the running service.
+
+    Returns the final response dict, or None when the service is not
+    running / not reachable. Never exits the process — callers use this
+    for optional niceties like hot-reloading config after a CLI write.
+    """
+    import json
+
+    running, _ = _is_running()
+    if not running:
+        return None
+    try:
+        sock = _cmd_connect()
+    except Exception:
+        return None
+    try:
+        sock.sendall((json.dumps(request) + "\n").encode())
+        sock.settimeout(timeout)
+        buf = b""
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                return None
+            buf += chunk
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line.decode("utf-8"))
+                except Exception:
+                    continue
+                if msg.get("type") in ("done", "error"):
+                    return msg
+    except Exception:
+        return None
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
+
+
 def _cmd_send_recv(request: dict) -> dict:
     """Send a command and wait for the final response. Returns the last message."""
     import json

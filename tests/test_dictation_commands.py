@@ -152,3 +152,63 @@ class TestSpeechFillerFilter:
     def test_filler_filter_runs_before_punctuation_commands(self):
         apply, _, _ = _import_module()
         assert apply("Um, hello period uh we are done", {"period": "."}) == "hello. we are done"
+
+
+class TestProtectedSubstitution:
+    """Rule outputs are protected until every rule has run."""
+
+    def test_replacement_containing_another_phrase_not_rewritten(self):
+        apply, _, _ = _import_module()
+        out = apply(
+            "bye sign off",
+            {"sign off": "Best regards period", "period": "."},
+        )
+        assert out == "bye Best regards period"
+
+    def test_quote_commands_attach_by_rule_name(self):
+        apply, _, _ = _import_module()
+        out = apply(
+            "she said open quote hi close quote",
+            {"open quote": '"', "close quote": '"'},
+        )
+        assert out == 'she said "hi"'
+
+    def test_scratch_eats_dictated_terminator(self):
+        apply, _, _ = _import_module()
+        out = apply(
+            "one period two period scratch that",
+            {"period": ".", "scratch that": "__SCRATCH__"},
+        )
+        assert out == "one."
+
+    def test_digit_phrase_rule_does_not_corrupt_markers(self):
+        apply, _, _ = _import_module()
+        out = apply(
+            "call 42 now comma please",
+            {"42": "forty-two", "comma": ","},
+        )
+        assert out == "call forty-two now, please"
+
+    def test_symbol_edge_phrase_matches(self):
+        apply, _, _ = _import_module()
+        out = apply("i love c++ so much", {"c++": "C++"})
+        assert out == "i love C++ so much"
+
+    def test_newline_survives_following_punctuation_command(self):
+        apply, _, _ = _import_module()
+        out = apply(
+            "alpha new line beta comma gamma",
+            {"new line": "\n", "comma": ","},
+        )
+        assert out == "alpha\nbeta, gamma"
+
+    def test_open_close_prefix_attaches_only_for_punctuation(self):
+        apply, _, _ = _import_module()
+        # Text macros keep normal spacing even with open/close-prefixed names.
+        out = apply(
+            "let's close the loop tomorrow",
+            {"close the loop": "circle back"},
+        )
+        assert out == "let's circle back tomorrow"
+        out = apply("the open items are listed", {"open items": "TODO:"})
+        assert out == "the TODO: are listed"

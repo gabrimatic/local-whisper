@@ -78,6 +78,32 @@ def _replace_in_section(content: str, section: str, key: str, new_value: str) ->
     return "".join(result)
 
 
+def _escape_toml_string(value: str) -> str:
+    """Escape a string for a TOML basic (double-quoted) string.
+
+    Beyond backslash and quote, control characters (including newline and
+    tab) MUST be escaped — a raw newline inside a basic string is illegal
+    TOML and corrupts the whole config file on the next parse.
+    """
+    out = []
+    for ch in value:
+        if ch == "\\":
+            out.append("\\\\")
+        elif ch == '"':
+            out.append('\\"')
+        elif ch == "\n":
+            out.append("\\n")
+        elif ch == "\t":
+            out.append("\\t")
+        elif ch == "\r":
+            out.append("\\r")
+        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
+            out.append(f"\\u{ord(ch):04X}")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 def _serialize_toml_value(value) -> str:
     """Serialize a Python value to its TOML string representation."""
     if isinstance(value, bool):
@@ -86,6 +112,4 @@ def _serialize_toml_value(value) -> str:
         return str(value)
     if isinstance(value, float):
         return str(value)
-    # String: escape backslashes and quotes, wrap in double quotes
-    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
+    return f'"{_escape_toml_string(str(value))}"'

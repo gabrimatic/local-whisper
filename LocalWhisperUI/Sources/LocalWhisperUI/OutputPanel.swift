@@ -32,16 +32,16 @@ struct OutputPanel: View {
 
             if appState.config.ui.showOverlay {
                 LabeledContent("Opacity") {
-                    HStack {
-                        Slider(value: Binding(
-                            get: { appState.config.ui.overlayOpacity },
-                            set: { v in
-                                appState.config.ui.overlayOpacity = v
-                                appState.ipcClient?.sendConfigUpdate(section: "ui", key: "overlay_opacity", value: v)
-                            }
-                        ), in: 0.3...1.0, step: 0.05)
-                        Text(String(format: "%.0f%%", appState.config.ui.overlayOpacity * 100))
-                            .monoStat(width: 44)
+                    CommitSlider(
+                        value: appState.config.ui.overlayOpacity,
+                        in: 0.3...1.0,
+                        step: 0.05,
+                        onCommit: { v in
+                            appState.config.ui.overlayOpacity = v
+                            appState.ipcClient?.sendConfigUpdate(section: "ui", key: "overlay_opacity", value: v)
+                        }
+                    ) { v in
+                        Text(String(format: "%.0f%%", v * 100)).monoStat(width: 44)
                     }
                 }
             }

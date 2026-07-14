@@ -106,70 +106,82 @@ class GrammarBackend(ABC):
     # Shared text processing utilities
     # ─────────────────────────────────────────────────────────────────
 
-    def _split_paragraph(self, text: str, max_chars: int) -> List[str]:
-        """Split a paragraph into chunks respecting sentence boundaries."""
-        if len(text) <= max_chars:
-            return [text]
+    def _split_lossless(self, text: str, max_chars: int) -> List[Tuple[str, str]]:
+        """Split text into (chunk, trailing_separator) pairs.
 
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        chunks: List[str] = []
+        Joining every chunk + separator reproduces the input EXACTLY. The
+        old splitter collapsed all newlines and rejoined with a hardcoded
+        "\\n\\n", so chunked proofreading mangled bullet lists and line
+        breaks the prompt explicitly promises to preserve.
+
+        Chunks break preferentially at newline runs, then at sentence
+        boundaries, then hard-split. Each chunk is at most max_chars except
+        when a single unbreakable atom exceeds it.
+        """
+        if max_chars <= 0 or len(text) <= max_chars:
+            return [(text, "")]
+
+        # Atoms are (piece, following_separator) where separators are the
+        # exact whitespace runs removed from between pieces.
+        atoms: List[Tuple[str, str]] = []
+        parts = re.split(r'(\n[ \t]*(?:\n[ \t]*)*)', text)
+        for i in range(0, len(parts), 2):
+            piece = parts[i]
+            sep = parts[i + 1] if i + 1 < len(parts) else ""
+            if len(piece) <= max_chars:
+                atoms.append((piece, sep))
+                continue
+            sub = re.split(r'((?<=[.!?])[ \t]+)', piece)
+            sub_atoms: List[Tuple[str, str]] = []
+            for j in range(0, len(sub), 2):
+                sp = sub[j]
+                ssep = sub[j + 1] if j + 1 < len(sub) else ""
+                if len(sp) <= max_chars:
+                    sub_atoms.append((sp, ssep))
+                    continue
+                for k in range(0, len(sp), max_chars):
+                    seg = sp[k:k + max_chars]
+                    seg_sep = ssep if k + max_chars >= len(sp) else ""
+                    sub_atoms.append((seg, seg_sep))
+            if sub_atoms:
+                last_piece, last_sep = sub_atoms[-1]
+                sub_atoms[-1] = (last_piece, last_sep + sep)
+            atoms.extend(sub_atoms)
+
+        # Greedy packing that keeps intra-chunk separators verbatim.
+        chunks: List[Tuple[str, str]] = []
         current = ""
-
-        for sentence in sentences:
-            if not sentence:
+        current_sep = ""
+        for piece, sep in atoms:
+            if not current and not current_sep:
+                current, current_sep = piece, sep
                 continue
-
-            # Handle sentences longer than max_chars
-            if len(sentence) > max_chars:
-                if current:
-                    chunks.append(current)
-                    current = ""
-                # Split long sentence into fixed-size parts
-                for i in range(0, len(sentence), max_chars):
-                    chunks.append(sentence[i:i + max_chars])
-                continue
-
-            # Try to add sentence to current chunk
-            if not current:
-                current = sentence
-            elif len(current) + 1 + len(sentence) <= max_chars:
-                current = f"{current} {sentence}"
+            candidate = current + current_sep + piece
+            if len(candidate) > max_chars:
+                chunks.append((current, current_sep))
+                current, current_sep = piece, sep
             else:
-                chunks.append(current)
-                current = sentence
-
-        if current:
-            chunks.append(current)
-
+                current, current_sep = candidate, sep
+        chunks.append((current, current_sep))
         return chunks
 
-    def _split_text(self, text: str, max_chars: int) -> List[str]:
-        """Split text into chunks respecting paragraph and sentence boundaries."""
-        if len(text) <= max_chars:
-            return [text]
-
-        chunks: List[str] = []
-        current = ""
-
-        for para in text.split("\n\n"):
-            para = para.strip()
-            if not para:
-                continue
-
-            parts = self._split_paragraph(para, max_chars)
-            for part in parts:
-                if not current:
-                    current = part
-                elif len(current) + 2 + len(part) <= max_chars:
-                    current = f"{current}\n\n{part}"
-                else:
-                    chunks.append(current)
-                    current = part
-
-        if current:
-            chunks.append(current)
-
-        return chunks
+    def _fix_in_chunks(self, text: str, max_chars: int, mode_id: str) -> Tuple[str, Optional[str]]:
+        """Run fix_with_mode over lossless chunks, preserving separators."""
+        pieces = self._split_lossless(text, max_chars)
+        log_name = self.name
+        from ..utils import log
+        log(f"{log_name}: splitting {len(text)} chars into {len(pieces)} chunks", "INFO")
+        results: List[str] = []
+        for i, (chunk, sep) in enumerate(pieces):
+            if chunk.strip():
+                log(f"{log_name}: processing chunk {i + 1}/{len(pieces)} ({len(chunk)} chars)", "INFO")
+                fixed, err = self.fix_with_mode(chunk, mode_id)
+                if err:
+                    return text, err
+            else:
+                fixed = chunk
+            results.append(fixed + sep)
+        return "".join(results), None
 
     def _normalize_leading_spaces(self, text: str) -> str:
         """
@@ -197,102 +209,145 @@ class GrammarBackend(ABC):
 
         return text
 
-    def _clean_result(self, result: str) -> str:
+    # Label prefixes, e.g. "Corrected:", "Here is the corrected text:"
+    _LABEL_PATTERNS = [
+        r'^corrected(?:\s+text)?:\s*',
+        r'^output:\s*',
+        r'^fixed(?:\s+text)?:\s*',
+        r'^edited(?:\s+text)?:\s*',
+        r'^result:\s*',
+        r'^here(?:\s+is|\s+are|\'s)\s+(?:the\s+)?(?:corrected|fixed|edited)(?:\s+text)?:\s*',
+        r'^the\s+corrected(?:\s+text)?\s+is:\s*',
+    ]
+
+    # Conversational openers, e.g. "Sure, I'll fix this."
+    _OPENER_PATTERNS = [
+        # "Sure" variants - only match when followed by conversational patterns
+        r'^sure[,!.]\s+(?:i\'ll|i will|let me|here\'s|here is)[^.!?\n]*[.!?]?\s*',
+        r'^sure[,!]\s*$',  # Just "Sure!" or "Sure,"
+        r'^sure[,!]\s+',   # "Sure, " followed by anything (remove just the prefix)
+
+        # "I'll/I will/I've" variants - only match specific helper phrases
+        r'^i\'ll\s+(?:fix|correct|edit|help|clean)[^.!?\n]*[.!?]\s*',
+        r'^i will\s+(?:fix|correct|edit|help|clean)[^.!?\n]*[.!?]\s*',
+        r'^i\'ve\s+(?:corrected|fixed|edited|cleaned)[^.!?\n]*[.!?]\s*',
+        r'^i have\s+(?:corrected|fixed|edited|cleaned)[^.!?\n]*[.!?]\s*',
+
+        # "Here" variants
+        r'^here\'s\s+(?:the\s+)?(?:corrected|fixed|edited|cleaned)[^:]*:\s*',
+        r'^here is\s+(?:the\s+)?(?:corrected|fixed|edited|cleaned|text)[^:]*:\s*',
+        r'^here you go[,!.]?\s*',
+
+        # "Let me" variants - only match specific helper phrases
+        r'^let me\s+(?:fix|correct|edit|help|clean)[^.!?\n]*[.!?]\s*',
+
+        # "Of course" / "Certainly" variants
+        r'^of course[,!.]?\s*',
+        r'^certainly[,!.]?\s*',
+        r'^absolutely[,!.]?\s*',
+
+        # "Share" typo (ASR artifact for "Sure")
+        r'^share,?\s+(?:i\'ll|i will|let me)[^.!?\n]*[.!?]?\s*',
+
+        # Generic acknowledgment patterns
+        r'^(?:okay|ok)[,!.]\s+(?:here\'s|here is|i\'ll|let me)[^.!?\n]*[.!?]?\s*',
+        r'^(?:alright|all right)[,!.]?\s+(?:here|i\'ll|let me)[^.!?\n]*[.!?]?\s*',
+    ]
+
+    # Trailing meta-commentary, e.g. "Let me know if you need more changes."
+    _TRAILER_PATTERNS = [
+        r'\s*let me know if[^.!?\n]*[.!?]?\s*$',
+        r'\s*i hope this helps[.!?]?\s*$',
+        r'\s*feel free to[^.!?\n]*[.!?]?\s*$',
+        r'\s*is there anything else[^.!?\n]*[.!?]?\s*$',
+        r'\s*please let me know[^.!?\n]*[.!?]?\s*$',
+    ]
+
+    @staticmethod
+    def _echoes_input_prefix(matched: str, original: Optional[str]) -> bool:
+        """True when the matched artifact is really the user's own text.
+
+        A proofread result closely echoes its input, so any prefix the model
+        'added' that ALSO starts the input text (e.g. a sentence that begins
+        with "Sure, ..." or "Result: ...") is legitimate content — stripping
+        it would corrupt the user's text before it gets pasted back over
+        their selection.
+        """
+        if original is None:
+            return False
+        fragment = matched.strip().lower()
+        if not fragment:
+            return False
+        return original.strip().lower().startswith(fragment)
+
+    @staticmethod
+    def _echoes_input_suffix(matched: str, original: Optional[str]) -> bool:
+        """Suffix twin of _echoes_input_prefix."""
+        if original is None:
+            return False
+        fragment = matched.strip().lower()
+        if not fragment:
+            return False
+        return original.strip().lower().endswith(fragment)
+
+    def _clean_result(self, result: str, original: Optional[str] = None) -> str:
         """
         Clean common artifacts from model output.
 
         Removes conversational prefixes, meta-commentary, and formatting
-        artifacts that models sometimes add despite instructions.
+        artifacts that models sometimes add despite instructions. When
+        ``original`` (the input text) is provided, nothing that echoes the
+        input is ever stripped — the model faithfully returning the user's
+        own "Sure, sounds good." must survive cleaning intact.
         """
         result = result.strip()
-        result = result.strip('"\'')
 
-        # ─────────────────────────────────────────────────────────────────
-        # Pattern 1: Remove label prefixes (case-insensitive)
-        # Examples: "Corrected:", "Output:", "Fixed text:", "Here is the corrected text:"
-        # ─────────────────────────────────────────────────────────────────
-        label_patterns = [
-            r'^corrected(?:\s+text)?:\s*',
-            r'^output:\s*',
-            r'^fixed(?:\s+text)?:\s*',
-            r'^edited(?:\s+text)?:\s*',
-            r'^result:\s*',
-            r'^here(?:\s+is|\s+are|\'s)\s+(?:the\s+)?(?:corrected|fixed|edited)(?:\s+text)?:\s*',
-            r'^the\s+corrected(?:\s+text)?\s+is:\s*',
-        ]
+        # Strip symmetric wrapping quotes only when the input wasn't quoted.
+        for quote in ('"', "'"):
+            if (
+                len(result) >= 2
+                and result.startswith(quote)
+                and result.endswith(quote)
+                and not (original or "").strip().startswith(quote)
+                and not (original or "").strip().endswith(quote)
+            ):
+                result = result[1:-1].strip()
 
-        for pattern in label_patterns:
-            result = re.sub(pattern, '', result, flags=re.IGNORECASE)
+        # Iterate to a fixpoint (an opener can hide a label prefix behind
+        # it), and never let a single strip erase the whole result — if an
+        # "artifact" IS the entire text, it's the content.
+        for _ in range(3):
+            before = result
+            for pattern in self._LABEL_PATTERNS + self._OPENER_PATTERNS:
+                m = re.match(pattern, result, flags=re.IGNORECASE)
+                if not m or not m.group(0):
+                    continue
+                if self._echoes_input_prefix(m.group(0), original):
+                    continue
+                candidate = result[m.end():]
+                if candidate.strip():
+                    result = candidate
+            for pattern in self._TRAILER_PATTERNS:
+                m = re.search(pattern, result, flags=re.IGNORECASE)
+                if not m or not m.group(0):
+                    continue
+                if self._echoes_input_suffix(m.group(0), original):
+                    continue
+                candidate = result[:m.start()]
+                if candidate.strip():
+                    result = candidate
+            if result == before:
+                break
 
-        # ─────────────────────────────────────────────────────────────────
-        # Pattern 2: Remove conversational openers at the start
-        # Examples: "Sure!", "Sure, I'll fix this.", "I've corrected...", "Share, I will fix..."
-        # ─────────────────────────────────────────────────────────────────
-        conversational_openers = [
-            # "Sure" variants - only match when followed by conversational patterns
-            r'^sure[,!.]\s+(?:i\'ll|i will|let me|here\'s|here is)[^.!?\n]*[.!?]?\s*',
-            r'^sure[,!]\s*$',  # Just "Sure!" or "Sure,"
-            r'^sure[,!]\s+',   # "Sure, " followed by anything (remove just the prefix)
+        # Unwrap a markdown code fence the model added — but never one the
+        # user's own text started with.
+        if not (original or "").lstrip().startswith("```"):
+            code_block_match = re.match(
+                r'^```[a-zA-Z]*\s*\n?(.*?)\n?```\s*$',
+                result,
+                re.DOTALL,
+            )
+            if code_block_match:
+                result = code_block_match.group(1).strip()
 
-            # "I'll/I will/I've" variants - only match specific helper phrases
-            r'^i\'ll\s+(?:fix|correct|edit|help|clean)[^.!?\n]*[.!?]\s*',
-            r'^i will\s+(?:fix|correct|edit|help|clean)[^.!?\n]*[.!?]\s*',
-            r'^i\'ve\s+(?:corrected|fixed|edited|cleaned)[^.!?\n]*[.!?]\s*',
-            r'^i have\s+(?:corrected|fixed|edited|cleaned)[^.!?\n]*[.!?]\s*',
-
-            # "Here" variants
-            r'^here\'s\s+(?:the\s+)?(?:corrected|fixed|edited|cleaned)[^:]*:\s*',
-            r'^here is\s+(?:the\s+)?(?:corrected|fixed|edited|cleaned|text)[^:]*:\s*',
-            r'^here you go[,!.]?\s*',
-
-            # "Let me" variants - only match specific helper phrases
-            r'^let me\s+(?:fix|correct|edit|help|clean)[^.!?\n]*[.!?]\s*',
-
-            # "Of course" / "Certainly" variants
-            r'^of course[,!.]?\s*',
-            r'^certainly[,!.]?\s*',
-            r'^absolutely[,!.]?\s*',
-
-            # "Share" typo (ASR artifact for "Sure")
-            r'^share,?\s+(?:i\'ll|i will|let me)[^.!?\n]*[.!?]?\s*',
-
-            # Generic acknowledgment patterns
-            r'^(?:okay|ok)[,!.]\s+(?:here\'s|here is|i\'ll|let me)[^.!?\n]*[.!?]?\s*',
-            r'^(?:alright|all right)[,!.]?\s+(?:here|i\'ll|let me)[^.!?\n]*[.!?]?\s*',
-        ]
-
-        for pattern in conversational_openers:
-            result = re.sub(pattern, '', result, flags=re.IGNORECASE)
-
-        # ─────────────────────────────────────────────────────────────────
-        # Pattern 3: Remove trailing meta-commentary
-        # Examples: "Let me know if you need more changes.", "I hope this helps!"
-        # ─────────────────────────────────────────────────────────────────
-        trailing_patterns = [
-            r'\s*let me know if[^.!?\n]*[.!?]?\s*$',
-            r'\s*i hope this helps[.!?]?\s*$',
-            r'\s*feel free to[^.!?\n]*[.!?]?\s*$',
-            r'\s*is there anything else[^.!?\n]*[.!?]?\s*$',
-            r'\s*please let me know[^.!?\n]*[.!?]?\s*$',
-        ]
-
-        for pattern in trailing_patterns:
-            result = re.sub(pattern, '', result, flags=re.IGNORECASE)
-
-        # ─────────────────────────────────────────────────────────────────
-        # Pattern 4: Handle markdown code block wrapper
-        # Sometimes models wrap output in ```text ... ``` or similar
-        # ─────────────────────────────────────────────────────────────────
-        code_block_match = re.match(
-            r'^```(?:text|plain|markdown)?\s*\n?(.*?)\n?```\s*$',
-            result,
-            re.DOTALL | re.IGNORECASE
-        )
-        if code_block_match:
-            result = code_block_match.group(1).strip()
-
-        # Final cleanup
-        result = result.strip()
-        result = result.strip('"\'')
-
-        return result
+        return result.strip()

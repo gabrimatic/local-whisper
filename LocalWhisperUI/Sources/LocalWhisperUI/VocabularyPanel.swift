@@ -13,6 +13,8 @@ struct VocabularyPanel: View {
     @State private var newReplacement: String = ""
     @FocusState private var addFocus: AddField?
     @State private var importStatus: String? = nil
+    @State private var importStatusKind: InlineNotice.Kind = .info
+    @State private var testInput: String = ""
 
     private enum AddField { case spoken, replacement }
 
@@ -23,6 +25,7 @@ struct VocabularyPanel: View {
                 if appState.config.replacements.enabled {
                     rulesSection
                     addSection
+                    testSection
                     importExportSection
                 }
             }
@@ -41,7 +44,7 @@ struct VocabularyPanel: View {
                     appState.ipcClient?.sendConfigUpdate(section: "replacements", key: "enabled", value: v)
                 }
             ))
-            .help("Apply your replacement rules after grammar correction. Matching is case-insensitive and word-bounded.")
+            .help("Apply your replacement rules after grammar correction. Matching is case-insensitive and word-bounded; longer phrases win.")
         } header: {
             SettingsSectionHeader(
                 symbol: "character.book.closed",
@@ -88,11 +91,27 @@ struct VocabularyPanel: View {
                         Image(systemName: "arrow.right")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
-                        Text(rule.value)
+                        Text(rule.value.isEmpty ? "removed" : rule.value)
                             .font(Theme.Typography.body)
+                            .italic(rule.value.isEmpty)
+                            .foregroundStyle(rule.value.isEmpty ? .secondary : .primary)
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Spacer()
+                        Button {
+                            // Load into the editor row for tweaking; saving
+                            // overwrites the rule (same spoken form).
+                            newSpoken = rule.key
+                            newReplacement = rule.value
+                            addFocus = .replacement
+                        } label: {
+                            Image(systemName: "pencil.circle.fill")
+                                .foregroundStyle(.secondary)
+                                .symbolRenderingMode(.hierarchical)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Edit rule for \"\(rule.key)\".")
+                        .accessibilityLabel("Edit replacement for \(rule.key)")
                         Button {
                             removeRule(rule.key)
                         } label: {
@@ -152,11 +171,11 @@ struct VocabularyPanel: View {
                 Image(systemName: "arrow.right")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
-                TextField("Replacement", text: $newReplacement)
+                TextField("Replacement (empty = remove word)", text: $newReplacement)
                     .textFieldStyle(.roundedBorder)
                     .focused($addFocus, equals: .replacement)
                     .onSubmit { commitNewRule() }
-                Button("Add") { commitNewRule() }
+                Button(isEditingExisting ? "Save" : "Add") { commitNewRule() }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canSubmit)
@@ -165,7 +184,58 @@ struct VocabularyPanel: View {
             SettingsSectionHeader(
                 symbol: "plus.rectangle",
                 title: "Add a rule",
-                description: "Press Return to commit. Both fields are required."
+                description: "Press Return to commit. An empty replacement deletes the spoken word from transcripts."
+            )
+        }
+    }
+
+    // MARK: - Live tester
+
+    private var testSection: some View {
+        Section {
+            HStack(spacing: Theme.Spacing.s) {
+                TextField("Type a sample sentence…", text: $testInput)
+                    .textFieldStyle(.roundedBorder)
+                    .disableAutocorrection(true)
+                    .onSubmit { runTest() }
+                Button("Test") { runTest() }
+                    .disabled(testInput.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+
+            if let result = appState.replacementTestResult {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    HStack(alignment: .top, spacing: Theme.Spacing.s) {
+                        Text("In")
+                            .font(Theme.Typography.captionEmphasized)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 28, alignment: .trailing)
+                        Text(result.input)
+                            .font(Theme.Typography.body)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    HStack(alignment: .top, spacing: Theme.Spacing.s) {
+                        Text("Out")
+                            .font(Theme.Typography.captionEmphasized)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 28, alignment: .trailing)
+                        Text(result.output)
+                            .font(Theme.Typography.bodyEmphasized)
+                            .textSelection(.enabled)
+                    }
+                    if result.input == result.output {
+                        Text("No rule matched this text.")
+                            .font(Theme.Typography.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        } header: {
+            SettingsSectionHeader(
+                symbol: "checkmark.bubble",
+                title: "Try it out",
+                description: "Runs your sample through the real replacement engine in the service."
             )
         }
     }
@@ -190,7 +260,7 @@ struct VocabularyPanel: View {
             }
 
             if let status = importStatus {
-                InlineNotice(kind: .info, text: status)
+                InlineNotice(kind: importStatusKind, text: status)
             }
         } header: {
             SettingsSectionHeader(
@@ -204,9 +274,12 @@ struct VocabularyPanel: View {
     // MARK: - Helpers
 
     private var canSubmit: Bool {
+        !newSpoken.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private var isEditingExisting: Bool {
         let s = newSpoken.trimmingCharacters(in: .whitespaces)
-        let r = newReplacement.trimmingCharacters(in: .whitespaces)
-        return !s.isEmpty && !r.isEmpty
+        return !s.isEmpty && appState.config.replacements.rules[s] != nil
     }
 
     private var filteredRules: [(key: String, value: String)] {
@@ -220,8 +293,12 @@ struct VocabularyPanel: View {
 
     private func commitNewRule() {
         let spoken = newSpoken.trimmingCharacters(in: .whitespaces)
-        let replacement = newReplacement.trimmingCharacters(in: .whitespaces)
-        guard !spoken.isEmpty, !replacement.isEmpty else { return }
+        // The replacement is used verbatim (minus line breaks): leading or
+        // trailing spaces can be intentional, and empty means "remove word".
+        let replacement = newReplacement
+            .replacingOccurrences(of: "\r", with: "")
+            .replacingOccurrences(of: "\n", with: " ")
+        guard !spoken.isEmpty else { return }
         appState.config.replacements.rules[spoken] = replacement
         appState.ipcClient?.sendReplacementAdd(spoken: spoken, replacement: replacement)
         newSpoken = ""
@@ -234,6 +311,12 @@ struct VocabularyPanel: View {
         appState.ipcClient?.sendReplacementRemove(spoken: key)
     }
 
+    private func runTest() {
+        let text = testInput.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return }
+        appState.ipcClient?.sendReplacementTest(text: text)
+    }
+
     // MARK: - Import
 
     private func importRules() {
@@ -242,70 +325,23 @@ struct VocabularyPanel: View {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         if panel.runModal() == .OK, let url = panel.url {
-            if let parsed = parseRules(at: url) {
-                var added = 0
-                for (k, v) in parsed where !k.isEmpty && !v.isEmpty {
+            if let parsed = RuleFileCodec.parse(url: url), !parsed.isEmpty {
+                let existing = appState.config.replacements.rules
+                let updated = parsed.keys.filter { existing[$0] != nil }.count
+                for (k, v) in parsed {
                     appState.config.replacements.rules[k] = v
-                    appState.ipcClient?.sendReplacementAdd(spoken: k, replacement: v)
-                    added += 1
                 }
-                importStatus = "Imported \(added) rule\(added == 1 ? "" : "s") from \(url.lastPathComponent)."
+                // One bulk IPC message: a single config rewrite + snapshot
+                // instead of hammering the service once per rule.
+                appState.ipcClient?.sendReplacementImport(rules: parsed)
+                importStatusKind = .success
+                importStatus = "Imported \(parsed.count) rule\(parsed.count == 1 ? "" : "s") from \(url.lastPathComponent)"
+                    + (updated > 0 ? " (\(updated) updated)." : ".")
             } else {
+                importStatusKind = .error
                 importStatus = "Could not parse \(url.lastPathComponent)."
             }
         }
-    }
-
-    private func parseRules(at url: URL) -> [String: String]? {
-        guard let raw = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-        var out: [String: String] = [:]
-        for line in raw.split(separator: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
-
-            // "spoken" = "replacement" or spoken -> replacement, with CSV/TSV fallback
-            if let pair = parseQuotedAssignment(trimmed) {
-                out[pair.0] = pair.1; continue
-            }
-            if let pair = parseArrow(trimmed) {
-                out[pair.0] = pair.1; continue
-            }
-            if let pair = parseCSVish(trimmed) {
-                out[pair.0] = pair.1; continue
-            }
-        }
-        return out.isEmpty ? nil : out
-    }
-
-    private func parseQuotedAssignment(_ s: String) -> (String, String)? {
-        // "a" = "b"
-        let pattern = #"^"(.+)"\s*=\s*"(.+)"$"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-        let range = NSRange(s.startIndex..., in: s)
-        guard let m = regex.firstMatch(in: s, range: range), m.numberOfRanges == 3 else { return nil }
-        guard let kR = Range(m.range(at: 1), in: s), let vR = Range(m.range(at: 2), in: s) else { return nil }
-        return (String(s[kR]), String(s[vR]))
-    }
-
-    private func parseArrow(_ s: String) -> (String, String)? {
-        let parts = s.components(separatedBy: "->")
-        guard parts.count == 2 else { return nil }
-        let k = parts[0].trimmingCharacters(in: .whitespaces)
-        let v = parts[1].trimmingCharacters(in: .whitespaces)
-        return (k.isEmpty || v.isEmpty) ? nil : (k, v)
-    }
-
-    private func parseCSVish(_ s: String) -> (String, String)? {
-        let separators: [Character] = [",", "\t"]
-        for sep in separators {
-            let parts = s.split(separator: sep, maxSplits: 1).map { String($0) }
-            if parts.count == 2 {
-                let k = parts[0].trimmingCharacters(in: .whitespacesAndNewlines.union(.init(charactersIn: "\"")))
-                let v = parts[1].trimmingCharacters(in: .whitespacesAndNewlines.union(.init(charactersIn: "\"")))
-                if !k.isEmpty && !v.isEmpty { return (k, v) }
-            }
-        }
-        return nil
     }
 
     // MARK: - Export
@@ -315,12 +351,160 @@ struct VocabularyPanel: View {
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.nameFieldStringValue = "local-whisper-replacements.csv"
         if panel.runModal() == .OK, let url = panel.url {
-            let lines = appState.config.replacements.rules
-                .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
-                .map { (k, v) in "\"\(k.replacingOccurrences(of: "\"", with: "\"\""))\",\"\(v.replacingOccurrences(of: "\"", with: "\"\""))\"" }
-                .joined(separator: "\n")
-            try? lines.write(to: url, atomically: true, encoding: .utf8)
-            importStatus = "Exported \(appState.config.replacements.rules.count) rule\(appState.config.replacements.rules.count == 1 ? "" : "s") to \(url.lastPathComponent)."
+            let csv = RuleFileCodec.encodeCSV(appState.config.replacements.rules)
+            do {
+                try csv.write(to: url, atomically: true, encoding: .utf8)
+                importStatusKind = .success
+                importStatus = "Exported \(appState.config.replacements.rules.count) rule\(appState.config.replacements.rules.count == 1 ? "" : "s") to \(url.lastPathComponent)."
+            } catch {
+                importStatusKind = .error
+                importStatus = "Export failed: \(error.localizedDescription)"
+            }
         }
+    }
+}
+
+// MARK: - Rule file parsing / encoding
+//
+// One codec whose CSV output round-trips through its own parser (proper
+// RFC-4180 quoting both ways) and through `wh replace import`.
+
+enum RuleFileCodec {
+
+    static func encodeCSV(_ rules: [String: String]) -> String {
+        rules
+            .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
+            .map { "\(quote($0.key)),\(quote($0.value))" }
+            .joined(separator: "\n") + "\n"
+    }
+
+    private static func quote(_ field: String) -> String {
+        "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+
+    static func parse(url: URL) -> [String: String]? {
+        guard var raw = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        // Excel exports: BOM + CRLF line endings.
+        if raw.hasPrefix("\u{FEFF}") { raw.removeFirst() }
+        raw = raw.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+
+        let dataLines = raw.split(separator: "\n", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+        guard let first = dataLines.first else { return nil }
+
+        // Decide the file's format once, from the first data line —
+        // per-line guessing misparses values that merely contain "->".
+        var out: [String: String] = [:]
+        if parseQuotedAssignment(first) != nil {
+            for line in dataLines {
+                if let pair = parseQuotedAssignment(line) { out[pair.0] = pair.1 }
+            }
+        } else if first.contains("->") && !first.contains(",") && !first.contains("\t") {
+            for line in dataLines {
+                let parts = line.components(separatedBy: "->")
+                guard parts.count == 2 else { continue }
+                let k = parts[0].trimmingCharacters(in: .whitespaces)
+                let v = parts[1].trimmingCharacters(in: .whitespaces)
+                if !k.isEmpty { out[k] = v }
+            }
+        } else {
+            // CSV/TSV: scan the WHOLE text so quoted fields may legally
+            // contain the delimiter, doubled quotes, and even newlines
+            // (this codec's own export writes such values).
+            let delimiter: Character = first.contains("\t") ? "\t" : ","
+            for record in scanRecords(raw, delimiter: delimiter) {
+                guard record.count >= 2 else { continue }
+                let keyField = record[0]
+                let valueField = record[1]
+                // RFC 4180: quoted content is verbatim; only unquoted
+                // fields tolerate stray padding.
+                let key = keyField.wasQuoted
+                    ? keyField.value
+                    : keyField.value.trimmingCharacters(in: .whitespaces)
+                if key.isEmpty || key.hasPrefix("#") { continue }
+                let value = valueField.wasQuoted
+                    ? valueField.value
+                    : valueField.value.trimmingCharacters(in: .whitespaces)
+                out[key] = value
+            }
+        }
+        return out.isEmpty ? nil : out
+    }
+
+    private static func parseQuotedAssignment(_ s: String) -> (String, String)? {
+        // "a" = "b" — with doubled-quote escapes inside the quoted parts.
+        let pattern = #"^"((?:[^"]|"")+)"\s*=\s*"((?:[^"]|"")*)"$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(s.startIndex..., in: s)
+        guard let m = regex.firstMatch(in: s, range: range), m.numberOfRanges == 3 else { return nil }
+        guard let kR = Range(m.range(at: 1), in: s), let vR = Range(m.range(at: 2), in: s) else { return nil }
+        let unescape = { (raw: Substring) in String(raw).replacingOccurrences(of: "\"\"", with: "\"") }
+        let key = unescape(s[kR])
+        return key.isEmpty ? nil : (key, unescape(s[vR]))
+    }
+
+    struct Field {
+        var value: String
+        var wasQuoted: Bool
+    }
+
+    /// RFC-4180 record scanner over the whole text: quoted fields may span
+    /// newlines and contain doubled-quote escapes and the delimiter.
+    private static func scanRecords(_ text: String, delimiter: Character) -> [[Field]] {
+        var records: [[Field]] = []
+        var record: [Field] = []
+        var current = ""
+        var wasQuoted = false
+        var inQuotes = false
+
+        var iterator = text.makeIterator()
+        var pending: Character? = iterator.next()
+
+        func endField() {
+            record.append(Field(value: current, wasQuoted: wasQuoted))
+            current = ""
+            wasQuoted = false
+        }
+
+        func endRecord() {
+            endField()
+            if !(record.count == 1 && !record[0].wasQuoted
+                 && record[0].value.trimmingCharacters(in: .whitespaces).isEmpty) {
+                records.append(record)
+            }
+            record = []
+        }
+
+        while let ch = pending {
+            pending = iterator.next()
+            if inQuotes {
+                if ch == "\"" {
+                    if pending == "\"" {  // escaped quote
+                        current.append("\"")
+                        pending = iterator.next()
+                    } else {
+                        inQuotes = false
+                    }
+                } else {
+                    current.append(ch)
+                }
+            } else if ch == "\"" && current.trimmingCharacters(in: .whitespaces).isEmpty {
+                current = ""
+                wasQuoted = true
+                inQuotes = true
+            } else if ch == delimiter {
+                endField()
+            } else if ch == "\n" {
+                endRecord()
+            } else {
+                current.append(ch)
+            }
+        }
+        if !current.isEmpty || !record.isEmpty {
+            endRecord()
+        }
+        return records
     }
 }

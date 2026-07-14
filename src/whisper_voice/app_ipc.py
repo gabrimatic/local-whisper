@@ -2,10 +2,28 @@
 # Copyright (c) 2025-2026 Soroush Yousefpour
 """IPC mixin: Swift connect/disconnect handlers, state/history/config push."""
 
+import re
 import subprocess
 import threading
 
-from .config import add_replacement, get_config, remove_replacement
+from .config import (
+    add_dictation_command,
+    add_replacement,
+    add_replacements,
+    get_config,
+    remove_dictation_command,
+    remove_replacement,
+)
+from .utils import log
+
+
+def _dictation_defaults() -> dict:
+    from .dictation_commands import DEFAULT_COMMANDS
+    return dict(DEFAULT_COMMANDS)
+
+
+# History/audio entry stems look like 20260712_104755_109604 (+ optional _pid).
+_ENTRY_ID_RE = re.compile(r"^\d{8}_\d{6}_\d{6}(_\d+)?$")
 
 
 class IPCMixin:
@@ -69,20 +87,58 @@ class IPCMixin:
             "status_text": msg,
         })
 
+    @staticmethod
+    def _stem_time(stem: str):
+        """Parse a history stem (YYYYmmdd_HHMMSS_ffffff[_pid]) to a datetime."""
+        from datetime import datetime
+        parts = stem.split("_")
+        if len(parts) < 3:
+            return None
+        try:
+            return datetime.strptime("_".join(parts[:3]), "%Y%m%d_%H%M%S_%f")
+        except ValueError:
+            return None
+
     def _send_history_update(self):
         """Send history entries to Swift client."""
         entries = self.backup.get_history(limit=100)
         serialized = []
         audio_history = self.backup.get_audio_history()
         audio_by_stem = {a["path"].stem: str(a["path"]) for a in audio_history}
+        # Legacy entries (pre shared-stem) never match exactly: their audio
+        # and text stems were minted seconds apart. Fall back to the nearest
+        # recording within a small window.
+        audio_times = [
+            (self._stem_time(a["path"].stem), str(a["path"]))
+            for a in audio_history
+        ]
+        audio_times = [(t, p) for t, p in audio_times if t is not None]
+
+        def nearest_audio(entry_stem: str):
+            entry_time = self._stem_time(entry_stem)
+            if entry_time is None or not audio_times:
+                return None
+            best_time, best_path = min(
+                audio_times, key=lambda tp: abs((tp[0] - entry_time).total_seconds())
+            )
+            if abs((best_time - entry_time).total_seconds()) <= 10.0:
+                return best_path
+            return None
+
         for e in entries:
             entry_id = e["path"].stem
-            audio_path = audio_by_stem.get(entry_id)
+            audio_path = audio_by_stem.get(entry_id) or nearest_audio(entry_id)
             ts = e["timestamp"]
             ts_float = ts.timestamp() if hasattr(ts, "timestamp") else float(ts)
+            fixed = e.get("fixed") or e.get("raw", "")
+            raw = e.get("raw", "")
             serialized.append({
                 "id": entry_id,
-                "text": e.get("fixed") or e.get("raw", ""),
+                "text": fixed,
+                # What the engine actually heard, pre-dictation/grammar/
+                # replacements — lets the UI answer "why did my rule (not)
+                # fire". Omitted when identical to the final text.
+                "raw": raw if raw and raw != fixed else None,
                 "timestamp": ts_float,
                 "audio_path": audio_path,
             })
@@ -95,6 +151,7 @@ class IPCMixin:
             "hotkey": {
                 "key": cfg.hotkey.key,
                 "double_tap_threshold": cfg.hotkey.double_tap_threshold,
+                "hold_threshold": cfg.hotkey.hold_threshold,
             },
             "transcription": {"engine": cfg.transcription.engine},
             "parakeet_v3": {
@@ -191,6 +248,7 @@ class IPCMixin:
                 "proofread": cfg.shortcuts.proofread,
                 "rewrite": cfg.shortcuts.rewrite,
                 "prompt_engineer": cfg.shortcuts.prompt_engineer,
+                "paste_result": cfg.shortcuts.paste_result,
             },
             "tts": {
                 "enabled": cfg.tts.enabled,
@@ -207,9 +265,41 @@ class IPCMixin:
             },
             "dictation": {
                 "enabled": cfg.dictation.enabled,
+                "strip_fillers": cfg.dictation.strip_fillers,
                 "commands": cfg.dictation.commands,
+                # The built-in command set, so the UI can render the real
+                # effective list (defaults + overrides) instead of
+                # hardcoding its own drifting copy.
+                "defaults": _dictation_defaults(),
             },
         }})
+
+    _SHORTCUT_FIELDS = {
+        ("shortcuts", "proofread"),
+        ("shortcuts", "rewrite"),
+        ("shortcuts", "prompt_engineer"),
+        ("tts", "speak_shortcut"),
+    }
+
+    def _validate_config_update(self, section: str, key: str, value):
+        """Validate + canonicalize a config_update value.
+
+        Returns (value, error). On error the update must be rejected and the
+        current snapshot re-sent so the UI reverts.
+        """
+        if (section, key) in self._SHORTCUT_FIELDS:
+            from .shortcuts import normalize_shortcut, validate_shortcut
+            if not isinstance(value, str):
+                return value, "Shortcut must be text"
+            error = validate_shortcut(value)
+            if error:
+                return value, f"Invalid shortcut: {error}"
+            return (normalize_shortcut(value) if value.strip() else ""), None
+        if section == "hotkey" and key == "key":
+            from .config.schema import VALID_HOTKEY_KEYS
+            if value not in VALID_HOTKEY_KEYS:
+                return value, f"Unknown trigger key: {value}"
+        return value, None
 
     def _handle_ipc_message(self, msg: dict):
         """Handle incoming message from Swift client."""
@@ -223,10 +313,13 @@ class IPCMixin:
             elif action == "quit":
                 self._quit(None)
             elif action == "reveal":
-                file_id = msg.get("id", "")
-                audio_path = self.backup.audio_history_dir / f"{file_id}.wav"
-                if audio_path.exists():
-                    subprocess.Popen(["open", "-R", str(audio_path)])
+                file_id = str(msg.get("id", ""))
+                # Validate the stem shape so a hostile id can't traverse
+                # outside the audio history directory.
+                if _ENTRY_ID_RE.match(file_id):
+                    audio_path = self.backup.audio_history_dir / f"{file_id}.wav"
+                    if audio_path.exists():
+                        subprocess.Popen(["open", "-R", str(audio_path)])
             elif action == "restart":
                 threading.Thread(target=self._restart_service, daemon=True).start()
             elif action == "update":
@@ -259,11 +352,25 @@ class IPCMixin:
             if section and key and value is not None:
                 from .config import update_config_field
                 from .config.mutations import config_section_attr
+                value, error = self._validate_config_update(section, key, value)
+                if error:
+                    log(f"Rejected config update {section}.{key}: {error}", "WARN")
+                    self._send_state_error(error)
+                    # Re-send the snapshot so the UI snaps back to the real value.
+                    self._send_config_snapshot()
+                    return
                 old_value = None
                 section_config = getattr(self.config, config_section_attr(section), None)
                 if section_config is not None:
                     old_value = getattr(section_config, key, None)
-                update_config_field(section, key, value)
+                if not update_config_field(section, key, value):
+                    # Write refused (broken config.toml / disk error). The
+                    # in-memory value was rolled back — tell the user and
+                    # snap the UI back instead of confirming a phantom edit.
+                    log(f"Config update failed for {section}.{key}", "ERR")
+                    self._send_state_error("Not saved — fix ~/.whisper/config.toml")
+                    self._send_config_snapshot()
+                    return
                 self.config = get_config()
                 self._send_config_snapshot()
                 # Side effects for settings that drive runtime state. Toggling
@@ -288,6 +395,14 @@ class IPCMixin:
                         threading.Thread(target=self._disable_tts, daemon=True).start()
                 elif section == "service" and key == "idle_unload_minutes":
                     self._schedule_idle_unload()
+                # Shortcut edits take effect immediately: rebuild the event-tap
+                # bindings instead of waiting for a service restart.
+                elif section == "shortcuts":
+                    self._rebind_shortcuts()
+                elif section == "tts" and key == "speak_shortcut":
+                    self._rebind_shortcuts()
+                elif section == "hotkey" and key == "key":
+                    self._set_record_key(value)
                 elif section in ("parakeet_v3", "qwen3_asr") and key == "model":
                     self._send_engines_status()
                     if section == self.config.transcription.engine:
@@ -304,10 +419,15 @@ class IPCMixin:
                             daemon=True,
                         ).start()
         elif msg_type == "replacement_add":
-            spoken = msg.get("spoken", "").strip()
-            replacement = msg.get("replacement", "").strip()
-            if spoken and replacement:
-                add_replacement(spoken, replacement)
+            spoken = str(msg.get("spoken", "")).strip()
+            replacement = str(msg.get("replacement", ""))
+            # Empty replacement is legitimate ("delete this word"), and
+            # leading/trailing whitespace in the replacement is preserved
+            # verbatim (e.g. a " :)" suffix rule). Only the spoken form
+            # must be non-blank.
+            if spoken:
+                if not add_replacement(spoken, replacement):
+                    self._send_state_error("Not saved — fix ~/.whisper/config.toml")
                 self.config = get_config()
                 self._send_config_snapshot()
         elif msg_type == "replacement_remove":
@@ -316,6 +436,71 @@ class IPCMixin:
                 remove_replacement(spoken)
                 self.config = get_config()
                 self._send_config_snapshot()
+        elif msg_type == "replacement_import":
+            raw_rules = msg.get("rules")
+            if isinstance(raw_rules, dict):
+                # Same contract as replacement_add: only the spoken form must
+                # be non-blank. Empty replacements ("delete this word") and
+                # padded values are preserved verbatim.
+                rules = {
+                    str(k).strip(): str(v)
+                    for k, v in raw_rules.items()
+                    if str(k).strip()
+                }
+                if rules:
+                    if not add_replacements(rules):
+                        self._send_state_error("Import not saved — fix ~/.whisper/config.toml")
+                    self.config = get_config()
+                    self._send_config_snapshot()
+        elif msg_type == "replacement_test":
+            # Live tester for the Vocabulary panel: run the input through the
+            # real replacement engine (same code path dictation uses) so the
+            # user can verify a rule actually fires before trusting it.
+            from .replacements import apply_replacements
+            text = msg.get("text", "")
+            output = text
+            if isinstance(text, str) and text:
+                try:
+                    output = apply_replacements(text, self.config.replacements.rules)
+                except Exception as e:
+                    log(f"Replacement test failed: {e}", "WARN")
+            self.ipc.send({
+                "type": "replacement_test_result",
+                "input": text,
+                "output": output,
+                "enabled": bool(self.config.replacements.enabled),
+            })
+        elif msg_type == "dictation_command_add":
+            spoken = str(msg.get("spoken", "")).strip()
+            replacement = str(msg.get("replacement", ""))
+            if spoken:
+                if not add_dictation_command(spoken, replacement):
+                    self._send_state_error("Not saved — fix ~/.whisper/config.toml")
+                self.config = get_config()
+                self._send_config_snapshot()
+        elif msg_type == "dictation_command_remove":
+            spoken = str(msg.get("spoken", "")).strip()
+            if spoken:
+                remove_dictation_command(spoken)
+                self.config = get_config()
+                self._send_config_snapshot()
+        elif msg_type == "dictation_test":
+            # Live tester for the Voice panel: run the input through the real
+            # dictation pass (commands + filler stripping, per current config).
+            from .dictation_commands import apply_dictation_commands
+            text = msg.get("text", "")
+            output = text
+            if isinstance(text, str) and text:
+                try:
+                    output = apply_dictation_commands(text)
+                except Exception as e:
+                    log(f"Dictation test failed: {e}", "WARN")
+            self.ipc.send({
+                "type": "dictation_test_result",
+                "input": text,
+                "output": output,
+                "enabled": bool(self.config.dictation.enabled),
+            })
 
     def _request_microphone_permission(self):
         from .utils import request_microphone_permission

@@ -103,6 +103,52 @@ struct DeferredTextEditor: View {
     }
 }
 
+// MARK: - Commit-on-release slider
+//
+// A plain Slider bound straight to a config Binding fires an IPC write and
+// a full config.toml rewrite on EVERY drag tick (dozens per second). This
+// wrapper keeps drags local and commits once, on release.
+struct CommitSlider<Label: View>: View {
+    let range: ClosedRange<Double>
+    let step: Double
+    let value: Double
+    let onCommit: (Double) -> Void
+    @ViewBuilder let label: (Double) -> Label
+
+    @State private var localValue: Double
+    @State private var dragging = false
+
+    init(
+        value: Double,
+        in range: ClosedRange<Double>,
+        step: Double,
+        onCommit: @escaping (Double) -> Void,
+        @ViewBuilder label: @escaping (Double) -> Label
+    ) {
+        self.range = range
+        self.step = step
+        self.value = value
+        self.onCommit = onCommit
+        self.label = label
+        _localValue = State(initialValue: value)
+    }
+
+    var body: some View {
+        HStack {
+            Slider(value: $localValue, in: range, step: step) { editing in
+                dragging = editing
+                if !editing {
+                    onCommit(localValue)
+                }
+            }
+            label(localValue)
+        }
+        .onChange(of: value) { _, newValue in
+            if !dragging { localValue = newValue }
+        }
+    }
+}
+
 // MARK: - Restart hint row
 
 struct RestartNote: View {

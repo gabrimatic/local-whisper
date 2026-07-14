@@ -65,9 +65,11 @@ wh replace remove "gonna"
 wh replace on
 wh replace off
 wh replace import rules.csv
+wh replace export rules.csv
+wh replace test "gonna say this"
 ```
 
-Imports accept CSV, TSV, TOML-style `"spoken" = "replacement"`, or arrow-style `spoken -> replacement` files.
+Imports accept CSV, TSV, TOML-style `"spoken" = "replacement"`, or arrow-style `spoken -> replacement` files, and land in one atomic write. Replacement edits hot-reload a running service — no restart needed. `wh replace test` shows what the current rules would produce for a sample sentence.
 
 ## History and diagnostics
 

@@ -11,34 +11,73 @@ enum AppPhase: String, Codable, Sendable {
     case speaking
 }
 
+// MARK: - Tolerant decoding
+//
+// Every config struct decodes field-by-field with a default fallback. A
+// missing or mistyped key must never drop the entire config_snapshot: that
+// failure mode silently left the UI editing phantom defaults while looking
+// "Connected", and made every Python schema addition a lockstep hazard.
+
+extension KeyedDecodingContainer {
+    func decodeOr<T: Decodable>(_ type: T.Type, _ key: Key, _ fallback: T) -> T {
+        // `try?` flattens the `T??` from decodeIfPresent to `T?` (SE-0230).
+        if let value = try? decodeIfPresent(T.self, forKey: key) {
+            return value
+        }
+        return fallback
+    }
+}
+
 // MARK: - Config structs
 
 struct HotkeyConfig: Codable, Sendable {
-    var key: String
-    var doubleTapThreshold: Double
+    var key: String = "alt_r"
+    var doubleTapThreshold: Double = 0.4
+    var holdThreshold: Double = 0.0
 
     enum CodingKeys: String, CodingKey {
         case key
         case doubleTapThreshold = "double_tap_threshold"
+        case holdThreshold = "hold_threshold"
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        key = c.decodeOr(String.self, .key, d.key)
+        doubleTapThreshold = c.decodeOr(Double.self, .doubleTapThreshold, d.doubleTapThreshold)
+        holdThreshold = c.decodeOr(Double.self, .holdThreshold, d.holdThreshold)
     }
 }
 
 struct TranscriptionConfig: Codable, Sendable {
-    var engine: String
+    var engine: String = "parakeet_v3"
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        engine = c.decodeOr(String.self, .engine, d.engine)
+    }
+
+    enum CodingKeys: String, CodingKey { case engine }
 }
 
 struct ParakeetConfig: Codable, Sendable {
-    var model: String
-    var timeout: Double
-    var chunkDuration: Double
-    var overlapDuration: Double
-    var decoding: String
-    var beamSize: Int
-    var lengthPenalty: Double
-    var patience: Double
-    var durationReward: Double
-    var localAttention: Bool
-    var localAttentionContextSize: Int
+    var model: String = "mlx-community/parakeet-tdt-0.6b-v3"
+    var timeout: Double = 0
+    var chunkDuration: Double = 120.0
+    var overlapDuration: Double = 15.0
+    var decoding: String = "greedy"
+    var beamSize: Int = 5
+    var lengthPenalty: Double = 0.013
+    var patience: Double = 3.5
+    var durationReward: Double = 0.67
+    var localAttention: Bool = false
+    var localAttentionContextSize: Int = 256
 
     enum CodingKeys: String, CodingKey {
         case model, timeout, decoding, patience
@@ -50,18 +89,36 @@ struct ParakeetConfig: Codable, Sendable {
         case localAttention = "local_attention"
         case localAttentionContextSize = "local_attention_context_size"
     }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        model = c.decodeOr(String.self, .model, d.model)
+        timeout = c.decodeOr(Double.self, .timeout, d.timeout)
+        chunkDuration = c.decodeOr(Double.self, .chunkDuration, d.chunkDuration)
+        overlapDuration = c.decodeOr(Double.self, .overlapDuration, d.overlapDuration)
+        decoding = c.decodeOr(String.self, .decoding, d.decoding)
+        beamSize = c.decodeOr(Int.self, .beamSize, d.beamSize)
+        lengthPenalty = c.decodeOr(Double.self, .lengthPenalty, d.lengthPenalty)
+        patience = c.decodeOr(Double.self, .patience, d.patience)
+        durationReward = c.decodeOr(Double.self, .durationReward, d.durationReward)
+        localAttention = c.decodeOr(Bool.self, .localAttention, d.localAttention)
+        localAttentionContextSize = c.decodeOr(Int.self, .localAttentionContextSize, d.localAttentionContextSize)
+    }
 }
 
 struct Qwen3ASRConfig: Codable, Sendable {
-    var model: String
-    var timeout: Double
-    var temperature: Double
-    var topP: Double
-    var topK: Int
-    var repetitionContextSize: Int
-    var repetitionPenalty: Double
-    var chunkDuration: Double
-    var maxTokens: Int
+    var model: String = "mlx-community/Qwen3-ASR-1.7B-bf16"
+    var timeout: Double = 0
+    var temperature: Double = 0.0
+    var topP: Double = 1.0
+    var topK: Int = 0
+    var repetitionContextSize: Int = 100
+    var repetitionPenalty: Double = 1.2
+    var chunkDuration: Double = 1200.0
+    var maxTokens: Int = 0
 
     enum CodingKeys: String, CodingKey {
         case model, timeout, temperature
@@ -72,21 +129,37 @@ struct Qwen3ASRConfig: Codable, Sendable {
         case chunkDuration = "chunk_duration"
         case maxTokens = "max_tokens"
     }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        model = c.decodeOr(String.self, .model, d.model)
+        timeout = c.decodeOr(Double.self, .timeout, d.timeout)
+        temperature = c.decodeOr(Double.self, .temperature, d.temperature)
+        topP = c.decodeOr(Double.self, .topP, d.topP)
+        topK = c.decodeOr(Int.self, .topK, d.topK)
+        repetitionContextSize = c.decodeOr(Int.self, .repetitionContextSize, d.repetitionContextSize)
+        repetitionPenalty = c.decodeOr(Double.self, .repetitionPenalty, d.repetitionPenalty)
+        chunkDuration = c.decodeOr(Double.self, .chunkDuration, d.chunkDuration)
+        maxTokens = c.decodeOr(Int.self, .maxTokens, d.maxTokens)
+    }
 }
 
 struct WhisperConfig: Codable, Sendable {
-    var url: String
-    var checkUrl: String
-    var model: String
-    var language: String
-    var timeout: Double
-    var prompt: String
-    var temperature: Double
-    var compressionRatioThreshold: Double
-    var noSpeechThreshold: Double
-    var logprobThreshold: Double
-    var temperatureFallbackCount: Int
-    var promptPreset: String
+    var url: String = "http://localhost:50060/v1/audio/transcriptions"
+    var checkUrl: String = "http://localhost:50060/"
+    var model: String = "large-v3-v20240930_626MB"
+    var language: String = "auto"
+    var timeout: Double = 0
+    var prompt: String = ""
+    var temperature: Double = 0.0
+    var compressionRatioThreshold: Double = 2.4
+    var noSpeechThreshold: Double = 0.6
+    var logprobThreshold: Double = -1.0
+    var temperatureFallbackCount: Int = 5
+    var promptPreset: String = "none"
 
     enum CodingKeys: String, CodingKey {
         case url, model, language, timeout, prompt, temperature
@@ -97,23 +170,53 @@ struct WhisperConfig: Codable, Sendable {
         case temperatureFallbackCount = "temperature_fallback_count"
         case promptPreset = "prompt_preset"
     }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        url = c.decodeOr(String.self, .url, d.url)
+        checkUrl = c.decodeOr(String.self, .checkUrl, d.checkUrl)
+        model = c.decodeOr(String.self, .model, d.model)
+        language = c.decodeOr(String.self, .language, d.language)
+        timeout = c.decodeOr(Double.self, .timeout, d.timeout)
+        prompt = c.decodeOr(String.self, .prompt, d.prompt)
+        temperature = c.decodeOr(Double.self, .temperature, d.temperature)
+        compressionRatioThreshold = c.decodeOr(Double.self, .compressionRatioThreshold, d.compressionRatioThreshold)
+        noSpeechThreshold = c.decodeOr(Double.self, .noSpeechThreshold, d.noSpeechThreshold)
+        logprobThreshold = c.decodeOr(Double.self, .logprobThreshold, d.logprobThreshold)
+        temperatureFallbackCount = c.decodeOr(Int.self, .temperatureFallbackCount, d.temperatureFallbackCount)
+        promptPreset = c.decodeOr(String.self, .promptPreset, d.promptPreset)
+    }
 }
 
 struct GrammarConfig: Codable, Sendable {
-    var backend: String
-    var enabled: Bool
+    var backend: String = "apple_intelligence"
+    var enabled: Bool = false
+
+    enum CodingKeys: String, CodingKey { case backend, enabled }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        backend = c.decodeOr(String.self, .backend, d.backend)
+        enabled = c.decodeOr(Bool.self, .enabled, d.enabled)
+    }
 }
 
 struct OllamaConfig: Codable, Sendable {
-    var url: String
-    var checkUrl: String
-    var model: String
-    var maxChars: Int
-    var maxPredict: Int
-    var numCtx: Int
-    var keepAlive: String
-    var timeout: Double
-    var unloadOnExit: Bool
+    var url: String = "http://localhost:11434/api/generate"
+    var checkUrl: String = "http://localhost:11434/"
+    var model: String = "gemma3:4b-it-qat"
+    var maxChars: Int = 0
+    var maxPredict: Int = 0
+    var numCtx: Int = 0
+    var keepAlive: String = "60m"
+    var timeout: Double = 0
+    var unloadOnExit: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case url, model, timeout
@@ -124,25 +227,50 @@ struct OllamaConfig: Codable, Sendable {
         case keepAlive = "keep_alive"
         case unloadOnExit = "unload_on_exit"
     }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        url = c.decodeOr(String.self, .url, d.url)
+        checkUrl = c.decodeOr(String.self, .checkUrl, d.checkUrl)
+        model = c.decodeOr(String.self, .model, d.model)
+        maxChars = c.decodeOr(Int.self, .maxChars, d.maxChars)
+        maxPredict = c.decodeOr(Int.self, .maxPredict, d.maxPredict)
+        numCtx = c.decodeOr(Int.self, .numCtx, d.numCtx)
+        keepAlive = c.decodeOr(String.self, .keepAlive, d.keepAlive)
+        timeout = c.decodeOr(Double.self, .timeout, d.timeout)
+        unloadOnExit = c.decodeOr(Bool.self, .unloadOnExit, d.unloadOnExit)
+    }
 }
 
 struct AppleIntelligenceConfig: Codable, Sendable {
-    var maxChars: Int
-    var timeout: Double
+    var maxChars: Int = 0
+    var timeout: Double = 0
 
     enum CodingKeys: String, CodingKey {
         case maxChars = "max_chars"
         case timeout
     }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        maxChars = c.decodeOr(Int.self, .maxChars, d.maxChars)
+        timeout = c.decodeOr(Double.self, .timeout, d.timeout)
+    }
 }
 
 struct LMStudioConfig: Codable, Sendable {
-    var url: String
-    var checkUrl: String
-    var model: String
-    var maxChars: Int
-    var maxTokens: Int
-    var timeout: Double
+    var url: String = "http://localhost:1234/v1/chat/completions"
+    var checkUrl: String = "http://localhost:1234/"
+    var model: String = "google/gemma-3-4b"
+    var maxChars: Int = 0
+    var maxTokens: Int = 0
+    var timeout: Double = 0
 
     enum CodingKeys: String, CodingKey {
         case url, model, timeout
@@ -150,17 +278,30 @@ struct LMStudioConfig: Codable, Sendable {
         case maxChars = "max_chars"
         case maxTokens = "max_tokens"
     }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        url = c.decodeOr(String.self, .url, d.url)
+        checkUrl = c.decodeOr(String.self, .checkUrl, d.checkUrl)
+        model = c.decodeOr(String.self, .model, d.model)
+        maxChars = c.decodeOr(Int.self, .maxChars, d.maxChars)
+        maxTokens = c.decodeOr(Int.self, .maxTokens, d.maxTokens)
+        timeout = c.decodeOr(Double.self, .timeout, d.timeout)
+    }
 }
 
 struct AudioConfig: Codable, Sendable {
-    var sampleRate: Int
-    var minDuration: Double
-    var maxDuration: Int
-    var minRms: Double
-    var vadEnabled: Bool
-    var noiseReduction: Bool
-    var normalizeAudio: Bool
-    var preBuffer: Double
+    var sampleRate: Int = 16000
+    var minDuration: Double = 0
+    var maxDuration: Int = 0
+    var minRms: Double = 0.005
+    var vadEnabled: Bool = true
+    var noiseReduction: Bool = true
+    var normalizeAudio: Bool = true
+    var preBuffer: Double = 0.0
 
     enum CodingKeys: String, CodingKey {
         case sampleRate = "sample_rate"
@@ -172,14 +313,29 @@ struct AudioConfig: Codable, Sendable {
         case normalizeAudio = "normalize_audio"
         case preBuffer = "pre_buffer"
     }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        sampleRate = c.decodeOr(Int.self, .sampleRate, d.sampleRate)
+        minDuration = c.decodeOr(Double.self, .minDuration, d.minDuration)
+        maxDuration = c.decodeOr(Int.self, .maxDuration, d.maxDuration)
+        minRms = c.decodeOr(Double.self, .minRms, d.minRms)
+        vadEnabled = c.decodeOr(Bool.self, .vadEnabled, d.vadEnabled)
+        noiseReduction = c.decodeOr(Bool.self, .noiseReduction, d.noiseReduction)
+        normalizeAudio = c.decodeOr(Bool.self, .normalizeAudio, d.normalizeAudio)
+        preBuffer = c.decodeOr(Double.self, .preBuffer, d.preBuffer)
+    }
 }
 
 struct UIConfig: Codable, Sendable {
-    var showOverlay: Bool
-    var overlayOpacity: Double
-    var soundsEnabled: Bool
-    var notificationsEnabled: Bool
-    var autoPaste: Bool
+    var showOverlay: Bool = true
+    var overlayOpacity: Double = 0.92
+    var soundsEnabled: Bool = true
+    var notificationsEnabled: Bool = false
+    var autoPaste: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case showOverlay = "show_overlay"
@@ -188,83 +344,188 @@ struct UIConfig: Codable, Sendable {
         case notificationsEnabled = "notifications_enabled"
         case autoPaste = "auto_paste"
     }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        showOverlay = c.decodeOr(Bool.self, .showOverlay, d.showOverlay)
+        overlayOpacity = c.decodeOr(Double.self, .overlayOpacity, d.overlayOpacity)
+        soundsEnabled = c.decodeOr(Bool.self, .soundsEnabled, d.soundsEnabled)
+        notificationsEnabled = c.decodeOr(Bool.self, .notificationsEnabled, d.notificationsEnabled)
+        autoPaste = c.decodeOr(Bool.self, .autoPaste, d.autoPaste)
+    }
 }
 
 struct BackupConfig: Codable, Sendable {
-    var directory: String
-    var historyLimit: Int
+    var directory: String = "~/.whisper"
+    var historyLimit: Int = 100
 
     enum CodingKeys: String, CodingKey {
         case directory
         case historyLimit = "history_limit"
     }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        directory = c.decodeOr(String.self, .directory, d.directory)
+        historyLimit = c.decodeOr(Int.self, .historyLimit, d.historyLimit)
+    }
 }
 
 struct ServiceConfig: Codable, Sendable {
-    var idleUnloadMinutes: Int
+    var idleUnloadMinutes: Int = 20
 
     enum CodingKeys: String, CodingKey {
         case idleUnloadMinutes = "idle_unload_minutes"
     }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        idleUnloadMinutes = c.decodeOr(Int.self, .idleUnloadMinutes, d.idleUnloadMinutes)
+    }
 }
 
 struct ShortcutsConfig: Codable, Sendable {
-    var enabled: Bool
-    var proofread: String
-    var rewrite: String
-    var promptEngineer: String
+    var enabled: Bool = true
+    var proofread: String = "ctrl+shift+g"
+    var rewrite: String = "ctrl+shift+r"
+    var promptEngineer: String = "ctrl+shift+p"
+    var pasteResult: Bool = true
 
     enum CodingKeys: String, CodingKey {
         case enabled, proofread, rewrite
         case promptEngineer = "prompt_engineer"
+        case pasteResult = "paste_result"
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        enabled = c.decodeOr(Bool.self, .enabled, d.enabled)
+        proofread = c.decodeOr(String.self, .proofread, d.proofread)
+        rewrite = c.decodeOr(String.self, .rewrite, d.rewrite)
+        promptEngineer = c.decodeOr(String.self, .promptEngineer, d.promptEngineer)
+        pasteResult = c.decodeOr(Bool.self, .pasteResult, d.pasteResult)
     }
 }
 
 struct TTSConfig: Codable, Sendable {
-    var enabled: Bool
-    var provider: String
-    var speakShortcut: String
+    var enabled: Bool = false
+    var provider: String = "kokoro"
+    var speakShortcut: String = "alt+t"
 
     enum CodingKeys: String, CodingKey {
         case enabled, provider
         case speakShortcut = "speak_shortcut"
     }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        enabled = c.decodeOr(Bool.self, .enabled, d.enabled)
+        provider = c.decodeOr(String.self, .provider, d.provider)
+        speakShortcut = c.decodeOr(String.self, .speakShortcut, d.speakShortcut)
+    }
 }
 
 struct KokoroTTSConfig: Codable, Sendable {
-    var model: String
-    var voice: String
+    var model: String = "mlx-community/Kokoro-82M-bf16"
+    var voice: String = "af_sky"
+
+    enum CodingKeys: String, CodingKey { case model, voice }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        model = c.decodeOr(String.self, .model, d.model)
+        voice = c.decodeOr(String.self, .voice, d.voice)
+    }
 }
 
 struct ReplacementsConfig: Codable, Sendable {
-    var enabled: Bool
-    var rules: [String: String]
+    var enabled: Bool = false
+    var rules: [String: String] = [:]
+
+    enum CodingKeys: String, CodingKey { case enabled, rules }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        enabled = c.decodeOr(Bool.self, .enabled, d.enabled)
+        rules = c.decodeOr([String: String].self, .rules, d.rules)
+    }
 }
 
 struct DictationConfig: Codable, Sendable {
-    var enabled: Bool
-    var commands: [String: String]
+    var enabled: Bool = true
+    var stripFillers: Bool = true
+    var commands: [String: String] = [:]
+    /// Built-in command set sent by the service so the UI renders the real
+    /// effective list instead of a hardcoded, drifting copy.
+    var defaults: [String: String] = [:]
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, commands, defaults
+        case stripFillers = "strip_fillers"
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        enabled = c.decodeOr(Bool.self, .enabled, d.enabled)
+        stripFillers = c.decodeOr(Bool.self, .stripFillers, d.stripFillers)
+        commands = c.decodeOr([String: String].self, .commands, d.commands)
+        defaults = c.decodeOr([String: String].self, .defaults, d.defaults)
+    }
+
+    /// Defaults merged with user overrides, the way the engine applies them.
+    var effectiveCommands: [(phrase: String, replacement: String, isCustom: Bool)] {
+        var merged: [String: (String, Bool)] = [:]
+        for (k, v) in defaults { merged[k.lowercased()] = (v, false) }
+        for (k, v) in commands { merged[k.lowercased()] = (v, true) }
+        return merged
+            .sorted { $0.key < $1.key }
+            .map { (phrase: $0.key, replacement: $0.value.0, isCustom: $0.value.1) }
+    }
 }
 
 struct AppConfig: Codable, Sendable {
-    var hotkey: HotkeyConfig
-    var transcription: TranscriptionConfig
-    var parakeet: ParakeetConfig
-    var qwen3Asr: Qwen3ASRConfig
-    var whisper: WhisperConfig
-    var grammar: GrammarConfig
-    var ollama: OllamaConfig
-    var appleIntelligence: AppleIntelligenceConfig
-    var lmStudio: LMStudioConfig
-    var audio: AudioConfig
-    var ui: UIConfig
-    var backup: BackupConfig
-    var service: ServiceConfig
-    var shortcuts: ShortcutsConfig
-    var tts: TTSConfig
-    var kokoroTts: KokoroTTSConfig
-    var replacements: ReplacementsConfig
-    var dictation: DictationConfig
+    var hotkey = HotkeyConfig()
+    var transcription = TranscriptionConfig()
+    var parakeet = ParakeetConfig()
+    var qwen3Asr = Qwen3ASRConfig()
+    var whisper = WhisperConfig()
+    var grammar = GrammarConfig()
+    var ollama = OllamaConfig()
+    var appleIntelligence = AppleIntelligenceConfig()
+    var lmStudio = LMStudioConfig()
+    var audio = AudioConfig()
+    var ui = UIConfig()
+    var backup = BackupConfig()
+    var service = ServiceConfig()
+    var shortcuts = ShortcutsConfig()
+    var tts = TTSConfig()
+    var kokoroTts = KokoroTTSConfig()
+    var replacements = ReplacementsConfig()
+    var dictation = DictationConfig()
 
     enum CodingKeys: String, CodingKey {
         case hotkey, transcription, whisper, grammar, ollama, audio, ui, backup, service, shortcuts, tts, replacements, dictation
@@ -275,106 +536,32 @@ struct AppConfig: Codable, Sendable {
         case kokoroTts = "kokoro_tts"
     }
 
-    init(
-        hotkey: HotkeyConfig, transcription: TranscriptionConfig,
-        parakeet: ParakeetConfig, qwen3Asr: Qwen3ASRConfig,
-        whisper: WhisperConfig, grammar: GrammarConfig, ollama: OllamaConfig,
-        appleIntelligence: AppleIntelligenceConfig, lmStudio: LMStudioConfig,
-        audio: AudioConfig, ui: UIConfig, backup: BackupConfig, service: ServiceConfig,
-        shortcuts: ShortcutsConfig, tts: TTSConfig, kokoroTts: KokoroTTSConfig,
-        replacements: ReplacementsConfig, dictation: DictationConfig
-    ) {
-        self.hotkey = hotkey
-        self.transcription = transcription
-        self.parakeet = parakeet
-        self.qwen3Asr = qwen3Asr
-        self.whisper = whisper
-        self.grammar = grammar
-        self.ollama = ollama
-        self.appleIntelligence = appleIntelligence
-        self.lmStudio = lmStudio
-        self.audio = audio
-        self.ui = ui
-        self.backup = backup
-        self.service = service
-        self.shortcuts = shortcuts
-        self.tts = tts
-        self.kokoroTts = kokoroTts
-        self.replacements = replacements
-        self.dictation = dictation
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+        hotkey = c.decodeOr(HotkeyConfig.self, .hotkey, d.hotkey)
+        transcription = c.decodeOr(TranscriptionConfig.self, .transcription, d.transcription)
+        parakeet = c.decodeOr(ParakeetConfig.self, .parakeet, d.parakeet)
+        qwen3Asr = c.decodeOr(Qwen3ASRConfig.self, .qwen3Asr, d.qwen3Asr)
+        whisper = c.decodeOr(WhisperConfig.self, .whisper, d.whisper)
+        grammar = c.decodeOr(GrammarConfig.self, .grammar, d.grammar)
+        ollama = c.decodeOr(OllamaConfig.self, .ollama, d.ollama)
+        appleIntelligence = c.decodeOr(AppleIntelligenceConfig.self, .appleIntelligence, d.appleIntelligence)
+        lmStudio = c.decodeOr(LMStudioConfig.self, .lmStudio, d.lmStudio)
+        audio = c.decodeOr(AudioConfig.self, .audio, d.audio)
+        ui = c.decodeOr(UIConfig.self, .ui, d.ui)
+        backup = c.decodeOr(BackupConfig.self, .backup, d.backup)
+        service = c.decodeOr(ServiceConfig.self, .service, d.service)
+        shortcuts = c.decodeOr(ShortcutsConfig.self, .shortcuts, d.shortcuts)
+        tts = c.decodeOr(TTSConfig.self, .tts, d.tts)
+        kokoroTts = c.decodeOr(KokoroTTSConfig.self, .kokoroTts, d.kokoroTts)
+        replacements = c.decodeOr(ReplacementsConfig.self, .replacements, d.replacements)
+        dictation = c.decodeOr(DictationConfig.self, .dictation, d.dictation)
     }
 
-    static var defaultConfig: AppConfig {
-        AppConfig(
-            hotkey: HotkeyConfig(key: "alt_r", doubleTapThreshold: 0.4),
-            transcription: TranscriptionConfig(engine: "parakeet_v3"),
-            parakeet: ParakeetConfig(
-                model: "mlx-community/parakeet-tdt-0.6b-v3",
-                timeout: 0,
-                chunkDuration: 120.0,
-                overlapDuration: 15.0,
-                decoding: "greedy",
-                beamSize: 5,
-                lengthPenalty: 0.013,
-                patience: 3.5,
-                durationReward: 0.67,
-                localAttention: false,
-                localAttentionContextSize: 256
-            ),
-            qwen3Asr: Qwen3ASRConfig(model: "mlx-community/Qwen3-ASR-1.7B-bf16", timeout: 0, temperature: 0.0, topP: 1.0, topK: 0, repetitionContextSize: 100, repetitionPenalty: 1.2, chunkDuration: 1200.0, maxTokens: 0),
-            whisper: WhisperConfig(
-                url: "http://localhost:50060/v1/audio/transcriptions",
-                checkUrl: "http://localhost:50060/",
-                model: "large-v3-v20240930_626MB",
-                language: "auto",
-                timeout: 0,
-                prompt: "",
-                temperature: 0.0,
-                compressionRatioThreshold: 2.4,
-                noSpeechThreshold: 0.6,
-                logprobThreshold: -1.0,
-                temperatureFallbackCount: 5,
-                promptPreset: "none"
-            ),
-            grammar: GrammarConfig(backend: "apple_intelligence", enabled: false),
-            ollama: OllamaConfig(
-                url: "http://localhost:11434/api/generate",
-                checkUrl: "http://localhost:11434/",
-                model: "gemma3:4b-it-qat",
-                maxChars: 0,
-                maxPredict: 0,
-                numCtx: 0,
-                keepAlive: "60m",
-                timeout: 0,
-                unloadOnExit: false
-            ),
-            appleIntelligence: AppleIntelligenceConfig(maxChars: 0, timeout: 0),
-            lmStudio: LMStudioConfig(url: "http://localhost:1234/v1/chat/completions", checkUrl: "http://localhost:1234/", model: "google/gemma-3-4b", maxChars: 0, maxTokens: 0, timeout: 0),
-            audio: AudioConfig(
-                sampleRate: 16000,
-                minDuration: 0,
-                maxDuration: 0,
-                minRms: 0.005,
-                vadEnabled: true,
-                noiseReduction: true,
-                normalizeAudio: true,
-                preBuffer: 0.0
-            ),
-            ui: UIConfig(showOverlay: true, overlayOpacity: 0.92, soundsEnabled: true, notificationsEnabled: false, autoPaste: false),
-            backup: BackupConfig(directory: "~/.whisper", historyLimit: 100),
-            service: ServiceConfig(idleUnloadMinutes: 20),
-            shortcuts: ShortcutsConfig(
-                enabled: true,
-                proofread: "ctrl+shift+g",
-                rewrite: "ctrl+shift+r",
-                promptEngineer: "ctrl+shift+p"
-            ),
-            tts: TTSConfig(enabled: false, provider: "kokoro", speakShortcut: "alt+t"),
-            kokoroTts: KokoroTTSConfig(model: "mlx-community/Kokoro-82M-bf16", voice: "af_sky"),
-            replacements: ReplacementsConfig(enabled: false, rules: [:]),
-            dictation: DictationConfig(enabled: true, commands: [:])
-        )
-    }
+    static var defaultConfig: AppConfig { AppConfig() }
 }
 
 // MARK: - Engine status
@@ -405,11 +592,13 @@ struct EngineStatus: Codable, Sendable, Identifiable {
 struct HistoryEntry: Codable, Identifiable, Sendable {
     var id: String
     var text: String
+    /// Raw engine transcription when it differs from the final text.
+    var raw: String?
     var timestamp: Double
     var audioPath: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, text, timestamp
+        case id, text, raw, timestamp
         case audioPath = "audio_path"
     }
 
@@ -429,6 +618,14 @@ struct DownloadProgress: Codable, Sendable {
     var error: String?
 }
 
+// MARK: - Pipeline test results (vocabulary / dictation testers)
+
+struct PipelineTestResult: Sendable {
+    var input: String
+    var output: String
+    var enabled: Bool
+}
+
 // MARK: - Incoming messages
 
 enum IncomingMessage: Sendable {
@@ -438,6 +635,8 @@ enum IncomingMessage: Sendable {
     case enginesStatus([EngineStatus])
     case downloadProgress(DownloadProgress)
     case notification(title: String, body: String)
+    case replacementTestResult(PipelineTestResult)
+    case dictationTestResult(PipelineTestResult)
 }
 
 private struct RawIncoming: Decodable {
@@ -464,12 +663,19 @@ private struct RawDownloadProgress: Decodable {
     var error: String?
 }
 
+private struct RawTestResult: Decodable {
+    var input: String?
+    var output: String?
+    var enabled: Bool?
+}
+
 func decodeIncomingMessage(_ data: Data) throws -> IncomingMessage {
     // Peek at `type` before full decode. download_progress uses its own phase
     // vocabulary that would collide with AppPhase decoding on RawIncoming.
     struct TypePeek: Decodable { var type: String }
     let typeOnly = try JSONDecoder().decode(TypePeek.self, from: data)
-    if typeOnly.type == "download_progress" {
+    switch typeOnly.type {
+    case "download_progress":
         let dp = try JSONDecoder().decode(RawDownloadProgress.self, from: data)
         return .downloadProgress(DownloadProgress(
             target: dp.target ?? "",
@@ -479,6 +685,18 @@ func decodeIncomingMessage(_ data: Data) throws -> IncomingMessage {
             phase: dp.phase ?? "",
             error: dp.error
         ))
+    case "replacement_test_result", "dictation_test_result":
+        let raw = try JSONDecoder().decode(RawTestResult.self, from: data)
+        let result = PipelineTestResult(
+            input: raw.input ?? "",
+            output: raw.output ?? "",
+            enabled: raw.enabled ?? true
+        )
+        return typeOnly.type == "replacement_test_result"
+            ? .replacementTestResult(result)
+            : .dictationTestResult(result)
+    default:
+        break
     }
     let raw = try JSONDecoder().decode(RawIncoming.self, from: data)
     switch raw.type {
@@ -549,6 +767,32 @@ struct ReplacementAddMessage: Encodable, Sendable {
 struct ReplacementRemoveMessage: Encodable, Sendable {
     var type = "replacement_remove"
     var spoken: String
+}
+
+struct ReplacementImportMessage: Encodable, Sendable {
+    var type = "replacement_import"
+    var rules: [String: String]
+}
+
+struct ReplacementTestMessage: Encodable, Sendable {
+    var type = "replacement_test"
+    var text: String
+}
+
+struct DictationCommandAddMessage: Encodable, Sendable {
+    var type = "dictation_command_add"
+    var spoken: String
+    var replacement: String
+}
+
+struct DictationCommandRemoveMessage: Encodable, Sendable {
+    var type = "dictation_command_remove"
+    var spoken: String
+}
+
+struct DictationTestMessage: Encodable, Sendable {
+    var type = "dictation_test"
+    var text: String
 }
 
 struct ConfigUpdateMessage: Encodable, Sendable {

@@ -6,6 +6,7 @@ Ollama backend implementation for grammar correction.
 Handles grammar correction via local Ollama server.
 """
 
+import time
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
@@ -104,26 +105,17 @@ class OllamaBackend(GrammarBackend):
             log("Text too short for mode processing, returning as-is", "INFO")
             return text, None
 
+        # Chunk before building any prompt: each chunk builds its own.
+        max_chars = config.ollama.max_chars
+        if max_chars > 0 and len(text) > max_chars:
+            return self._fix_in_chunks(text, max_chars, mode_id)
+
         # Build prompt with error handling
         try:
             prompt = get_mode_ollama_prompt(mode_id, text)
         except ValueError as e:
             log(f"Failed to build prompt for mode {mode_id}: {e}", "ERR")
             return text, f"Prompt error: {e}"
-
-        # Handle max_chars chunking
-        max_chars = config.ollama.max_chars
-        if max_chars > 0 and len(text) > max_chars:
-            log(f"Ollama: splitting {len(text)} chars into chunks of {max_chars}", "INFO")
-            chunks = self._split_text(text, max_chars)
-            results = []
-            for i, chunk in enumerate(chunks):
-                log(f"Ollama: processing chunk {i+1}/{len(chunks)} ({len(chunk)} chars)", "INFO")
-                result, err = self.fix_with_mode(chunk, mode_id)
-                if err:
-                    return text, err
-                results.append(result)
-            return "\n\n".join(results), None
 
         log(f"Ollama fix_with_mode: {mode.name} ({len(text)} chars)", "INFO")
 
@@ -142,17 +134,21 @@ class OllamaBackend(GrammarBackend):
             if config.ollama.num_ctx > 0:
                 options["num_ctx"] = config.ollama.num_ctx
 
-            r = self._session.post(
-                config.ollama.url,
-                json={
-                    "model": config.ollama.model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "keep_alive": config.ollama.keep_alive,
-                    "options": options
-                },
-                timeout=timeout
-            )
+            payload = {
+                "model": config.ollama.model,
+                "prompt": prompt,
+                "stream": False,
+                "keep_alive": config.ollama.keep_alive,
+                "options": options,
+            }
+            try:
+                r = self._session.post(config.ollama.url, json=payload, timeout=timeout)
+            except requests.exceptions.ConnectionError:
+                # One silent retry: transient resets (server restarting a
+                # worker) shouldn't surface an error for a request that
+                # would succeed 500ms later.
+                time.sleep(0.5)
+                r = self._session.post(config.ollama.url, json=payload, timeout=timeout)
             r.raise_for_status()
 
             # Parse response
@@ -167,7 +163,7 @@ class OllamaBackend(GrammarBackend):
                 log("Empty response from Ollama", "WARN")
                 return text, "Empty response"
 
-            result = self._clean_result(result)
+            result = self._clean_result(result, text)
             result = self._normalize_leading_spaces(result)
 
             log(f"Ollama {mode.name} complete: {len(text)} -> {len(result)} chars", "OK")

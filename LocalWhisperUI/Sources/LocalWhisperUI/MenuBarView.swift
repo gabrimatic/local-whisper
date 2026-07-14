@@ -84,7 +84,7 @@ struct MenuBarView: View {
                 appState.ipcClient?.sendConfigUpdate(section: "tts", key: "enabled", value: newValue)
             }
         ))
-        .help("Select text in any app and press ⌥T to hear it spoken. First use downloads a local voice model (~170 MB).")
+        .help("Select text in any app and press \(KeyboardGlyph.display(appState.config.tts.speakShortcut)) to hear it spoken. First use downloads a local voice model (~170 MB).")
 
         Divider()
 
@@ -94,7 +94,7 @@ struct MenuBarView: View {
                 Text("No transcriptions yet")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(Array(appState.history.prefix(min(20, appState.config.backup.historyLimit)))) { entry in
+                ForEach(Array(appState.history.prefix(menuHistorySliceCount))) { entry in
                     Button {
                         copyEntry(entry.text)
                     } label: {
@@ -113,7 +113,7 @@ struct MenuBarView: View {
                 Text("No recordings yet")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(Array(appState.historyWithAudio.prefix(min(20, appState.config.backup.historyLimit)))) { entry in
+                ForEach(Array(appState.historyWithAudio.prefix(menuHistorySliceCount))) { entry in
                     Button {
                         appState.ipcClient?.sendAction("reveal", id: entry.id)
                     } label: {
@@ -264,11 +264,17 @@ struct MenuBarView: View {
     private var readAloudMenuTitle: String {
         // TTS acronym spelled out so the feature category is unambiguous.
         // Shortcut inline so users know what triggers it.
-        "Text-to-speech (TTS) — ⌥T on selection"
+        "Text-to-speech (TTS) — \(KeyboardGlyph.display(appState.config.tts.speakShortcut)) on selection"
+    }
+
+    private var menuHistorySliceCount: Int {
+        // Guard historyLimit <= 0 and keep the shown count in sync with the
+        // actual slice so the title never promises more rows than the menu.
+        max(0, min(20, appState.config.backup.historyLimit))
     }
 
     private var transcriptionsMenuTitle: String {
-        let count = appState.history.count
+        let count = min(appState.history.count, menuHistorySliceCount)
         if count == 0 { return "Saved transcriptions" }
         return "Saved transcriptions (\(count))"
     }
@@ -285,7 +291,10 @@ struct MenuBarView: View {
         case .idle: return "Local Whisper: Ready"
         case .recording: return "Local Whisper: Recording"
         case .processing: return "Local Whisper: Transcribing"
-        case .done: return "Local Whisper: Transcription copied"
+        case .done:
+            // "Replaced!"/"Pasted!" flows must not claim "copied".
+            let done = appState.doneStatusText
+            return done.isEmpty ? "Local Whisper: Transcription copied" : "Local Whisper: \(done)"
         case .error: return "Local Whisper: Error"
         case .speaking: return "Local Whisper: Speaking"
         }

@@ -132,11 +132,11 @@ Details: [Installation](https://gabrimatic.github.io/local-whisper/reference/ins
 | Shortcut | Action |
 |----------|--------|
 | **⌥T** | Read selected text aloud (again or Esc to stop) |
-| **Ctrl+Shift+G** | Proofread selected text |
-| **Ctrl+Shift+R** | Rewrite selected text |
-| **Ctrl+Shift+P** | Optimize selected text as an LLM prompt |
+| **Ctrl+Shift+G** | Proofread selected text (rebindable in Settings → Shortcuts) |
+| **Ctrl+Shift+R** | Rewrite selected text (rebindable) |
+| **Ctrl+Shift+P** | Optimize selected text as an LLM prompt (rebindable) |
 
-Results go to clipboard. Text-transform shortcuts require grammar correction to be enabled with a working backend. TTS plays through speakers after Read selected text aloud is enabled.
+Results replace the selection in place by default and are always copied to the clipboard as a backup (`[shortcuts] paste_result`). Text-transform shortcuts require grammar correction to be enabled with a working backend. TTS plays through speakers after Read selected text aloud is enabled.
 
 ### Feedback
 

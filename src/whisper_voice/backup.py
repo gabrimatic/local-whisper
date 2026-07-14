@@ -63,6 +63,9 @@ class Backup:
         self._audio_history_dir = self._dir / "audio_history"
         self._audio_history_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        # Stem minted by save_audio for the in-flight session; consumed by
+        # save_history so both files share it (audio<->text association).
+        self._session_stem: Optional[str] = None
 
     @property
     def audio_path(self) -> Path:
@@ -100,6 +103,12 @@ class Backup:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         return self._history_dir / f"{ts}.txt"
 
+    def _consume_session_stem(self) -> Optional[str]:
+        """Return and clear the stem save_audio minted for this session."""
+        stem = self._session_stem
+        self._session_stem = None
+        return stem
+
     def save_audio(self, data: np.ndarray) -> Optional[Path]:
         """Save audio data to WAV file.
 
@@ -108,6 +117,10 @@ class Backup:
         history_limit recordings and prunes older ones.
         """
         config = get_config()
+        # Invalidate any stem left over from a session that aborted before
+        # save_history consumed it — otherwise THIS session's text entry
+        # could be joined to the previous session's recording.
+        self._session_stem = None
         if not _has_free_space(self._dir):
             return None
         # Clean up stale segment files from previous long recordings
@@ -130,7 +143,10 @@ class Backup:
                     w.setframerate(config.audio.sample_rate)
                     w.writeframes(audio_bytes)
 
-                # Also write a timestamped copy to audio_history/
+                # Also write a timestamped copy to audio_history/. The stem
+                # is remembered so save_history() names this session's text
+                # entry identically — that shared stem is what associates a
+                # transcription with its recording in the UI.
                 try:
                     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
                     history_path = self._audio_history_dir / f"{ts}.wav"
@@ -139,6 +155,7 @@ class Backup:
                         w.setsampwidth(2)
                         w.setframerate(config.audio.sample_rate)
                         w.writeframes(audio_bytes)
+                    self._session_stem = ts
                     self._prune_audio_history()
                 except Exception as e:
                     log(f"Audio history save warning: {e}", "WARN")
@@ -190,7 +207,15 @@ class Backup:
         payload = f"RAW:\n{raw_text}\n\nFIXED:\n{final_text}"
         with self._lock:
             try:
-                path = self._history_filename()
+                # Reuse the stem save_audio minted for this session so the
+                # text entry and its recording share a filename stem — the
+                # join key for "play this transcription's audio" in the UI.
+                stem = self._consume_session_stem()
+                path = (
+                    self._history_dir / f"{stem}.txt"
+                    if stem
+                    else self._history_filename()
+                )
                 # Use exclusive creation mode to handle the unlikely case of collision
                 try:
                     with open(path, 'x', encoding='utf-8') as f:

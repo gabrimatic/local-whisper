@@ -12,11 +12,14 @@ from typing import Dict, List, Optional
 
 @dataclass
 class Mode:
-    """Definition of a text transformation mode."""
+    """Definition of a text transformation mode.
+
+    Key bindings intentionally do NOT live here — [shortcuts] in the user
+    config is the single source of truth for which combo triggers a mode.
+    """
     id: str
     name: str
     description: str
-    shortcut: str
     system_prompt: str
     user_prompt_template: str
 
@@ -104,7 +107,6 @@ MODE_REGISTRY: Dict[str, Mode] = {
         id="proofread",
         name="Proofread",
         description="Fix spelling, grammar, punctuation only",
-        shortcut="ctrl+shift+g",
         system_prompt=PROOFREAD_SYSTEM_PROMPT,
         user_prompt_template="Proofread this text:\n\n{text}",
     ),
@@ -112,7 +114,6 @@ MODE_REGISTRY: Dict[str, Mode] = {
         id="rewrite",
         name="Rewrite",
         description="Improve readability while preserving meaning",
-        shortcut="ctrl+shift+r",
         system_prompt=REWRITE_SYSTEM_PROMPT,
         user_prompt_template="Rewrite this for clarity:\n\n{text}",
     ),
@@ -120,7 +121,6 @@ MODE_REGISTRY: Dict[str, Mode] = {
         id="prompt_engineer",
         name="Prompt Engineer",
         description="Polish text as a concise LLM prompt",
-        shortcut="ctrl+shift+p",
         system_prompt=PROMPT_ENGINEER_SYSTEM_PROMPT,
         user_prompt_template="Polish this prompt (stay concise):\n\n{text}",
     ),
@@ -128,7 +128,6 @@ MODE_REGISTRY: Dict[str, Mode] = {
         id="transcription",
         name="Transcription",
         description="Minimal punctuation and capitalization fixes for voice transcription",
-        shortcut="",
         system_prompt=TRANSCRIPTION_SYSTEM_PROMPT,
         user_prompt_template="{text}",
     ),
@@ -154,16 +153,12 @@ class ModeNotFoundError(ValueError):
     pass
 
 
-def get_mode_ollama_prompt(mode_id: str, text: str) -> str:
+def get_mode_prompts(mode_id: str, text: str) -> tuple:
     """
-    Build Ollama prompt for a mode.
+    Build the (system_prompt, user_prompt) pair for a mode.
 
-    Args:
-        mode_id: The mode identifier
-        text: The text to transform
-
-    Returns:
-        Formatted prompt string for Ollama
+    This is the single source of truth for prompt construction; the
+    backend-specific builders below adapt the pair to each wire format.
 
     Raises:
         ModeNotFoundError: If mode_id is not in MODE_REGISTRY
@@ -181,7 +176,27 @@ def get_mode_ollama_prompt(mode_id: str, text: str) -> str:
     except KeyError as e:
         raise ValueError(f"Invalid prompt template for mode {mode_id}: missing key {e}")
 
-    return f"""{mode.system_prompt}
+    return mode.system_prompt, user_prompt
+
+
+def get_mode_ollama_prompt(mode_id: str, text: str) -> str:
+    """
+    Build Ollama prompt for a mode.
+
+    Args:
+        mode_id: The mode identifier
+        text: The text to transform
+
+    Returns:
+        Formatted prompt string for Ollama
+
+    Raises:
+        ModeNotFoundError: If mode_id is not in MODE_REGISTRY
+        ValueError: If text is empty or None
+    """
+    system_prompt, user_prompt = get_mode_prompts(mode_id, text)
+
+    return f"""{system_prompt}
 
 {user_prompt}
 
@@ -204,50 +219,9 @@ def get_mode_lm_studio_messages(mode_id: str, text: str) -> List[dict]:
         ModeNotFoundError: If mode_id is not in MODE_REGISTRY
         ValueError: If text is empty or None
     """
-    if not text:
-        raise ValueError("Text cannot be empty")
-
-    mode = MODE_REGISTRY.get(mode_id)
-    if not mode:
-        raise ModeNotFoundError(f"Unknown mode: {mode_id}")
-
-    try:
-        user_prompt = mode.user_prompt_template.format(text=text)
-    except KeyError as e:
-        raise ValueError(f"Invalid prompt template for mode {mode_id}: missing key {e}")
+    system_prompt, user_prompt = get_mode_prompts(mode_id, text)
 
     return [
-        {"role": "system", "content": mode.system_prompt},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
-
-
-def get_mode_apple_intelligence_input(mode_id: str, text: str) -> str:
-    """
-    Build Apple Intelligence CLI input for a mode.
-
-    Args:
-        mode_id: The mode identifier
-        text: The text to transform
-
-    Returns:
-        Formatted input string for Apple Intelligence CLI
-
-    Raises:
-        ModeNotFoundError: If mode_id is not in MODE_REGISTRY
-        ValueError: If text is empty or None
-    """
-    if not text:
-        raise ValueError("Text cannot be empty")
-
-    mode = MODE_REGISTRY.get(mode_id)
-    if not mode:
-        raise ModeNotFoundError(f"Unknown mode: {mode_id}")
-
-    separator = "\n---SEPARATOR---\n"
-    try:
-        user_prompt = mode.user_prompt_template.format(text=text)
-    except KeyError as e:
-        raise ValueError(f"Invalid prompt template for mode {mode_id}: missing key {e}")
-
-    return f"{mode.system_prompt}{separator}{user_prompt}"

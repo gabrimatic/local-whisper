@@ -32,8 +32,14 @@ from .cmd_server import CommandServer
 from .config import CONFIG_FILE, get_config
 from .grammar import Grammar
 from .ipc_server import IPCServer
-from .key_interceptor import KeyInterceptor
-from .shortcuts import ShortcutProcessor, build_shortcut_map, parse_shortcut
+from .key_interceptor import KEYCODE_FOR_KEY_NAME, KeyInterceptor
+from .shortcuts import (
+    ShortcutProcessor,
+    build_shortcut_map,
+    normalize_shortcut,
+    parse_shortcut,
+    validate_shortcut,
+)
 from .transcriber import Transcriber
 from .tts_processor import TTSProcessor
 from .utils import (
@@ -85,7 +91,11 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
         self.config = get_config()
         self.backup = Backup()
         self.transcriber = Transcriber()
-        self.grammar = Grammar() if self.config.grammar.enabled else None
+        try:
+            self.grammar = Grammar() if self.config.grammar.enabled else None
+        except Exception as e:
+            log(f"Grammar backend could not be created: {e}", "ERR")
+            self.grammar = None
         self.recorder = Recorder()
         self.audio_processor = AudioProcessor(self.config)
 
@@ -106,7 +116,8 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
         self._record_key = KEY_MAP.get(self.config.hotkey.key, keyboard.Key.alt_r)
 
         self._shortcut_processor: Optional[ShortcutProcessor] = None
-        self._shortcut_map: dict = {}
+        self._shortcut_processor_grammar = None
+        self._rebind_lock = threading.Lock()
         self._key_interceptor: Optional[KeyInterceptor] = None
         self._tts_processor: Optional[TTSProcessor] = None
         self._swift_process = None
@@ -119,6 +130,7 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
         self._models_loaded: bool = True
 
         self._monitor_heartbeat_timer: Optional[threading.Timer] = None
+        self._listener_watchdog_timer: Optional[threading.Timer] = None
         self._download_cancel_lock = threading.Lock()
         self._download_cancel_events: dict[str, threading.Event] = {}
 
@@ -156,7 +168,11 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
             return
         self._ready = True
 
-        # Check grammar backend if enabled
+        # Check grammar backend if enabled. When the backend isn't up yet
+        # (e.g. Ollama starts after Local Whisper), KEEP the Grammar instance:
+        # the lazy reconnect in _check_grammar_connection and the running()
+        # probe in ShortcutProcessor recover the moment the backend appears,
+        # instead of leaving grammar and transform shortcuts dead all session.
         if self.config.grammar.enabled and self.grammar is not None:
             self._current_status = "Initializing grammar..."
             self._send_state_update("processing", status_text="Initializing grammar...")
@@ -166,8 +182,10 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
                 log(f"Grammar backend failed to start: {e}", "ERR")
                 self._grammar_ready = False
             if not self._grammar_ready:
-                log(f"{self.grammar.name} not available. Continuing with grammar disabled.", "WARN")
-                self.grammar = None
+                log(
+                    f"{self.grammar.name} not available yet — will keep checking in the background.",
+                    "WARN",
+                )
         else:
             log("Grammar correction disabled", "INFO")
 
@@ -175,44 +193,30 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
         self._key_interceptor = KeyInterceptor()
         self._key_interceptor.set_recording_handler(self._on_recording_key)
 
-        # Register text transformation shortcuts if grammar is ready and shortcuts are enabled
-        has_shortcuts = False
-        if self._grammar_ready and self.grammar is not None and self.config.shortcuts.enabled:
-            self._shortcut_processor = ShortcutProcessor(self.grammar, status_callback=self._shortcut_status_callback)
-            self._shortcut_map = build_shortcut_map(self.config)
-            for key, (modifiers, mode_id) in self._shortcut_map.items():
-                self._key_interceptor.register_shortcut(
-                    modifiers, key,
-                    lambda mid=mode_id: self._shortcut_processor.trigger(mid)
-                )
-            has_shortcuts = True
-
-        # Register TTS shortcut if TTS is enabled (independent of grammar)
-        has_tts = False
+        # Create the TTS processor if enabled (its shortcut binds in _rebind_shortcuts)
         if self.config.tts.enabled:
-            self._tts_processor = TTSProcessor(status_callback=self._tts_status_callback)
-            self._key_interceptor.set_speaking_handler(self._tts_processor.stop)
-            modifiers, key = parse_shortcut(self.config.tts.speak_shortcut)
-            if key:
-                self._key_interceptor.register_shortcut(modifiers, key, self._tts_processor.trigger)
-                has_tts = True
+            try:
+                self._tts_processor = TTSProcessor(status_callback=self._tts_status_callback)
+                self._key_interceptor.set_speaking_handler(self._tts_processor.stop)
+            except Exception as e:
+                log(f"TTS processor failed to initialize: {e}", "ERR")
+                self._tts_processor = None
 
-        # Set enabled guard if any shortcuts are registered
-        if has_shortcuts or has_tts:
-            self._key_interceptor.set_enabled_guard(
-                lambda: (not self.recorder.recording
-                         and not self._busy
-                         and not (self._shortcut_processor and self._shortcut_processor.is_busy()))
-            )
+        # Bind transform + TTS shortcuts and the recording-trigger suppression
+        self._rebind_shortcuts()
 
         if self._key_interceptor.start():
             log("Key interceptor started", "OK")
-            if has_shortcuts:
-                log("Shortcuts: Ctrl+Shift+G (proofread) Ctrl+Shift+R (rewrite) Ctrl+Shift+P (prompt)", "OK")
-            if has_tts:
-                log(f"TTS: {self.config.tts.speak_shortcut} to speak selected text", "OK")
         else:
             log("Key interceptor failed to start", "WARN")
+
+        # Start the hotkey listener immediately after the interceptor: with a
+        # non-modifier trigger (e.g. F6) the interceptor suppresses the key
+        # and relies on this listener observing the same events, so the gap
+        # between the two must stay minimal. A watchdog restarts the listener
+        # if it ever dies.
+        self._start_keyboard_listener()
+        self._schedule_listener_watchdog()
 
         self._current_status = "Ready"
         self._send_state_update()
@@ -231,9 +235,6 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
         # Start audio monitor heartbeat
         self._schedule_monitor_heartbeat()
 
-        # Start keyboard listener
-        self._start_keyboard_listener()
-
         try:
             self._recover_pending_audio()
         except Exception as e:
@@ -242,6 +243,117 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
     def _exit_app(self):
         """Exit the application from any thread."""
         threading.Timer(0.5, self._cleanup).start()
+
+    # ------------------------------------------------------------------
+    # Shortcut binding (single source of truth)
+    # ------------------------------------------------------------------
+
+    def _rebind_shortcuts(self):
+        """Rebuild every CGEventTap binding from the current config.
+
+        Called at startup and whenever shortcuts/tts/hotkey/grammar state
+        changes, so edits in Settings take effect immediately — no restart.
+        """
+        interceptor = self._key_interceptor
+        if interceptor is None:
+            return
+        with self._rebind_lock:
+            interceptor.clear_shortcuts()
+            config = self.config
+
+            with self._grammar_lock:
+                grammar = self.grammar
+
+            # A non-modifier recording trigger (e.g. F6) is suppressed by
+            # keycode alone, BEFORE binding lookup — any shortcut sharing
+            # that key could never fire. Reject such bindings loudly instead
+            # of registering dead keys.
+            record_key_name = (
+                config.hotkey.key if config.hotkey.key in KEYCODE_FOR_KEY_NAME else None
+            )
+
+            # Text-transform shortcuts need a grammar backend instance; it
+            # does NOT have to be reachable right now — the processor probes
+            # running() per trigger and shows "Backend unavailable", so a
+            # backend that comes up later starts working without a rebind.
+            bindings: dict = {}
+            bound_transforms: list[str] = []
+            if config.shortcuts.enabled and grammar is not None:
+                if self._shortcut_processor is None or self._shortcut_processor_grammar is not grammar:
+                    self._shortcut_processor = ShortcutProcessor(
+                        grammar, status_callback=self._shortcut_status_callback
+                    )
+                    self._shortcut_processor_grammar = grammar
+                bindings, problems = build_shortcut_map(config)
+                for problem in problems:
+                    log(f"Shortcut config: {problem}", "WARN")
+                for combo in [c for c in bindings if c[0] == record_key_name]:
+                    log(
+                        f"{bindings[combo]} shortcut uses the recording trigger "
+                        f"key '{record_key_name}' — binding skipped",
+                        "WARN",
+                    )
+                    del bindings[combo]
+                for (key, modifiers), mode_id in bindings.items():
+                    interceptor.register_shortcut(
+                        set(modifiers), key,
+                        lambda mid=mode_id: self._shortcut_processor.trigger(mid)
+                    )
+                    bound_transforms.append(
+                        f"{normalize_shortcut('+'.join(sorted(modifiers) + [key]))} ({mode_id})"
+                    )
+
+            # TTS speak shortcut is independent of grammar.
+            if config.tts.enabled and self._tts_processor is not None:
+                shortcut = config.tts.speak_shortcut
+                error = validate_shortcut(shortcut)
+                if error:
+                    log(f"TTS shortcut '{shortcut}': {error}", "WARN")
+                elif shortcut and shortcut.strip():
+                    modifiers, key = parse_shortcut(shortcut)
+                    if key == record_key_name:
+                        log(
+                            f"TTS shortcut '{shortcut}' uses the recording trigger "
+                            f"key '{record_key_name}' — TTS shortcut disabled",
+                            "WARN",
+                        )
+                    elif (key, frozenset(modifiers)) in bindings:
+                        log(
+                            f"TTS shortcut '{shortcut}' conflicts with "
+                            f"{bindings[(key, frozenset(modifiers))]} — TTS shortcut disabled",
+                            "WARN",
+                        )
+                    else:
+                        interceptor.register_shortcut(modifiers, key, self._tts_processor.trigger)
+                        log(f"TTS: {normalize_shortcut(shortcut)} to speak selected text", "OK")
+
+            if bound_transforms:
+                log("Shortcuts: " + "  ".join(bound_transforms), "OK")
+
+            # Suppress a non-modifier recording trigger (e.g. F6) so pressing
+            # it never leaks a keystroke into the frontmost app. Modifier
+            # triggers map to None here and are unaffected.
+            interceptor.set_record_keycode(KEYCODE_FOR_KEY_NAME.get(config.hotkey.key))
+
+            # Interception pauses while recording/processing.
+            interceptor.set_enabled_guard(
+                lambda: (not self.recorder.recording
+                         and not self._busy
+                         and not (self._shortcut_processor and self._shortcut_processor.is_busy()))
+            )
+
+    def _set_record_key(self, key_name: str) -> bool:
+        """Point the hotkey listener at a new trigger key. Returns False if unknown."""
+        new_key = KEY_MAP.get(key_name)
+        if new_key is None:
+            log(f"Unknown hotkey '{key_name}' — keeping current trigger", "WARN")
+            return False
+        changed = new_key != self._record_key
+        self._record_key = new_key
+        self._rebind_shortcuts()
+        if changed:
+            log(f"Recording trigger is now {key_name.upper().replace('_', ' ')}", "OK")
+        return True
 
     # ------------------------------------------------------------------
     # Idle model management
@@ -343,7 +455,10 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
     def _tts_status_callback(self, phase: str, status_text: str):
         """Forward TTS processor status to Swift via IPC. Also manages Esc interception."""
         if self._key_interceptor:
-            self._key_interceptor.set_speaking_active(phase in ("speaking", "processing"))
+            # Only swallow Esc system-wide while audio is actually playing.
+            # During the (potentially long) processing phase the user's Esc
+            # keystrokes belong to their frontmost app.
+            self._key_interceptor.set_speaking_active(phase == "speaking")
         self.ipc.send({
             "type": "state_update",
             "phase": phase,
@@ -424,6 +539,10 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
         if self._monitor_heartbeat_timer:
             self._monitor_heartbeat_timer.cancel()
             self._monitor_heartbeat_timer = None
+
+        if self._listener_watchdog_timer:
+            self._listener_watchdog_timer.cancel()
+            self._listener_watchdog_timer = None
 
         # Stop recording if active
         if self.recorder.recording:

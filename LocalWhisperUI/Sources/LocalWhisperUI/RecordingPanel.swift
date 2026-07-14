@@ -37,21 +37,34 @@ struct RecordingPanel: View {
             }
 
             LabeledContent("Double-tap window") {
-                HStack {
-                    Slider(value: Binding(
-                        get: { appState.config.hotkey.doubleTapThreshold },
-                        set: { newValue in
-                            appState.config.hotkey.doubleTapThreshold = newValue
-                            appState.ipcClient?.sendConfigUpdate(section: "hotkey", key: "double_tap_threshold", value: newValue)
-                        }
-                    ), in: 0.1...1.0, step: 0.05)
-                    Text(String(format: "%.2fs", appState.config.hotkey.doubleTapThreshold))
-                        .monoStat(width: 48)
+                CommitSlider(
+                    value: appState.config.hotkey.doubleTapThreshold,
+                    in: 0.1...1.0,
+                    step: 0.05,
+                    onCommit: { newValue in
+                        appState.config.hotkey.doubleTapThreshold = newValue
+                        appState.ipcClient?.sendConfigUpdate(section: "hotkey", key: "double_tap_threshold", value: newValue)
+                    }
+                ) { v in
+                    Text(String(format: "%.2fs", v)).monoStat(width: 48)
                 }
             }
-            .help("Maximum time between two taps to register as a double-tap. Anything longer becomes hold-to-record.")
+            .help("Maximum time between two taps to register as a double-tap.")
 
-            RestartNote()
+            LabeledContent("Hold threshold") {
+                CommitSlider(
+                    value: appState.config.hotkey.holdThreshold,
+                    in: 0.0...1.0,
+                    step: 0.05,
+                    onCommit: { newValue in
+                        appState.config.hotkey.holdThreshold = newValue
+                        appState.ipcClient?.sendConfigUpdate(section: "hotkey", key: "hold_threshold", value: newValue)
+                    }
+                ) { v in
+                    Text(v <= 0 ? "auto" : String(format: "%.2fs", v)).monoStat(width: 48)
+                }
+            }
+            .help("How long the key must stay held before hold-to-record starts. \"auto\" follows the double-tap window.")
         } header: {
             SettingsSectionHeader(symbol: "hand.tap.fill", title: "Trigger", description: "Press to start. Press again, or release in hold mode, to stop.")
         }
@@ -89,16 +102,16 @@ struct RecordingPanel: View {
             .help("Brings each recording to a consistent loudness so quiet speech transcribes as well as loud.")
 
             LabeledContent("Pre-buffer") {
-                HStack {
-                    Slider(value: Binding(
-                        get: { appState.config.audio.preBuffer },
-                        set: { newValue in
-                            appState.config.audio.preBuffer = newValue
-                            appState.ipcClient?.sendConfigUpdate(section: "audio", key: "pre_buffer", value: newValue)
-                        }
-                    ), in: 0...1, step: 0.05)
-                    Text(String(format: "%.2fs", appState.config.audio.preBuffer))
-                        .monoStat(width: 48)
+                CommitSlider(
+                    value: appState.config.audio.preBuffer,
+                    in: 0...1,
+                    step: 0.05,
+                    onCommit: { newValue in
+                        appState.config.audio.preBuffer = newValue
+                        appState.ipcClient?.sendConfigUpdate(section: "audio", key: "pre_buffer", value: newValue)
+                    }
+                ) { v in
+                    Text(String(format: "%.2fs", v)).monoStat(width: 48)
                 }
             }
             .help("Audio captured before you press the hotkey, so the start of your speech is never cut off. 0 disables.")
@@ -112,31 +125,31 @@ struct RecordingPanel: View {
     private var durationSection: some View {
         Section {
             LabeledContent("Min duration") {
-                HStack {
-                    Slider(value: Binding(
-                        get: { appState.config.audio.minDuration },
-                        set: { v in
-                            appState.config.audio.minDuration = v
-                            appState.ipcClient?.sendConfigUpdate(section: "audio", key: "min_duration", value: v)
-                        }
-                    ), in: 0...5, step: 0.5)
-                    Text(String(format: "%.1fs", appState.config.audio.minDuration))
-                        .monoStat(width: 44)
+                CommitSlider(
+                    value: appState.config.audio.minDuration,
+                    in: 0...5,
+                    step: 0.5,
+                    onCommit: { v in
+                        appState.config.audio.minDuration = v
+                        appState.ipcClient?.sendConfigUpdate(section: "audio", key: "min_duration", value: v)
+                    }
+                ) { v in
+                    Text(String(format: "%.1fs", v)).monoStat(width: 44)
                 }
             }
             .help("Recordings shorter than this are discarded as accidental taps.")
 
             LabeledContent("Min RMS level") {
-                HStack {
-                    Slider(value: Binding(
-                        get: { appState.config.audio.minRms },
-                        set: { v in
-                            appState.config.audio.minRms = v
-                            appState.ipcClient?.sendConfigUpdate(section: "audio", key: "min_rms", value: v)
-                        }
-                    ), in: 0...0.05, step: 0.001)
-                    Text(String(format: "%.3f", appState.config.audio.minRms))
-                        .monoStat(width: 48)
+                CommitSlider(
+                    value: appState.config.audio.minRms,
+                    in: 0...0.05,
+                    step: 0.001,
+                    onCommit: { v in
+                        appState.config.audio.minRms = v
+                        appState.ipcClient?.sendConfigUpdate(section: "audio", key: "min_rms", value: v)
+                    }
+                ) { v in
+                    Text(String(format: "%.3f", v)).monoStat(width: 48)
                 }
             }
             .help("Recordings quieter than this are discarded. Raise if ambient noise triggers false positives.")

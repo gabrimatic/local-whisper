@@ -112,18 +112,17 @@ def _validate_config(config: Config):
         config.parakeet.beam_size = 5
 
     # Hotkey validation
-    valid_keys = {
-        "alt_r", "alt_l", "ctrl_r", "ctrl_l", "cmd_r", "cmd_l",
-        "shift_r", "shift_l", "caps_lock",
-        "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12"
-    }
-    if config.hotkey.key not in valid_keys:
+    if config.hotkey.key not in _schema.VALID_HOTKEY_KEYS:
         print(f"Config warning: Invalid hotkey '{config.hotkey.key}', using 'alt_r'", file=sys.stderr)
         config.hotkey.key = "alt_r"
 
     if config.hotkey.double_tap_threshold <= 0:
         print("Config warning: double_tap_threshold must be positive, using 0.4", file=sys.stderr)
         config.hotkey.double_tap_threshold = 0.4
+
+    if not isinstance(config.hotkey.hold_threshold, (int, float)) or config.hotkey.hold_threshold < 0:
+        print("Config warning: hold_threshold must be 0 or positive, using 0", file=sys.stderr)
+        config.hotkey.hold_threshold = 0.0
 
     # Audio validation
     if config.audio.sample_rate <= 0:
@@ -194,6 +193,74 @@ def _validate_config(config: Config):
         print("Config warning: idle_unload_minutes must be 0 or a positive integer, using 20", file=sys.stderr)
         config.service.idle_unload_minutes = 20
 
+    # Shortcuts / TTS / replacements / dictation validation. These sections
+    # previously escaped validation entirely: a string "false" is truthy, a
+    # non-string shortcut crashes the parser, and junk rule keys pollute the
+    # replacement pass.
+    for section_name, obj, flag in (
+        ("shortcuts", config.shortcuts, "enabled"),
+        ("shortcuts", config.shortcuts, "paste_result"),
+        ("tts", config.tts, "enabled"),
+        ("replacements", config.replacements, "enabled"),
+        ("dictation", config.dictation, "enabled"),
+        ("dictation", config.dictation, "strip_fillers"),
+    ):
+        value = getattr(obj, flag)
+        if not isinstance(value, bool):
+            print(
+                f"Config warning: [{section_name}] {flag} must be true or false, "
+                f"got {value!r} — using default",
+                file=sys.stderr,
+            )
+            setattr(obj, flag, getattr(type(obj)(), flag))
+
+    for field_name in ("proofread", "rewrite", "prompt_engineer"):
+        value = getattr(config.shortcuts, field_name)
+        if not isinstance(value, str):
+            print(
+                f"Config warning: [shortcuts] {field_name} must be a string, "
+                f"got {value!r} — using default",
+                file=sys.stderr,
+            )
+            setattr(config.shortcuts, field_name, getattr(ShortcutsConfig(), field_name))
+    if not isinstance(config.tts.speak_shortcut, str):
+        print("Config warning: [tts] speak_shortcut must be a string — using default", file=sys.stderr)
+        config.tts.speak_shortcut = TTSConfig().speak_shortcut
+
+    cleaned_rules = {}
+    for spoken, replacement in config.replacements.rules.items():
+        key = str(spoken).strip()
+        if not key:
+            print("Config warning: ignoring replacement rule with empty spoken form", file=sys.stderr)
+            continue
+        cleaned_rules[key] = str(replacement)
+    config.replacements.rules = cleaned_rules
+
+
+def _backup_broken_config(error: Exception) -> None:
+    """Preserve an unparseable config.toml before running on defaults.
+
+    Without this, a single syntax error silently reverts every setting to
+    defaults and the next config write may permanently overwrite the user's
+    real file. The backup keeps the data recoverable and the mutation layer
+    refuses to write while the live file is broken.
+    """
+    import shutil
+    import time as _time
+    try:
+        backup = _schema.CONFIG_FILE.with_name(
+            f"config.toml.broken-{_time.strftime('%Y%m%d-%H%M%S')}"
+        )
+        if not backup.exists():
+            shutil.copy2(_schema.CONFIG_FILE, backup)
+        print(
+            f"Config warning: running on DEFAULTS. Broken config backed up to {backup}. "
+            "Fix ~/.whisper/config.toml (config writes are disabled until it parses).",
+            file=sys.stderr,
+        )
+    except Exception as backup_err:
+        print(f"Config backup failed: {backup_err}", file=sys.stderr)
+
 
 def load_config() -> Config:
     """Load configuration from file, creating default if missing."""
@@ -224,6 +291,7 @@ def load_config() -> Config:
         data = tomllib.loads(content)
     except Exception as e:
         print(f"Config parse error: {e}", file=sys.stderr)
+        _backup_broken_config(e)
 
     # Build config object with defaults
     config = Config()
@@ -233,6 +301,7 @@ def load_config() -> Config:
         config.hotkey = HotkeyConfig(
             key=data['hotkey'].get('key', config.hotkey.key),
             double_tap_threshold=data['hotkey'].get('double_tap_threshold', config.hotkey.double_tap_threshold),
+            hold_threshold=data['hotkey'].get('hold_threshold', config.hotkey.hold_threshold),
         )
 
     # Transcription settings
@@ -375,6 +444,7 @@ def load_config() -> Config:
             proofread=data['shortcuts'].get('proofread', config.shortcuts.proofread),
             rewrite=data['shortcuts'].get('rewrite', config.shortcuts.rewrite),
             prompt_engineer=data['shortcuts'].get('prompt_engineer', config.shortcuts.prompt_engineer),
+            paste_result=data['shortcuts'].get('paste_result', config.shortcuts.paste_result),
         )
 
     # TTS settings
@@ -414,6 +484,7 @@ def load_config() -> Config:
             commands = {}
         config.dictation = DictationConfig(
             enabled=data['dictation'].get('enabled', config.dictation.enabled),
+            strip_fillers=data['dictation'].get('strip_fillers', config.dictation.strip_fillers),
             commands=commands,
         )
 
@@ -465,3 +536,18 @@ def get_config() -> Config:
             if _config is None:
                 _config = load_config()
     return _config
+
+
+def reload_config() -> Config:
+    """Re-read config.toml and swap the global singleton.
+
+    Used by the running service when an external writer (`wh replace`,
+    `wh config`) changed the file: callers that read get_config() at use
+    time pick the new values up immediately; long-lived holders must
+    re-fetch and re-apply their own side effects.
+    """
+    global _config
+    fresh = load_config()
+    with _config_lock:
+        _config = fresh
+    return fresh

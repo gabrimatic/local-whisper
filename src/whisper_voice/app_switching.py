@@ -25,7 +25,6 @@ from .engines.status import (
 )
 from .engines.whisperkit_runtime import require_whisperkit_cli
 from .grammar import Grammar
-from .shortcuts import ShortcutProcessor, parse_shortcut
 from .transcriber import Transcriber
 from .tts_processor import TTSProcessor
 from .utils import log
@@ -366,6 +365,7 @@ class SwitchingMixin:
                     log(f"Error closing grammar: {e}", "WARN")
             update_config_backend(backend_id)
             self.config = get_config()
+            self._rebind_shortcuts()
             log("Grammar correction disabled")
             self._current_status = "Ready"
             self._send_state_update()
@@ -398,8 +398,6 @@ class SwitchingMixin:
                 self.grammar = new_grammar
                 self._grammar_ready = True
                 self._grammar_last_check = time.monotonic()
-                if self._shortcut_processor is not None:
-                    self._shortcut_processor = ShortcutProcessor(self.grammar, status_callback=self._shortcut_status_callback)
             else:
                 # Rollback: restore old grammar and config -- don't leave grammar as None
                 update_config_backend(previous_backend_id)
@@ -407,6 +405,10 @@ class SwitchingMixin:
                 self._grammar_ready = old_grammar_ready
 
         self.config = get_config()
+        # Bind (or unbind) transform shortcuts against the now-active backend.
+        # This is what makes enabling grammar at runtime light up the
+        # proofread/rewrite shortcuts without a service restart.
+        self._rebind_shortcuts()
 
         if ok:
             log(f"Switched to {display_name}")
@@ -438,6 +440,9 @@ class SwitchingMixin:
                 except Exception:
                     pass
                 self.grammar = None
+        # Transform shortcuts have no backend to run against — unbind them so
+        # the key combos stop being swallowed system-wide.
+        self._rebind_shortcuts()
         log("Grammar correction disabled")
         self._send_config_snapshot()
 
@@ -462,16 +467,7 @@ class SwitchingMixin:
             return
         self._tts_processor = processor
         self._key_interceptor.set_speaking_handler(processor.stop)
-        modifiers, key = parse_shortcut(self.config.tts.speak_shortcut)
-        if key:
-            self._key_interceptor.register_shortcut(modifiers, key, processor.trigger)
-        # Ensure the guard is set so interception respects recording/processing
-        # state even when TTS is the only registered shortcut.
-        self._key_interceptor.set_enabled_guard(
-            lambda: (not self.recorder.recording
-                     and not self._busy
-                     and not (self._shortcut_processor and self._shortcut_processor.is_busy()))
-        )
+        self._rebind_shortcuts()
         log(f"TTS enabled ({self.config.tts.speak_shortcut})", "OK")
         self._send_config_snapshot()
 
@@ -533,14 +529,14 @@ class SwitchingMixin:
         """Tear down the TTS processor and unbind its shortcut."""
         if self._tts_processor is None and self._key_interceptor is None:
             return
-        if self._key_interceptor is not None:
-            _, key = parse_shortcut(self.config.tts.speak_shortcut)
-            if key:
-                self._key_interceptor.unregister_shortcut(key)
-            self._key_interceptor.set_speaking_handler(lambda: None)
-            self._key_interceptor.set_speaking_active(False)
         processor = self._tts_processor
         self._tts_processor = None
+        if self._key_interceptor is not None:
+            self._key_interceptor.set_speaking_handler(lambda: None)
+            self._key_interceptor.set_speaking_active(False)
+            # Rebind without a TTS processor: drops the speak shortcut while
+            # keeping any transform shortcuts alive.
+            self._rebind_shortcuts()
         if processor is not None:
             try:
                 processor.close()

@@ -15,7 +15,7 @@ from typing import Optional, Tuple
 from ...config import get_config
 from ...utils import log
 from ..base import ERROR_TRUNCATE_LENGTH, GrammarBackend
-from ..modes import get_mode
+from ..modes import get_mode, get_mode_prompts
 
 try:
     import apple_fm_sdk as fm
@@ -38,6 +38,11 @@ class AppleIntelligenceBackend(GrammarBackend):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
         self._model_lock = threading.Lock()
+        self._loop_lock = threading.Lock()
+        # Apple FM rejects concurrent requests (ConcurrentRequestsError), so
+        # calls are single-flight: a second caller fails fast with a clear
+        # message instead of poisoning the session.
+        self._request_lock = threading.Lock()
 
     @property
     def name(self) -> str:
@@ -119,25 +124,32 @@ class AppleIntelligenceBackend(GrammarBackend):
         config = get_config()
         max_chars = config.apple_intelligence.max_chars
         if max_chars > 0 and len(text) > max_chars:
-            log(f"Apple Intelligence: splitting {len(text)} chars into chunks of {max_chars}", "INFO")
-            chunks = self._split_text(text, max_chars)
-            results = []
-            for i, chunk in enumerate(chunks):
-                log(f"Apple Intelligence: processing chunk {i+1}/{len(chunks)} ({len(chunk)} chars)", "INFO")
-                result, err = self.fix_with_mode(chunk, mode_id)
-                if err:
-                    return text, err
-                results.append(result)
-            return "\n\n".join(results), None
+            return self._fix_in_chunks(text, max_chars, mode_id)
 
         log(f"Apple Intelligence fix_with_mode: {mode.name} ({len(text)} chars)", "INFO")
 
-        timeout = config.apple_intelligence.timeout if config.apple_intelligence.timeout > 0 else None
-        full_prompt = mode.user_prompt_template.replace("{text}", text)
+        # ALWAYS enforce a finite wait. With timeout=None a wedged FM call
+        # would block the worker forever, and since callers abandon workers
+        # via their own watchdogs, that thread would pin _request_lock and
+        # every later grammar/transform call would fail "Busy" until restart.
+        # The default budget mirrors the callers' watchdog scaling so the
+        # lock frees around the time they give up.
+        if config.apple_intelligence.timeout > 0:
+            timeout = float(config.apple_intelligence.timeout)
+        else:
+            timeout = 120.0 + len(text) / 50.0
+        try:
+            system_prompt, user_prompt = get_mode_prompts(mode_id, text)
+        except ValueError as e:
+            log(f"Failed to build prompt for mode {mode_id}: {e}", "ERR")
+            return text, f"Prompt error: {e}"
 
+        if not self._request_lock.acquire(blocking=False):
+            log("Apple Intelligence busy with a previous request", "WARN")
+            return text, "Busy: previous request still running"
         try:
             result = self._run_async(
-                self._generate(mode.system_prompt, full_prompt),
+                self._generate(system_prompt, user_prompt),
                 timeout=timeout,
             )
         except (TimeoutError, concurrent.futures.TimeoutError):
@@ -147,12 +159,14 @@ class AppleIntelligenceBackend(GrammarBackend):
             err_msg = self._classify_error(e)
             log(f"Apple Intelligence error for {mode.name}: {err_msg}", "ERR")
             return text, err_msg[:ERROR_TRUNCATE_LENGTH]
+        finally:
+            self._request_lock.release()
 
         if not result:
             log("Apple Intelligence returned empty result", "WARN")
             return text, "Empty response"
 
-        result = self._clean_result(result)
+        result = self._clean_result(result, text)
         result = self._normalize_leading_spaces(result)
 
         log(f"Apple Intelligence {mode.name} complete: {len(text)} -> {len(result)} chars", "OK")
@@ -164,21 +178,29 @@ class AppleIntelligenceBackend(GrammarBackend):
 
     def _ensure_loop(self) -> None:
         """Start a persistent background event loop if one isn't running."""
-        if self._loop is not None and not self._loop.is_closed():
-            return
-        self._loop = asyncio.new_event_loop()
-        self._loop_thread = threading.Thread(
-            target=self._loop.run_forever,
-            daemon=True,
-            name="apple-intelligence-loop",
-        )
-        self._loop_thread.start()
+        with self._loop_lock:
+            if self._loop is not None and not self._loop.is_closed():
+                return
+            self._loop = asyncio.new_event_loop()
+            self._loop_thread = threading.Thread(
+                target=self._loop.run_forever,
+                daemon=True,
+                name="apple-intelligence-loop",
+            )
+            self._loop_thread.start()
 
     def _run_async(self, coro, timeout: Optional[float] = None) -> str:
         """Submit a coroutine to the background loop and wait for the result."""
         self._ensure_loop()
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
-        return future.result(timeout=timeout)
+        try:
+            return future.result(timeout=timeout)
+        except (TimeoutError, concurrent.futures.TimeoutError):
+            # Cancel the in-flight coroutine: an orphaned request keeps the
+            # model busy and every later call fails with
+            # ConcurrentRequestsError until it finally completes.
+            future.cancel()
+            raise
 
     async def _generate(self, system_prompt: str, user_prompt: str) -> str:
         """Create a fresh session per request so transcript history does not grow forever."""

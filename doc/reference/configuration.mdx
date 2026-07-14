@@ -13,6 +13,9 @@ Change most settings from the app or with `wh config`. Edit the TOML directly wh
 [hotkey]
 key = "alt_r"
 double_tap_threshold = 0.4
+# How long the key must stay held before hold-to-record starts.
+# 0 uses double_tap_threshold.
+hold_threshold = 0.0
 
 [transcription]
 engine = "parakeet_v3"
@@ -90,9 +93,10 @@ enabled = false
 # "wanna" = "want to"
 
 [dictation]
-# Voice commands also remove high-confidence speech fillers such as "um", "uh",
-# "ah", "er", and pause-like "oh" before grammar correction.
 enabled = true
+# Remove English speech fillers ("um", "uh", "ah", "er", pause-like "oh").
+# Turn off when dictating in languages where those are real words.
+strip_fillers = true
 
 [dictation.commands]
 # "next bullet" = "\n- "
@@ -123,10 +127,16 @@ notifications_enabled = false
 auto_paste = false
 
 [shortcuts]
+# Shortcuts accept ctrl/alt/shift/cmd plus a-z, 0-9, f1-f12, or common
+# punctuation. Set a shortcut to "" to disable that action. Changes apply
+# immediately; no service restart needed.
 enabled = true
 proofread = "ctrl+shift+g"
 rewrite = "ctrl+shift+r"
 prompt_engineer = "ctrl+shift+p"
+# Paste the transformed text over the selection when done. The result is
+# always copied to the clipboard too.
+paste_result = true
 
 [tts]
 enabled = false

@@ -15,6 +15,13 @@ CONFIG_FILE = CONFIG_DIR / "config.toml"
 GRAMMAR_BACKENDS = ("ollama", "apple_intelligence", "lm_studio")
 GrammarBackendType = Literal["ollama", "apple_intelligence", "lm_studio"]
 
+# Keys accepted as the recording trigger ([hotkey] key).
+VALID_HOTKEY_KEYS = frozenset({
+    "alt_r", "alt_l", "ctrl_r", "ctrl_l", "cmd_r", "cmd_l",
+    "shift_r", "shift_l", "caps_lock",
+    "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
+})
+
 # Default transcription prompt. Empty by default to avoid confusing Whisper.
 # Whisper's prompt parameter is meant for vocabulary hints only, not conversational context.
 DEFAULT_WHISPER_PROMPT = ""
@@ -30,6 +37,10 @@ key = "alt_r"
 
 # Double-tap threshold in seconds (how fast you need to tap twice)
 double_tap_threshold = 0.4
+
+# How long (seconds) the key must stay held before hold-to-record starts.
+# 0 uses double_tap_threshold, so tuning one keeps the historic behavior.
+hold_threshold = 0.0
 
 [transcription]
 # Transcription engine: "parakeet_v3" (default, multilingual),
@@ -239,6 +250,8 @@ enabled = true
 # Shortcut for proofreading (fix spelling, grammar, punctuation only)
 # Note: Use ctrl+shift instead of alt+shift because Option+Shift+letter
 # produces special characters on macOS (e.g., Opt+Shift+G types ˝)
+# Supported: ctrl/alt/shift/cmd + a-z, 0-9, f1-f12, or common punctuation.
+# Set a shortcut to "" to disable that action.
 proofread = "ctrl+shift+g"
 
 # Shortcut for rewriting (improve readability while preserving meaning)
@@ -246,6 +259,11 @@ rewrite = "ctrl+shift+r"
 
 # Shortcut for prompt engineering (optimize text as LLM prompt)
 prompt_engineer = "ctrl+shift+p"
+
+# Paste the transformed text over the selection when done. The result is
+# always copied to the clipboard as well, so nothing is lost if the paste
+# lands nowhere. Set to false to only copy.
+paste_result = true
 
 [tts]
 # Text-to-Speech: select text in any app and press the shortcut to hear it read aloud.
@@ -286,12 +304,15 @@ enabled = false
 [dictation]
 # Voice dictation commands (say "new line", "period", "comma", etc. and the
 # spoken phrase is replaced with the literal punctuation or whitespace).
-# This pass also removes high-confidence speech fillers such as "um", "uh",
-# "ah", "er", and pause-like "oh" before grammar correction.
 # Defaults: new line, new paragraph, period, comma, question mark,
 # exclamation mark, colon, semicolon, dash, hyphen, ellipsis, open/close paren,
 # open/close quote, scratch that, strike that.
 enabled = true
+
+# Remove high-confidence speech fillers ("um", "uh", "ah", "er", pause-like
+# "oh") before grammar correction. The filler list is English; turn this off
+# when dictating in languages where those are real words (German "er"/"um").
+strip_fillers = true
 
 # Custom overrides and additions. The value is the literal replacement,
 # so use \\n for newline, "" to drop a filler word.
@@ -338,6 +359,11 @@ class Qwen3ASRConfig:
 class HotkeyConfig:
     key: str = "alt_r"
     double_tap_threshold: float = 0.4
+    hold_threshold: float = 0.0  # 0 = use double_tap_threshold
+
+    @property
+    def effective_hold_threshold(self) -> float:
+        return self.hold_threshold if self.hold_threshold > 0 else self.double_tap_threshold
 
 
 @dataclass
@@ -439,6 +465,7 @@ class ShortcutsConfig:
     proofread: str = "ctrl+shift+g"
     rewrite: str = "ctrl+shift+r"
     prompt_engineer: str = "ctrl+shift+p"
+    paste_result: bool = True
 
 
 @dataclass
@@ -474,6 +501,7 @@ class DictationConfig:
     add to or override those defaults.
     """
     enabled: bool = True
+    strip_fillers: bool = True
     commands: dict = field(default_factory=dict)
 
 

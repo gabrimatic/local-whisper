@@ -2,7 +2,6 @@
 # Copyright (c) 2025-2026 Soroush Yousefpour
 """Pipeline mixin: audio processing, transcription, grammar, output, retry/copy."""
 
-import re
 import subprocess
 import threading
 import time
@@ -11,6 +10,7 @@ import numpy as np
 
 from . import recovery
 from .dictation_commands import apply_dictation_commands
+from .replacements import apply_replacements
 from .long_session import LONG_SESSION_THRESHOLD_SECONDS, SessionChunk, SessionLog
 from .utils import (
     CLIPBOARD_TIMEOUT,
@@ -239,22 +239,27 @@ class PipelineMixin:
         """Check and update grammar backend availability (lazy reconnect)."""
         with self._grammar_lock:
             grammar = self.grammar
-        if not self.config.grammar.enabled or grammar is None:
-            return
+            if not self.config.grammar.enabled or grammar is None:
+                return
+            elapsed = time.monotonic() - self._grammar_last_check
+            # TTL cache both ways: a healthy backend isn't re-probed for 30s,
+            # and an offline one isn't re-probed for 5s — otherwise every
+            # dictation pays a blocking connection attempt while it's down.
+            if self._grammar_ready and elapsed < 30.0:
+                return
+            if not self._grammar_ready and self._grammar_last_check > 0 and elapsed < 5.0:
+                return
 
-        # TTL cache: skip the expensive running() call if backend was healthy recently
-        if self._grammar_ready and (time.monotonic() - self._grammar_last_check) < 30.0:
-            return
+        backend_now = grammar.running()  # network probe outside the lock
 
-        backend_now = grammar.running()
-        self._grammar_last_check = time.monotonic()
-
-        if backend_now and not self._grammar_ready:
-            log(f"{grammar.name} connected! Grammar correction enabled", "OK")
-            self._grammar_ready = True
-        elif not backend_now and self._grammar_ready:
-            log(f"{grammar.name} disconnected", "WARN")
-            self._grammar_ready = False
+        with self._grammar_lock:
+            self._grammar_last_check = time.monotonic()
+            if backend_now and not self._grammar_ready:
+                log(f"{grammar.name} connected! Grammar correction enabled", "OK")
+                self._grammar_ready = True
+            elif not backend_now and self._grammar_ready:
+                log(f"{grammar.name} disconnected", "WARN")
+                self._grammar_ready = False
 
     def _apply_grammar(self, raw_text: str) -> str:
         """Apply grammar under the watchdog. On any failure deliver raw_text."""
@@ -266,11 +271,16 @@ class PipelineMixin:
         self._current_status = "Polishing..."
         self._send_state_update()
         log("Polishing text...", "AI")
+        # Scale the budget with input size: a long dictation chunked by
+        # max_chars legitimately needs more than the base window, and a
+        # premature TimedOut both discards the polish AND leaves the
+        # abandoned worker stacking requests on the local backend.
+        watchdog_seconds = _GRAMMAR_WATCHDOG_SECONDS + len(raw_text) / 50.0
         try:
             result = run_with_timeout(
                 grammar.fix,
                 raw_text,
-                timeout_seconds=_GRAMMAR_WATCHDOG_SECONDS,
+                timeout_seconds=watchdog_seconds,
                 stage="grammar",
             )
         except Exception as e:
@@ -289,13 +299,15 @@ class PipelineMixin:
         return final_text
 
     def _apply_replacements(self, text: str) -> str:
-        """Apply vocabulary replacement rules. Case-insensitive, word-boundary-aware."""
+        """Apply vocabulary replacement rules. Case-insensitive, boundary-aware."""
         rules = self.config.replacements.rules
         if not self.config.replacements.enabled or not rules:
             return text
-        for spoken, replacement in rules.items():
-            text = re.sub(r'\b' + re.escape(spoken) + r'\b', replacement, text, flags=re.IGNORECASE)
-        return text
+        try:
+            return apply_replacements(text, rules)
+        except Exception as e:
+            log(f"Replacement pass failed: {e}", "WARN")
+            return text
 
     def _apply_dictation_commands(self, text: str) -> str:
         """Apply voice dictation commands (new line, period, scratch that, etc.)."""
@@ -481,9 +493,11 @@ class PipelineMixin:
                 if not ok:
                     return
 
-                self._show_success(final_text, pasted=should_paste)
+                # Persist BEFORE _show_success: it pushes a history_update to
+                # Swift, which must already include this retried entry.
                 self.backup.save_text(final_text)
                 self.backup.save_history(original_raw, final_text)
+                self._show_success(final_text, pasted=should_paste)
             finally:
                 with self._state_lock:
                     self._busy = False

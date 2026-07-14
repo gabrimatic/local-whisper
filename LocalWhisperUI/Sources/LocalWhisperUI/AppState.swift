@@ -25,6 +25,9 @@ final class AppState {
     // rows listen on this so the bar sits under the section that triggered
     // the download, not in the overlay.
     var downloadStates: [String: DownloadProgress] = [:]
+    // Live tester results (Vocabulary / Voice panels).
+    var replacementTestResult: PipelineTestResult?
+    var dictationTestResult: PipelineTestResult?
 
     // Called whenever phase changes. Set by OverlayWindowController.
     var onPhaseChange: ((AppPhase) -> Void)?
@@ -92,18 +95,28 @@ final class AppState {
             }
 
         case .downloadProgress(let progress):
-            // Keep terminal states ("ready"/"error") around briefly so the UI
-            // can flash the outcome — the panel clears them after the card
-            // animates the change.
+            // Keep terminal states ("ready"/"canceled") around briefly so the
+            // UI can flash the outcome. Before removing, verify the stored
+            // snapshot is still the same terminal one — a NEW download for
+            // the same target started within the delay must not have its
+            // fresh progress bar deleted by this stale cleanup task.
+            downloadStates[progress.target] = progress
             if progress.phase == "ready" || progress.phase == "canceled" {
-                downloadStates[progress.target] = progress
+                let terminalPhase = progress.phase
                 Task { @MainActor [weak self] in
                     try? await Task.sleep(nanoseconds: 1_500_000_000)
-                    self?.downloadStates.removeValue(forKey: progress.target)
+                    guard let self else { return }
+                    if self.downloadStates[progress.target]?.phase == terminalPhase {
+                        self.downloadStates.removeValue(forKey: progress.target)
+                    }
                 }
-            } else {
-                downloadStates[progress.target] = progress
             }
+
+        case .replacementTestResult(let result):
+            self.replacementTestResult = result
+
+        case .dictationTestResult(let result):
+            self.dictationTestResult = result
 
         case .notification(let title, let body):
             let content = UNMutableNotificationContent()
@@ -143,7 +156,10 @@ final class AppState {
         case .processing:
             return "Transcribing…"
         case .done:
-            return "Copied!"
+            // Shortcut transforms send "Replaced! (+12 chars)", paste-mode
+            // dictation sends "Pasted!" — show what actually happened
+            // instead of claiming "Copied!" for everything.
+            return doneStatusText.isEmpty ? "Copied!" : doneStatusText
         case .error:
             let text = latchedErrorText.isEmpty ? statusText : latchedErrorText
             return text.isEmpty ? "Error" : text

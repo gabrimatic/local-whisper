@@ -15,11 +15,15 @@ from .loader import (
     _validate_config,
     get_config,
     load_config,
+    reload_config,
 )
 from .mutations import (
     _read_replacements_rules,
     _write_replacements_rules,
+    add_dictation_command,
     add_replacement,
+    add_replacements,
+    remove_dictation_command,
     remove_replacement,
     update_config_backend,
     update_config_field,
@@ -87,6 +91,7 @@ __all__ = [
     # loader
     "load_config",
     "get_config",
+    "reload_config",
     "_is_valid_url",
     "_validate_config",
     # toml_helpers
@@ -96,7 +101,10 @@ __all__ = [
     # mutations
     "_read_replacements_rules",
     "_write_replacements_rules",
+    "add_dictation_command",
     "add_replacement",
+    "add_replacements",
+    "remove_dictation_command",
     "remove_replacement",
     "update_config_backend",
     "update_config_field",

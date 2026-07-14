@@ -100,6 +100,17 @@ struct OnboardingView: View {
         }
     }
 
+    private var transformSubtitle: String {
+        // Render the live bindings, not hardcoded defaults — the user may
+        // have rebound these in Settings.
+        let s = appState.config.shortcuts
+        var parts: [String] = []
+        if !s.proofread.isEmpty { parts.append("\(KeyboardGlyph.display(s.proofread)) to proofread") }
+        if !s.rewrite.isEmpty { parts.append("\(KeyboardGlyph.display(s.rewrite)) to rewrite") }
+        if !s.promptEngineer.isEmpty { parts.append("\(KeyboardGlyph.display(s.promptEngineer)) to make a prompt") }
+        return parts.isEmpty ? "Configure shortcuts in Settings → Shortcuts." : parts.joined(separator: ", ") + "."
+    }
+
     private var welcomeStep: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.l + 2) {
             Text("Local Whisper turns your voice into text. Built-in speech processing stays on this Mac after setup. No hosted speech API, no telemetry.")
@@ -109,8 +120,8 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: Theme.Spacing.m - 2) {
                 bulletRow(icon: "option", title: "Double-tap Right Option (⌥)", subtitle: "Starts recording. Tap once or press Space to stop.")
                 bulletRow(icon: "hand.tap.fill", title: "Hold-to-record", subtitle: "Hold the trigger past the double-tap window. Release to stop.")
-                bulletRow(icon: "text.cursor", title: "Transform any selection", subtitle: "Ctrl-Shift-G to proofread, Ctrl-Shift-R to rewrite, Ctrl-Shift-P to make a prompt.")
-                bulletRow(icon: "speaker.wave.2.fill", title: "Speak text aloud", subtitle: "⌥T reads the current selection with Kokoro TTS.")
+                bulletRow(icon: "text.cursor", title: "Transform any selection", subtitle: transformSubtitle)
+                bulletRow(icon: "speaker.wave.2.fill", title: "Speak text aloud", subtitle: "\(KeyboardGlyph.display(appState.config.tts.speakShortcut)) reads the current selection with Kokoro TTS.")
             }
         }
         .padding(.horizontal, Theme.Spacing.xxl)

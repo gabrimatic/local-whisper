@@ -180,7 +180,8 @@ struct SectionIcon: View {
 enum KeyboardGlyph {
     /// Convert "ctrl+shift+g" / "alt+t" / "cmd+,"  into ["⌃","⇧","G"] / ["⌥","T"] / ["⌘",","]
     static func tokens(for raw: String) -> [String] {
-        raw.split(separator: "+").map { token -> String in
+        raw.split(separator: "+").map { piece -> String in
+            let token = piece.trimmingCharacters(in: .whitespaces)
             switch token.lowercased() {
             case "cmd", "command":     return "⌘"
             case "ctrl", "control":    return "⌃"

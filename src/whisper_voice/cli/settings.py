@@ -140,8 +140,26 @@ def cmd_engine(args: list):
         print(f"{C_DIM}Service not running - start with: wh start{C_RESET}")
 
 
+def _notify_service_reload() -> None:
+    """Hot-reload the running service after a CLI config write.
+
+    Without this, `wh replace add` printed success while the running
+    service kept using its cached rules until the next restart.
+    """
+    from .client import send_service_request
+
+    running, _ = _is_running()
+    if not running:
+        return
+    result = send_service_request({"action": "reload_config"})
+    if result and result.get("success"):
+        print(f"{C_DIM}Applied to the running service.{C_RESET}")
+    else:
+        print(f"{C_YELLOW}Could not hot-reload the running service — run: wh restart{C_RESET}")
+
+
 def cmd_replace(args: list):
-    """Show, add, or remove text replacement rules."""
+    """Show, add, remove, import, export, or test text replacement rules."""
     config_file = _get_config_path()
 
     def _read_replacements() -> tuple:
@@ -186,6 +204,7 @@ def cmd_replace(args: list):
             from whisper_voice.config import add_replacement
             if add_replacement(spoken, replacement):
                 print(f'{C_GREEN}Added:{C_RESET} "{spoken}" → {replacement}')
+                _notify_service_reload()
             else:
                 print(f"{C_RED}Failed to write config{C_RESET}", file=sys.stderr)
                 sys.exit(1)
@@ -202,6 +221,7 @@ def cmd_replace(args: list):
             from whisper_voice.config import remove_replacement
             if remove_replacement(spoken):
                 print(f'{C_GREEN}Removed:{C_RESET} "{spoken}"')
+                _notify_service_reload()
             else:
                 print(f'{C_YELLOW}Not found:{C_RESET} "{spoken}"')
                 sys.exit(1)
@@ -214,6 +234,7 @@ def cmd_replace(args: list):
             from whisper_voice.config import update_config_field
             update_config_field("replacements", "enabled", True)
             print(f"{C_GREEN}Replacements enabled{C_RESET}")
+            _notify_service_reload()
         except Exception as e:
             print(f"{C_RED}Error: {e}{C_RESET}", file=sys.stderr)
             sys.exit(1)
@@ -223,6 +244,7 @@ def cmd_replace(args: list):
             from whisper_voice.config import update_config_field
             update_config_field("replacements", "enabled", False)
             print(f"{C_DIM}Replacements disabled{C_RESET}")
+            _notify_service_reload()
         except Exception as e:
             print(f"{C_RED}Error: {e}{C_RESET}", file=sys.stderr)
             sys.exit(1)
@@ -236,11 +258,63 @@ def cmd_replace(args: list):
             )
             sys.exit(1)
         _import_replacements(args[1])
+        _notify_service_reload()
+
+    elif subcmd == "export":
+        if len(args) != 2:
+            print(f"{C_RED}Usage: wh replace export <file.csv>{C_RESET}", file=sys.stderr)
+            sys.exit(1)
+        _export_replacements(args[1], _read_replacements()[1])
+
+    elif subcmd == "test":
+        if len(args) < 2:
+            print(f"{C_RED}Usage: wh replace test \"sample sentence\"{C_RESET}", file=sys.stderr)
+            sys.exit(1)
+        _test_replacements(" ".join(args[1:]), _read_replacements())
 
     else:
         print(f"{C_RED}Unknown subcommand: {subcmd}{C_RESET}", file=sys.stderr)
-        print(f"{C_DIM}Usage: wh replace [add|remove|on|off|import <file>]{C_RESET}", file=sys.stderr)
+        print(f"{C_DIM}Usage: wh replace [add|remove|on|off|import <file>|export <file>|test \"text\"]{C_RESET}", file=sys.stderr)
         sys.exit(1)
+
+
+def _export_replacements(path_str: str, rules: dict) -> None:
+    """Write the rules as quoted CSV, round-trippable by `wh replace import`."""
+    import csv
+    from pathlib import Path
+
+    if not rules:
+        print(f"{C_YELLOW}No rules to export.{C_RESET}")
+        return
+    path = Path(path_str).expanduser()
+    try:
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f, quoting=csv.QUOTE_ALL)
+            for spoken, replacement in sorted(rules.items()):
+                writer.writerow([spoken, replacement])
+    except Exception as e:
+        print(f"{C_RED}Export failed: {e}{C_RESET}", file=sys.stderr)
+        sys.exit(1)
+    print(f"  {C_GREEN}Exported {len(rules)} rules{C_RESET} to {path}")
+
+
+def _test_replacements(text: str, state: tuple) -> None:
+    """Dry-run: show what the replacement pass would produce for a sample."""
+    from whisper_voice.replacements import apply_replacements, compile_rule_pattern
+
+    enabled, rules = state
+    result = apply_replacements(text, rules)
+    fired = sorted(
+        spoken for spoken in rules if compile_rule_pattern(spoken).search(text)
+    )
+    print(f"  {C_DIM}in:{C_RESET}  {text}")
+    print(f"  {C_DIM}out:{C_RESET} {result}")
+    if fired:
+        print(f"  {C_DIM}rules matched:{C_RESET} " + ", ".join(f'"{k}"' for k in fired))
+    else:
+        print(f"  {C_DIM}rules matched:{C_RESET} none")
+    if not enabled:
+        print(f"  {C_YELLOW}Note: replacements are currently disabled (wh replace on){C_RESET}")
 
 
 def _import_replacements(path_str: str) -> None:
@@ -255,6 +329,7 @@ def _import_replacements(path_str: str) -> None:
     existing rules are overwritten and surfaced in the summary.
     """
     import csv
+    import io
     import re
     from pathlib import Path
 
@@ -264,63 +339,107 @@ def _import_replacements(path_str: str) -> None:
         sys.exit(1)
 
     try:
-        raw = path.read_text(encoding="utf-8")
+        # utf-8-sig strips a BOM that would otherwise glue itself onto the
+        # first key (common in Excel exports).
+        raw = path.read_text(encoding="utf-8-sig")
     except Exception as e:
         print(f"{C_RED}Could not read file: {e}{C_RESET}", file=sys.stderr)
         sys.exit(1)
 
-    rules: list[tuple[str, str]] = []
-    duplicates_in_file: set[str] = set()
-    seen_keys: set[str] = set()
+    rules: list = []
+    duplicates_in_file: set = set()
+    seen_keys: set = set()
+    toml_line = re.compile(r'^\s*"(?:[^"\\]|\\.)+"\s*=\s*"(?:[^"\\]|\\.)*"\s*$')
 
-    for raw_line in raw.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
+    def _parse_toml_line(line: str):
+        """Parse one `"k" = "v"` line with real TOML semantics.
 
-        spoken, replacement = "", ""
-        toml_match = re.match(r'^\s*"([^"]+)"\s*=\s*"([^"]*)"\s*$', line)
-        if toml_match:
-            spoken, replacement = toml_match.group(1), toml_match.group(2)
-        elif "->" in line:
-            left, _, right = line.partition("->")
-            spoken, replacement = left.strip(), right.strip()
-        else:
-            # CSV / TSV fallback. csv.reader handles quoted fields correctly.
-            dialect = "excel-tab" if "\t" in line and "," not in line else "excel"
-            try:
-                row = next(csv.reader([line], dialect=dialect))
-            except Exception:
-                row = []
-            if len(row) >= 2:
-                spoken, replacement = row[0].strip(), row[1].strip()
+        tomllib handles the escape sequences the config writer itself
+        produces (\\" \\n \\t \\\\) — the old regex silently dropped or
+        garbled such lines on round-trip.
+        """
+        import tomllib
+        try:
+            parsed = tomllib.loads(line)
+        except Exception:
+            return None
+        if len(parsed) != 1:
+            return None
+        key, value = next(iter(parsed.items()))
+        if not isinstance(value, str):
+            return None
+        return key, value
 
+    def _record(spoken: str, replacement: str) -> None:
+        spoken = spoken.strip()
         if not spoken:
-            continue
+            return
         if spoken in seen_keys:
             duplicates_in_file.add(spoken)
         seen_keys.add(spoken)
         rules.append((spoken, replacement))
 
+    # Decide the file's format ONCE (from the first data line) instead of
+    # per line — per-line guessing misparsed CSV rows whose replacement
+    # happened to contain "->".
+    data_lines = [ln for ln in raw.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+    if not data_lines:
+        print(f"{C_YELLOW}No rules found in {path}{C_RESET}")
+        return
+    first = data_lines[0]
+    if toml_line.match(first) and _parse_toml_line(first):
+        file_format = "toml"
+    elif "\t" in first:
+        file_format = "tsv"
+    elif "->" in first and "," not in first:
+        file_format = "arrow"
+    else:
+        file_format = "csv"
+
+    if file_format in ("csv", "tsv"):
+        # csv.reader over the whole file handles quoted fields, embedded
+        # commas/newlines, and doubled-quote escapes properly.
+        delimiter = "\t" if file_format == "tsv" else ","
+        try:
+            for row in csv.reader(io.StringIO(raw), delimiter=delimiter):
+                if not row or (row[0].strip().startswith("#")):
+                    continue
+                if len(row) >= 2:
+                    _record(row[0], row[1])
+        except Exception as e:
+            print(f"{C_RED}Could not parse {file_format.upper()}: {e}{C_RESET}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        for line in data_lines:
+            line = line.strip()
+            if file_format == "toml":
+                pair = _parse_toml_line(line)
+                if pair:
+                    _record(pair[0], pair[1])
+            else:  # arrow
+                left, sep, right = line.partition("->")
+                if sep:
+                    _record(left, right.strip())
+
     if not rules:
         print(f"{C_YELLOW}No rules found in {path}{C_RESET}")
         return
 
-    from whisper_voice.config import add_replacement
-    added = 0
-    failed = 0
-    for spoken, replacement in rules:
-        try:
-            if add_replacement(spoken, replacement):
-                added += 1
-            else:
-                failed += 1
-        except Exception:
-            failed += 1
+    from whisper_voice.config import _read_replacements_rules, add_replacements
+    existing = set(_read_replacements_rules().keys())
+    merged = dict(rules)  # last occurrence wins, matching config semantics
+    overwrote = sorted(k for k in merged if k in existing)
 
-    print(f"  {C_GREEN}Imported {added} rules{C_RESET} from {path}")
+    try:
+        ok = add_replacements(merged)
+    except Exception as e:
+        print(f"{C_RED}Import failed: {e}{C_RESET}", file=sys.stderr)
+        sys.exit(1)
+    if not ok:
+        print(f"{C_RED}Import failed to write config{C_RESET}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"  {C_GREEN}Imported {len(merged)} rules{C_RESET} from {path} "
+          f"{C_DIM}({len(merged) - len(overwrote)} new, {len(overwrote)} updated){C_RESET}")
     if duplicates_in_file:
         print(f"  {C_YELLOW}{len(duplicates_in_file)} duplicate keys in file (last wins){C_RESET}")
-    if failed:
-        print(f"  {C_RED}{failed} rules failed to write{C_RESET}", file=sys.stderr)
-        sys.exit(1)

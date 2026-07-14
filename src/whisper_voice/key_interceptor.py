@@ -16,7 +16,7 @@ Usage:
 """
 
 import threading
-from typing import Callable, Dict, Optional, Set, Tuple
+from typing import Callable, Dict, FrozenSet, List, Optional, Set, Tuple
 
 from Quartz import (
     CFMachPortCreateRunLoopSource,
@@ -48,15 +48,30 @@ from .utils import log, request_accessibility_permission
 # macOS virtual keycodes
 KEY_SPACE = 49
 KEY_ESC = 53
-KEY_RIGHT_OPT = 61
 
+# ANSI-layout virtual keycodes -> shortcut key names. Letters, digits,
+# function keys, and common punctuation. Must stay in sync with
+# shortcuts.SUPPORTED_KEYS. Note: modifier keys (Option, Command, ...)
+# emit flagsChanged events, not keyDown, so they can never appear here.
 VK_TO_CHAR = {
     0x00: 'a', 0x0B: 'b', 0x08: 'c', 0x02: 'd', 0x0E: 'e', 0x03: 'f',
     0x05: 'g', 0x04: 'h', 0x22: 'i', 0x26: 'j', 0x28: 'k', 0x25: 'l',
     0x2E: 'm', 0x2D: 'n', 0x1F: 'o', 0x23: 'p', 0x0C: 'q', 0x0F: 'r',
     0x01: 's', 0x11: 't', 0x20: 'u', 0x09: 'v', 0x0D: 'w', 0x07: 'x',
     0x10: 'y', 0x06: 'z',
+    # Digits
+    0x12: '1', 0x13: '2', 0x14: '3', 0x15: '4', 0x17: '5',
+    0x16: '6', 0x1A: '7', 0x1C: '8', 0x19: '9', 0x1D: '0',
+    # Function keys
+    0x7A: 'f1', 0x78: 'f2', 0x63: 'f3', 0x76: 'f4', 0x60: 'f5', 0x61: 'f6',
+    0x62: 'f7', 0x64: 'f8', 0x65: 'f9', 0x6D: 'f10', 0x67: 'f11', 0x6F: 'f12',
+    # Punctuation
+    0x2B: ',', 0x2F: '.', 0x2C: '/', 0x29: ';', 0x27: "'",
+    0x21: '[', 0x1E: ']', 0x2A: '\\', 0x1B: '-', 0x18: '=', 0x32: '`',
 }
+
+# Key name -> keycode (for suppressing a non-modifier recording trigger).
+KEYCODE_FOR_KEY_NAME = {name: code for code, name in VK_TO_CHAR.items()}
 
 
 class KeyInterceptor:
@@ -69,7 +84,9 @@ class KeyInterceptor:
     """
 
     def __init__(self):
-        self._shortcuts: Dict[str, Tuple[Set[str], Callable]] = {}  # key -> (modifiers, callback)
+        # key -> list of (required_modifiers, callback). Multiple bindings can
+        # share a key as long as their modifier sets differ; matching is exact.
+        self._shortcuts: Dict[str, List[Tuple[FrozenSet[str], Callable]]] = {}
         self._enabled_guard: Optional[Callable[[], bool]] = None
         self._run_loop = None
         self._tap = None
@@ -80,23 +97,57 @@ class KeyInterceptor:
         self._recording_handler: Optional[Callable] = None
         self._speaking_active = False
         self._speaking_handler: Optional[Callable] = None
+        self._record_keycode: Optional[int] = None
+        # Set once the tap thread reaches its run loop (or fails), so stop()
+        # can synchronize with a start() still in flight.
+        self._started_event = threading.Event()
 
     def register_shortcut(self, modifiers: Set[str], key: str, callback: Callable):
         """
-        Register a shortcut to intercept.
+        Register a shortcut to intercept. A binding with the same key and the
+        same modifier set replaces the previous one; a different modifier set
+        on the same key coexists with it.
 
         Args:
             modifiers: Set of modifier keys (e.g., {"ctrl", "shift"})
-            key: The trigger key (lowercase, e.g., "g")
+            key: The trigger key (lowercase, e.g., "g" or "f6")
             callback: Function to call when shortcut is pressed
         """
+        combo = frozenset(modifiers)
         with self._lock:
-            self._shortcuts[key.lower()] = (modifiers, callback)
+            bindings = self._shortcuts.setdefault(key.lower(), [])
+            bindings[:] = [(mods, cb) for mods, cb in bindings if mods != combo]
+            bindings.append((combo, callback))
 
-    def unregister_shortcut(self, key: str):
-        """Remove a previously registered shortcut. No-op if not registered."""
+    def unregister_shortcut(self, key: str, modifiers: Optional[Set[str]] = None):
+        """Remove binding(s) for a key. With modifiers, remove only that combo;
+        without, remove every binding on the key. No-op if not registered."""
         with self._lock:
-            self._shortcuts.pop(key.lower(), None)
+            bindings = self._shortcuts.get(key.lower())
+            if bindings is None:
+                return
+            if modifiers is None:
+                del self._shortcuts[key.lower()]
+                return
+            combo = frozenset(modifiers)
+            bindings[:] = [(mods, cb) for mods, cb in bindings if mods != combo]
+            if not bindings:
+                del self._shortcuts[key.lower()]
+
+    def clear_shortcuts(self):
+        """Remove every registered shortcut binding."""
+        with self._lock:
+            self._shortcuts.clear()
+
+    def set_record_keycode(self, keycode: Optional[int]):
+        """Set the keycode of a non-modifier recording trigger (e.g. an F-key).
+
+        While set, that key is always suppressed so pressing the dictation
+        trigger never leaks a keystroke into the frontmost app. Pass None for
+        modifier triggers (they emit flagsChanged, which this tap never sees).
+        """
+        with self._lock:
+            self._record_keycode = keycode
 
     def set_recording_active(self, active: bool):
         """Enable or disable recording-mode suppression (thread-safe)."""
@@ -142,6 +193,7 @@ class KeyInterceptor:
                 return True
 
         try:
+            self._started_event.clear()
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
             return True
@@ -151,6 +203,12 @@ class KeyInterceptor:
 
     def stop(self):
         """Stop the event tap and clean up."""
+        # Wait for a mid-flight start() to reach its run loop first: a stop
+        # issued during startup would otherwise be a silent no-op and leave
+        # the tap thread alive forever.
+        if self._thread and self._thread.is_alive():
+            self._started_event.wait(timeout=2.0)
+
         with self._lock:
             if not self._running:
                 return
@@ -206,6 +264,7 @@ class KeyInterceptor:
 
             with self._lock:
                 self._running = True
+            self._started_event.set()
 
             log("KeyInterceptor started", "OK")
 
@@ -215,6 +274,7 @@ class KeyInterceptor:
         except Exception as e:
             log(f"KeyInterceptor error: {e}", "ERR")
         finally:
+            self._started_event.set()
             self._tap = None
             with self._lock:
                 self._running = False
@@ -242,16 +302,30 @@ class KeyInterceptor:
             keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
             flags = CGEventGetFlags(event)
 
-            _RECORDING_KEYS = {KEY_SPACE, KEY_ESC, KEY_RIGHT_OPT}
             with self._lock:
                 recording_active = self._recording_active
                 recording_handler = self._recording_handler
                 speaking_active = self._speaking_active
                 speaking_handler = self._speaking_handler
+                record_keycode = self._record_keycode
 
-            if recording_active and keycode in _RECORDING_KEYS:
+            # Space/Esc control an active recording; a non-modifier trigger
+            # key (e.g. F6) is suppressed whenever it is configured so the
+            # dictation trigger never leaks a keystroke into the frontmost
+            # app. Modifier triggers emit flagsChanged and never reach here.
+            recording_keys = {KEY_SPACE, KEY_ESC}
+            if record_keycode is not None:
+                recording_keys.add(record_keycode)
+
+            if recording_active and keycode in recording_keys:
                 if recording_handler:
                     threading.Thread(target=recording_handler, args=(keycode, flags), daemon=True).start()
+                return None
+
+            if not recording_active and record_keycode is not None and keycode == record_keycode:
+                # Idle press of the dedicated trigger key: the pynput listener
+                # (a separate listen-only tap) sees the same event and starts
+                # the recording; we only swallow the keystroke.
                 return None
 
             if speaking_active and keycode == KEY_ESC and speaking_handler is not None:
@@ -263,9 +337,9 @@ class KeyInterceptor:
                 return event
 
             with self._lock:
-                if char not in self._shortcuts:
-                    return event
-                required_modifiers, callback = self._shortcuts[char]
+                bindings = list(self._shortcuts.get(char, ()))
+            if not bindings:
+                return event
 
             active_modifiers = set()
             if flags & kCGEventFlagMaskControl:
@@ -277,10 +351,21 @@ class KeyInterceptor:
             if flags & kCGEventFlagMaskAlternate:
                 active_modifiers.add("alt")
 
-            if not (active_modifiers >= required_modifiers):
+            # Exact modifier match: ctrl+shift+g must not also fire (and
+            # steal) ctrl+shift+cmd+g, which may belong to another app.
+            callback = None
+            for required_modifiers, bound_callback in bindings:
+                if active_modifiers == required_modifiers:
+                    callback = bound_callback
+                    break
+            if callback is None:
                 return event
             if self._enabled_guard and not self._enabled_guard():
-                return event
+                # This combo is OURS but the app is busy (recording or mid-
+                # transform). Swallow it instead of passing it through —
+                # otherwise the press types a stray character (Opt+T = '†')
+                # into the user's document at the worst possible moment.
+                return None
 
             # Off-thread so the event tap keeps pumping during the callback.
             threading.Thread(target=callback, daemon=True).start()

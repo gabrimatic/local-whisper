@@ -336,10 +336,15 @@ struct OllamaSection: View {
                 fetchError = "No models found. Pull one with: ollama pull <model>"
                 models = []
             } else {
-                models = names
-                if !names.contains(appState.config.ollama.model), let first = names.first {
-                    appState.config.ollama.model = first
-                    appState.ipcClient?.sendConfigUpdate(section: "ollama", key: "model", value: first)
+                // Never silently rewrite the user's configured model from a
+                // read-only status probe: the configured one may simply not
+                // be pulled yet. Surface it and let the user decide.
+                let configured = appState.config.ollama.model
+                if !configured.isEmpty && !names.contains(configured) {
+                    models = [configured] + names
+                    fetchError = "Configured model \"\(configured)\" isn't on the server. Pull it with: ollama pull \(configured), or pick another."
+                } else {
+                    models = names
                 }
             }
         } catch {
@@ -524,10 +529,14 @@ struct LMStudioSection: View {
                 fetchError = "No models loaded. Load one in LM Studio, then refresh."
                 models = []
             } else {
-                models = names
-                if !names.contains(appState.config.lmStudio.model), let first = names.first {
-                    appState.config.lmStudio.model = first
-                    appState.ipcClient?.sendConfigUpdate(section: "lm_studio", key: "model", value: first)
+                // Same rule as Ollama: a status probe must never rewrite the
+                // configured model behind the user's back.
+                let configured = appState.config.lmStudio.model
+                if !configured.isEmpty && !names.contains(configured) {
+                    models = [configured] + names
+                    fetchError = "Configured model \"\(configured)\" isn't loaded on the server. Load it in LM Studio, or pick another."
+                } else {
+                    models = names
                 }
             }
         } catch {

@@ -4,6 +4,45 @@ This changelog tracks notable Local Whisper changes.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- Rebindable shortcuts: the proofread, rewrite, prompt-engineer, and read-aloud shortcuts are now editable in Settings → Shortcuts through a click-and-press recorder (and via `wh config`), with live validation, conflict detection that names the clashing action, reset-to-default, and the option to disable an action entirely. Keys accept ctrl/alt/shift/cmd plus a-z, 0-9, f1-f12, or common punctuation, and changes rebind the running service with no restart.
+- Paste transform results in place: proofread, rewrite, and prompt-engineer results now replace the selected text where it sits by default and are still copied to the clipboard as a backup (`[shortcuts] paste_result`); set it to false for copy-only.
+- Hold-to-record threshold (`[hotkey] hold_threshold`): a separate knob, with a slider in Settings → Recording, for how long the trigger must be held before hold-to-record engages; 0 keeps the historic behavior of following the double-tap window.
+- Editable dictation commands: the Voice panel gained a full editor to add, override, or remove spoken commands (previously a read-only list), showing the real merged command set; commands are also managed from the CLI.
+- `[dictation] strip_fillers` toggle: turn off English filler removal ("um", "uh", "ah", "er") when dictating in languages where those are real words, such as German.
+- Live testers in Settings: "Try it out" boxes in the Vocabulary and Voice panels run your sample text through the real replacement and dictation engines in the service and show input to output, including which rule fired or that none matched.
+- Inline dictionary editing: edit an existing replacement rule in place, and set an empty replacement to delete a word from transcripts entirely (with the surrounding spacing and punctuation tidied up).
+- `wh replace export <file>` and `wh replace test "..."`: export your dictionary to round-trippable CSV, and dry-run a sentence to see exactly what the current rules would produce.
+
+### Changed
+
+- Settings now apply immediately instead of prompting for a restart: the trigger key, transform shortcuts, read-aloud shortcut, and replacement/dictation edits (from the app, `wh config`, or `wh replace`) all hot-reload the running service, and engine and grammar-backend switches happen in place and roll back to the previous working state if the new one fails to start.
+- Rewrote the vocabulary replacement engine: all-lowercase replacements now mirror the matched casing ("gonna" to "Going to", "GONNA" to "GOING TO") while replacements containing any uppercase stay literal, longer phrases win over shorter overlapping ones, rules anchor on word edges so terms like "c++", ".net", and "e.g." match, and extra spaces between words are tolerated.
+- The completion status now reports what actually happened — "Replaced!" or "Pasted!" with a character delta — instead of always saying "Copied!".
+- Your clipboard is saved and restored as a full snapshot across all types, so images, files, and rich text survive a transform or read-aloud instead of being replaced with plain text.
+- Esc during read-aloud is only intercepted while audio is actually playing; during the potentially long preparation phase it now goes to your frontmost app.
+- Shortcut hints throughout the app (menu bar, onboarding, and the cheatsheet) now show your actual configured combos and hide any action you have turned off, instead of hardcoded defaults.
+- Bulk dictionary import is now a single atomic write with a stronger CSV/TSV parser (Excel BOM and CRLF handling, quoted fields, format detected once from the first line) and reports how many rules were added versus updated.
+- Config edits made while the service is down or restarting now queue and replay on reconnect instead of silently vanishing, and slider drags commit once on release rather than rewriting config.toml dozens of times per second.
+
+### Fixed
+
+- A corrupt `config.toml` no longer wipes your settings: on a parse error the file is backed up to `config.toml.broken-<timestamp>`, the service runs on defaults, and writes are refused until it parses again so a later save cannot overwrite your real file. Replacement values containing newlines, tabs, or control characters are now escaped instead of corrupting the file on the next read.
+- Concurrent config edits no longer clobber each other — writes merge under a lock against the current file rather than a stale in-memory snapshot — and a refused write now rolls back the in-memory value and re-syncs the UI instead of leaving a phantom edit on screen.
+- Text transforms no longer damage the surrounding text: a double-clicked word's trailing space, a triple-clicked paragraph's newline, and leading indentation are preserved, and long proofread jobs keep bullet lists and line breaks instead of collapsing them.
+- The grammar cleaner no longer deletes your own words when a sentence legitimately begins like "Sure, ..." or "Result: ...", or when the input was itself quoted or fenced.
+- Fixed nothing-selected transforms and read-aloud acting on stale clipboard contents, and the trigger combo (for example Opt+T) typing a stray character like "†" into your document when pressed while the app was busy.
+- A transform shortcut such as Ctrl+Shift+G no longer also fires when extra modifiers are held (Ctrl+Shift+Cmd+G), so it stops colliding with other apps' shortcuts, and two actions can now share a key with different modifiers.
+- Fixed dictation commands corrupting one another: one command's output is no longer re-matched by another (a macro containing the word "period" stays literal), paired open/close quote commands produce "hi" rather than " hi ", "scratch that" also removes a just-dictated terminator, a newline from "new paragraph" survives the following punctuation command, and a custom "Period" override now replaces the built-in "period" instead of losing to it.
+- A grammar backend started after Local Whisper (for example launching Ollama later) no longer stays dead for the whole session — it reconnects on its own and the transform shortcuts light up when it appears.
+- Fixed the dictation hotkey going permanently silent: a watchdog restarts the key listener if it dies, and an error in a key callback no longer kills it for good.
+- The Ollama and LM Studio model probes no longer silently overwrite your configured model when it is missing from the server; they keep your choice, list it first, and warn you to pull it.
+- A wedged local model can no longer permanently disable every shortcut and TTS: transform calls run under a length-scaled timeout, and oversize selections are rejected (over 30,000 characters for transforms, 20,000 for read-aloud) so an accidental Select-All cannot pin the model for minutes.
+- Fixed a function-key or other non-modifier recording trigger typing its own keystroke into the app you were dictating into; the trigger key is now suppressed while configured, and `wh config` now lists function keys as trigger options.
+
 ## [1.6.15] - 2026-07-06
 
 ### Fixed

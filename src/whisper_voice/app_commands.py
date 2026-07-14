@@ -33,11 +33,78 @@ class CommandsMixin:
             self._cmd_transcribe(request, send, stop_event)
         elif action == "status":
             self._cmd_status(send)
+        elif action == "reload_config":
+            self._cmd_reload_config(send)
         elif action == "stop":
             # Stop is handled by the disconnect watcher in cmd_server
             pass
         else:
             send({"type": "error", "message": f"Unknown command: {action}"})
+
+    def _cmd_reload_config(self, send: callable):
+        """Re-read config.toml after an external writer changed it.
+
+        Everything live-reloadable applies immediately (hotkey, shortcuts,
+        TTS binding, replacements, dictation commands). Engine and grammar
+        backend changes go through their normal switch paths in the
+        background — the same code the Settings UI uses.
+        """
+        import threading as _threading
+        import time
+
+        from .config import reload_config
+        from .utils import log
+
+        old = self.config
+        old_engine = old.transcription.engine
+        old_backend = old.grammar.backend if old.grammar.enabled else "none"
+        old_tts_enabled = old.tts.enabled
+
+        try:
+            self.config = reload_config()
+        except Exception as e:
+            send({"type": "error", "message": f"Reload failed: {e}"})
+            return
+
+        new = self.config
+        self._set_record_key(new.hotkey.key)  # also rebinds shortcuts
+        self._schedule_idle_unload()
+
+        new_backend = new.grammar.backend if new.grammar.enabled else "none"
+        backend_changed = new_backend != old_backend
+        tts_changed = new.tts.enabled != old_tts_enabled
+        engine_changed = new.transcription.engine != old_engine
+
+        def _apply_switches():
+            # Sequential, and waits out a busy pipeline first: the switch
+            # helpers silently refuse while _busy, which would leave the
+            # config claiming an engine/backend that never actually loaded.
+            deadline = time.time() + 120.0
+            while (self._busy or self.recorder.recording) and time.time() < deadline:
+                time.sleep(0.5)
+            if self._busy or self.recorder.recording:
+                log("Reload: service stayed busy — engine/backend switch skipped", "ERR")
+                self._send_state_error("Reload switch skipped (busy) — restart to apply")
+                return
+            if backend_changed:
+                if new_backend == "none":
+                    self._disable_grammar()
+                else:
+                    self._switch_backend(new_backend)
+            if tts_changed:
+                (self._enable_tts if new.tts.enabled else self._disable_tts)()
+            if engine_changed:
+                self._switch_engine(new.transcription.engine)
+
+        if backend_changed or tts_changed or engine_changed:
+            _threading.Thread(target=_apply_switches, daemon=True).start()
+
+        self._send_config_snapshot()
+        send({
+            "type": "done",
+            "success": True,
+            "engine_switching": engine_changed,
+        })
 
     def _cmd_status(self, send: callable):
         """Return a lightweight readiness snapshot for update/restart verification."""
