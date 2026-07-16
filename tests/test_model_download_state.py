@@ -95,6 +95,95 @@ def test_apple_speech_status_reports_system_managed_asset(monkeypatch):
     assert state["cache_dir"] is None
 
 
+def _make_whisperkit_model(base: Path, model: str, *, complete: bool = True) -> Path:
+    """Lay down a whisperkit-cli model dir the way `serve` does on disk."""
+    model_dir = base / f"openai_{model}"
+    packages = ("AudioEncoder.mlmodelc", "TextDecoder.mlmodelc", "MelSpectrogram.mlmodelc")
+    for pkg in packages if complete else packages[:1]:
+        p = model_dir / pkg
+        p.mkdir(parents=True)
+        (p / "model.mil").write_bytes(b"coreml")
+    return model_dir
+
+
+def test_whisperkit_status_reports_managed_removable_cache(monkeypatch, tmp_path):
+    import whisper_voice.engines.status as status_mod
+
+    monkeypatch.setattr(status_mod, "WHISPERKIT_MODELS_DIR", tmp_path)
+    monkeypatch.setattr(
+        "whisper_voice.config.get_config",
+        lambda: SimpleNamespace(whisper=SimpleNamespace(model="whisper-large-v3-v20240930")),
+    )
+    model_dir = _make_whisperkit_model(tmp_path, "whisper-large-v3-v20240930")
+
+    state = status_mod.engine_model_status("whisperkit")
+
+    assert state["downloaded"] is True
+    assert state["download_status"] == "downloaded"
+    assert state["size_mb"] > 0
+    assert state["removable"] is True
+    assert state["managed_by"] == "whisperkit"
+    assert state["cache_dir"] == str(model_dir)
+    # No hf_repo: keeps whisperkit out of the HF DownloadWatcher/snapshot path.
+    assert state["hf_repo"] is None
+    assert state["warmed"] is False
+
+
+def test_whisperkit_status_partial_when_a_coreml_package_is_missing(monkeypatch, tmp_path):
+    import whisper_voice.engines.status as status_mod
+
+    monkeypatch.setattr(status_mod, "WHISPERKIT_MODELS_DIR", tmp_path)
+    monkeypatch.setattr(
+        "whisper_voice.config.get_config",
+        lambda: SimpleNamespace(whisper=SimpleNamespace(model="whisper-large-v3-v20240930")),
+    )
+    _make_whisperkit_model(tmp_path, "whisper-large-v3-v20240930", complete=False)
+
+    state = status_mod.engine_model_status("whisperkit")
+
+    assert state["downloaded"] is False
+    assert state["download_status"] == "partial"
+    assert state["removable"] is False
+
+
+def test_whisperkit_status_missing_when_never_downloaded(monkeypatch, tmp_path):
+    import whisper_voice.engines.status as status_mod
+
+    monkeypatch.setattr(status_mod, "WHISPERKIT_MODELS_DIR", tmp_path)
+    monkeypatch.setattr(
+        "whisper_voice.config.get_config",
+        lambda: SimpleNamespace(whisper=SimpleNamespace(model="whisper-large-v3-v20240930")),
+    )
+
+    state = status_mod.engine_model_status("whisperkit")
+
+    assert state["downloaded"] is False
+    assert state["download_status"] == "missing"
+    assert state["size_mb"] is None
+    assert state["removable"] is False
+    # Still reports the deterministic target path so the switch can find it.
+    assert state["cache_dir"].endswith("openai_whisper-large-v3-v20240930")
+
+
+def test_whisperkit_remove_deletes_only_the_configured_model(monkeypatch, tmp_path):
+    import whisper_voice.engines.status as status_mod
+
+    monkeypatch.setattr(status_mod, "WHISPERKIT_MODELS_DIR", tmp_path)
+    monkeypatch.setattr(
+        "whisper_voice.config.get_config",
+        lambda: SimpleNamespace(whisper=SimpleNamespace(model="whisper-large-v3-v20240930")),
+    )
+    target = _make_whisperkit_model(tmp_path, "whisper-large-v3-v20240930")
+    other = _make_whisperkit_model(tmp_path, "whisper-tiny")
+
+    assert status_mod.remove_engine_cache("whisperkit") is True
+    assert not target.exists()
+    # A different variant must survive — we only remove the configured model.
+    assert other.exists()
+    # A second removal is a no-op, not an error.
+    assert status_mod.remove_engine_cache("whisperkit") is False
+
+
 def test_apple_speech_switch_prepares_asset_before_unloading_current_engine(monkeypatch):
     import whisper_voice.app_switching as switching_mod
     from whisper_voice.app_switching import SwitchingMixin

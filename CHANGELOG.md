@@ -4,6 +4,12 @@ This changelog tracks notable Local Whisper changes.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed the WhisperKit engine card missing the size readout and Remove button that every other engine has: WhisperKit's on-disk Core ML model is now managed like the rest, so its card shows how much disk it uses and can free it, instead of being treated as an unmanaged external model.
+
 ## [1.9.0] - 2026-07-16
 
 ### Added

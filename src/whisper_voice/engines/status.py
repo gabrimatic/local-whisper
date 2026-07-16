@@ -16,6 +16,26 @@ from typing import Dict, Iterable, Optional
 
 MODEL_DIR = Path.home() / ".whisper" / "models"
 
+# WhisperKit is not an HF-cache engine: whisperkit-cli downloads Core ML model
+# packages via its own downloader (ignoring HF_HUB_CACHE) into
+# ``~/Documents/huggingface/models/argmaxinc/whisperkit-coreml/<prefix>_<model>``.
+# We still manage that directory here so its card reports size and gets a
+# Remove button like every other engine — but deliberately WITHOUT an
+# ``hf_repo``, so the switch path never attaches an HF DownloadWatcher or tries
+# to snapshot_download it (the argmaxinc repo hosts many models; whisperkit-cli
+# fetches only the one variant on `serve`).
+WHISPERKIT_MODELS_DIR = (
+    Path.home() / "Documents" / "huggingface" / "models" / "argmaxinc" / "whisperkit-coreml"
+)
+# whisperkit.py launches `serve --model <model>` without --model-prefix, so the
+# default prefix applies. Each model dir holds these Core ML packages.
+WHISPERKIT_MODEL_PREFIX = "openai"
+WHISPERKIT_REQUIRED = (
+    "AudioEncoder.mlmodelc",
+    "TextDecoder.mlmodelc",
+    "MelSpectrogram.mlmodelc",
+)
+
 # Engine id → Hugging Face repo metadata.
 # `hf_repo` is what HuggingFace writes as ``models--<org>--<name>``.
 ENGINE_MODEL_MAP: Dict[str, Dict[str, object]] = {
@@ -29,8 +49,82 @@ ENGINE_MODEL_MAP: Dict[str, Dict[str, object]] = {
         "warm_sentinel": ".qwen3_warmed",
         "required_files": ("config.json", "model.safetensors"),
     },
-    # whisperkit: models live under WhisperKit's own cache; not managed here.
+    # whisperkit is handled separately (see WHISPERKIT_* above): its weights are
+    # Core ML packages outside the HF cache, so it stays out of this HF map.
 }
+
+
+def _whisperkit_model_dir() -> Optional[Path]:
+    """Directory where whisperkit-cli stores the currently configured model.
+
+    Returns None when the config can't be read. The path is deterministic from
+    ``config.whisper.model`` and the default ``openai`` prefix — it may not
+    exist yet if the model was never downloaded.
+    """
+    try:
+        from ..config import get_config
+
+        model = str(get_config().whisper.model).strip()
+    except Exception:
+        return None
+    if not model:
+        return None
+    return WHISPERKIT_MODELS_DIR / f"{WHISPERKIT_MODEL_PREFIX}_{model}"
+
+
+def _whisperkit_complete(model_dir: Path) -> bool:
+    """A WhisperKit model is usable once all three Core ML packages are present.
+
+    Each ``.mlmodelc`` is a directory; a half-pulled model can leave an empty
+    or missing package, so require every one to exist and be non-empty.
+    """
+    for rel in WHISPERKIT_REQUIRED:
+        pkg = model_dir / rel
+        if not pkg.is_dir():
+            return False
+        try:
+            if not any(pkg.iterdir()):
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def _whisperkit_status() -> Dict:
+    model_dir = _whisperkit_model_dir()
+    if model_dir is None:
+        return {
+            "downloaded": False,
+            "download_status": "missing",
+            "size_mb": None,
+            "warmed": False,
+            "cache_dir": None,
+            "hf_repo": None,
+            "managed_by": "whisperkit",
+            "removable": False,
+        }
+    exists = model_dir.is_dir()
+    downloaded = bool(exists and _whisperkit_complete(model_dir))
+    size_bytes = _dir_size_bytes(model_dir) if exists else 0
+    if downloaded:
+        download_status = "downloaded"
+    elif size_bytes > 0:
+        download_status = "partial"
+    else:
+        download_status = "missing"
+    return {
+        "downloaded": downloaded,
+        "download_status": download_status,
+        "size_mb": _bytes_to_mb(size_bytes) if size_bytes > 0 else None,
+        # "warmed" is the MLX graph-cache signal; WhisperKit has no equivalent,
+        # so leave it off rather than tag the card with a misleading "warmed".
+        "warmed": False,
+        "cache_dir": str(model_dir),
+        # No hf_repo on purpose — keeps whisperkit out of the HF download path.
+        "hf_repo": None,
+        "managed_by": "whisperkit",
+        "removable": downloaded,
+    }
 
 
 def _dir_size_bytes(path: Path) -> int:
@@ -128,6 +222,9 @@ def engine_model_status(engine_id: str) -> Dict:
       cache_dir:  str|None -- absolute path to the HF cache folder
       hf_repo:    str|None -- which HF repo the engine uses
     """
+    if engine_id == "whisperkit":
+        return _whisperkit_status()
+
     if engine_id == "apple_speech":
         from .apple_speech import apple_speech_model_status
 
@@ -227,6 +324,13 @@ def all_engine_statuses(active_id: Optional[str]) -> Dict[str, Dict]:
 
 def remove_engine_cache(engine_id: str) -> bool:
     """Delete the on-disk weights + warm sentinel for an engine. Returns True if anything removed."""
+    if engine_id == "whisperkit":
+        model_dir = _whisperkit_model_dir()
+        if model_dir is not None and model_dir.is_dir():
+            shutil.rmtree(model_dir, ignore_errors=True)
+            return True
+        return False
+
     if engine_id == "apple_speech":
         from .apple_speech import AppleSpeechEngine
 
