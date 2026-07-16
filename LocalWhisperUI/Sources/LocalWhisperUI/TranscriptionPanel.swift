@@ -209,7 +209,12 @@ private struct EngineCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-            HStack(alignment: .top, spacing: Theme.Spacing.m) {
+            // Center alignment for the whole row: every card presents the
+            // same anatomy — icon, text block, one action slot — with the
+            // action vertically centered regardless of text height. (The
+            // active checkmark used to float at the top corner while other
+            // cards' buttons sat centered.)
+            HStack(alignment: .center, spacing: Theme.Spacing.m) {
                 SectionIcon(
                     symbol: iconName,
                     tint: engine.active ? Theme.Brand.accent : .secondary,
@@ -360,8 +365,9 @@ private struct EngineCard: View {
             Button("Retry") {
                 switchTo(engine.id)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.borderedProminent)
             .controlSize(.small)
+            .disabled(othersBusy)
         } else if engine.downloaded {
             HStack(spacing: Theme.Spacing.xs) {
                 Button("Use") { switchTo(engine.id) }
@@ -380,21 +386,23 @@ private struct EngineCard: View {
                 }
             }
         } else if engine.managedBy == "apple" {
+            // One rule across every card: the primary switch action is always
+            // the prominent button, whatever its label.
             Button(engine.available == false ? "Unavailable" : "Download & use") { switchTo(engine.id) }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(engine.available == false || othersBusy)
                 .help(engine.message ?? "macOS downloads and manages the selected language model.")
         } else if engine.cacheDir != nil {
             Button(engine.downloadStatus == "partial" ? "Resume download" : "Download & use") { switchTo(engine.id) }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(othersBusy)
                 .help("Switches to this engine and downloads the model.")
         } else {
             // WhisperKit: lives outside the HF cache; no progress bar available.
             Button("Use") { switchTo(engine.id) }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(othersBusy)
                 .help("WhisperKit stores its own models. Install whisperkit-cli via Homebrew first.")
