@@ -150,10 +150,55 @@ class TestConfigUpdateValidationAndRebind:
         monkeypatch.setattr("whisper_voice.config.update_config_field", updated)
         app._handle_ipc_message({
             "type": "config_update", "section": "shortcuts",
+            "key": "proofread", "value": "Shift+Control+K",
+        })
+        updated.assert_called_once_with("shortcuts", "proofread", "ctrl+shift+k")
+        app._rebind_shortcuts.assert_called_once()
+
+    def test_unchanged_value_skips_write_and_side_effects(self, app, monkeypatch):
+        # "Shift+Control+G" canonicalizes to the stored "ctrl+shift+g": a
+        # no-op must not rewrite config.toml or rebind (and, for engine model
+        # fields, must not trigger an engine reload).
+        updated = Mock(return_value=True)
+        monkeypatch.setattr("whisper_voice.config.update_config_field", updated)
+        app._handle_ipc_message({
+            "type": "config_update", "section": "shortcuts",
             "key": "proofread", "value": "Shift+Control+G",
         })
-        updated.assert_called_once_with("shortcuts", "proofread", "ctrl+shift+g")
-        app._rebind_shortcuts.assert_called_once()
+        updated.assert_not_called()
+        app._rebind_shortcuts.assert_not_called()
+        # The raw input differed from the canonical form, so the UI is
+        # re-synced to show "ctrl+shift+g" instead of what was typed.
+        app._send_config_snapshot.assert_called_once()
+
+    def test_unchanged_canonical_value_skips_snapshot_too(self, app, monkeypatch):
+        # A byte-identical no-op (focus-in/focus-out) stays fully silent.
+        updated = Mock(return_value=True)
+        monkeypatch.setattr("whisper_voice.config.update_config_field", updated)
+        app._handle_ipc_message({
+            "type": "config_update", "section": "shortcuts",
+            "key": "proofread", "value": "ctrl+shift+g",
+        })
+        updated.assert_not_called()
+        app._send_config_snapshot.assert_not_called()
+
+
+class TestCaptureMode:
+    def test_capture_mode_toggles_pause_flag(self, app, monkeypatch):
+        # The 30s watchdog timer must not fire inline under the patched
+        # threading module.
+        class FakeTimer:
+            def __init__(self, interval, function):
+                self.daemon = False
+
+            def start(self):
+                pass
+
+        monkeypatch.setattr(app_ipc.threading, "Timer", FakeTimer)
+        app._handle_ipc_message({"type": "capture_mode", "active": True})
+        assert app._shortcut_capture_paused is True
+        app._handle_ipc_message({"type": "capture_mode", "active": False})
+        assert app._shortcut_capture_paused is False
 
     def test_shortcuts_enabled_toggle_rebinds(self, app, monkeypatch):
         monkeypatch.setattr("whisper_voice.config.update_config_field", Mock(return_value=True))

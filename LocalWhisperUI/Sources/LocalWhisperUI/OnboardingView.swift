@@ -5,11 +5,11 @@ import AppKit
 
 struct OnboardingView: View {
     @Environment(AppState.self) private var appState
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dismiss) private var dismiss
 
     @State private var step: Step = .welcome
+    @State private var hostWindow: NSWindow?
 
     fileprivate enum Step: Int, CaseIterable {
         case welcome
@@ -38,49 +38,97 @@ struct OnboardingView: View {
         var icon: String {
             switch self {
             case .welcome:     return "waveform.badge.mic"
-            case .permissions: return "lock.shield"
+            case .permissions: return "lock.shield.fill"
             case .backend:     return "wand.and.stars"
-            case .ready:       return "checkmark.seal"
+            case .ready:       return "checkmark.seal.fill"
             }
         }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider().opacity(0.6)
-            content
-                .frame(minHeight: 360, alignment: .topLeading)
+            hero
+            ScrollView {
+                content
+                    .padding(.horizontal, Theme.Spacing.xxl)
+                    .padding(.vertical, Theme.Spacing.xl)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: .infinity)
             Divider().opacity(0.6)
             footer
         }
-        .frame(minWidth: 560, minHeight: 540)
-        .background(.background)
+        .frame(minWidth: 600, idealWidth: 620, minHeight: 580, idealHeight: 600)
+        .background(Theme.Surface.window)
+        .ignoresSafeArea()
+        .background(
+            WindowAccessor { window in
+                guard hostWindow !== window else { return }
+                hostWindow = window
+                SettingsWindowChrome.configure(window)
+                SettingsWindowChrome.bringForward(window)
+            }
+        )
+        .onAppear {
+            ActivationPolicy.shared.acquire()
+        }
+        .onDisappear {
+            // Closing the window at any point counts as "seen it" — the
+            // window-delegate behavior of the old hand-made NSWindow.
+            OnboardingFlag.markCompleted()
+            ActivationPolicy.shared.release()
+        }
     }
 
-    // MARK: - Header
+    // MARK: - Hero band
 
-    private var header: some View {
+    private var hero: some View {
         HStack(alignment: .center, spacing: Theme.Spacing.l - 2) {
-            SectionIcon(symbol: step.icon, tint: .accentColor, diameter: 44, fontSize: 20)
+            ZStack {
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .fill(Theme.Brand.mintDark.opacity(0.14))
+                Image(systemName: step.icon)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Theme.Brand.mintDark)
+                    .symbolRenderingMode(.hierarchical)
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .frame(width: 46, height: 46)
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .strokeBorder(Theme.Brand.mintDark.opacity(0.25), lineWidth: 1)
+            )
+            .accessibilityHidden(true)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(step.title)
-                    .font(Theme.Typography.headline)
+                    .font(Theme.Typography.title)
+                    .foregroundStyle(Theme.Surface.sidebarTextPrimary)
                 Text(step.subtitle)
                     .font(Theme.Typography.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Surface.sidebarTextSecondary)
             }
             Spacer()
             stepIndicator
         }
-        .padding(Theme.Spacing.xl)
+        .padding(.horizontal, Theme.Spacing.xxl)
+        .padding(.vertical, Theme.Spacing.xl)
+        .frame(maxWidth: .infinity)
+        .background(
+            LinearGradient(
+                colors: [Theme.Surface.sidebarTop, Theme.Surface.sidebarBottom],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .environment(\.colorScheme, .dark)
     }
 
     private var stepIndicator: some View {
         HStack(spacing: 6) {
             ForEach(Step.allCases, id: \.self) { s in
                 Capsule()
-                    .fill(s == step ? Color.accentColor : Color.secondary.opacity(0.25))
+                    .fill(s == step ? Theme.Brand.mintDark : Color.white.opacity(0.22))
                     .frame(width: s == step ? 18 : 6, height: 6)
                     .animation(reduceMotion ? .none : .smooth(duration: 0.18), value: step)
             }
@@ -116,6 +164,7 @@ struct OnboardingView: View {
             Text("Local Whisper turns your voice into text. Built-in speech processing stays on this Mac after setup. No hosted speech API, no telemetry.")
                 .font(Theme.Typography.body)
                 .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
 
             VStack(alignment: .leading, spacing: Theme.Spacing.m - 2) {
                 bulletRow(icon: "option", title: "Double-tap Right Option (⌥)", subtitle: "Starts recording. Tap once or press Space to stop.")
@@ -124,16 +173,20 @@ struct OnboardingView: View {
                 bulletRow(icon: "speaker.wave.2.fill", title: "Speak text aloud", subtitle: "\(KeyboardGlyph.display(appState.config.tts.speakShortcut)) reads the current selection with Kokoro TTS.")
             }
         }
-        .padding(.horizontal, Theme.Spacing.xxl)
-        .padding(.vertical, Theme.Spacing.l + 2)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var permissionsStep: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.l - 2) {
+            if appState.connectionState != .connected {
+                InlineNotice(
+                    kind: .warning,
+                    text: "Waiting for the background service — permission requests go through it and would be lost right now. This clears the moment it connects."
+                )
+            }
+
             permissionCard(
                 icon: "mic.fill",
-                tint: .red,
+                tint: Theme.Tone.danger.color,
                 title: "Microphone",
                 description: "To capture your voice. If macOS has not asked yet, this sends the permission request now.",
                 buttonTitle: "Request Microphone Access",
@@ -144,7 +197,7 @@ struct OnboardingView: View {
 
             permissionCard(
                 icon: "keyboard.fill",
-                tint: .blue,
+                tint: Theme.Brand.sky,
                 title: "Accessibility",
                 description: "To detect the global hotkey and read selected text. This sends the Accessibility request for the wh helper.",
                 buttonTitle: "Request Accessibility Access",
@@ -158,9 +211,6 @@ struct OnboardingView: View {
                 text: "If a permission was previously denied, macOS opens the matching System Settings page instead of showing the prompt again."
             )
         }
-        .padding(.horizontal, Theme.Spacing.xxl)
-        .padding(.vertical, Theme.Spacing.l + 2)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var backendStep: some View {
@@ -169,22 +219,19 @@ struct OnboardingView: View {
                 .font(Theme.Typography.caption)
                 .foregroundStyle(.secondary)
 
-            VStack(alignment: .leading, spacing: Theme.Spacing.m - 2) {
-                backendChoice(id: "apple_intelligence", title: "Apple Intelligence", subtitle: "On-device Foundation Models. Best default on Apple Silicon, macOS 26+.", icon: "sparkles", tint: Theme.Brand.sky)
-                backendChoice(id: "ollama",             title: "Ollama",             subtitle: "Local LLM via the Ollama app. Works on any Mac with a loaded model.", icon: "shippingbox.fill", tint: .blue)
-                backendChoice(id: "lm_studio",          title: "LM Studio",          subtitle: "OpenAI-compatible local server. Start it via LM Studio's Developer tab.", icon: "server.rack", tint: .indigo)
-                backendChoice(id: "none",               title: "Skip for now",       subtitle: "Transcription only, no grammar pass. Toggle on later in Settings.", icon: "xmark.circle.fill", tint: .secondary)
+            VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+                onboardingChoice(id: "apple_intelligence", title: "Apple Intelligence", subtitle: "On-device Foundation Models. Best default on Apple Silicon, macOS 26+.", icon: "sparkles", tint: Theme.Brand.sky)
+                onboardingChoice(id: "ollama",             title: "Ollama",             subtitle: "Local LLM via the Ollama app. Works on any Mac with a loaded model.", icon: "shippingbox.fill", tint: Theme.Brand.accent)
+                onboardingChoice(id: "lm_studio",          title: "LM Studio",          subtitle: "OpenAI-compatible local server. Start it via LM Studio's Developer tab.", icon: "server.rack", tint: Theme.Brand.accent)
+                onboardingChoice(id: "none",               title: "Skip for now",       subtitle: "Transcription only, no grammar pass. Toggle on later in Settings.", icon: "xmark.circle.fill", tint: .secondary)
             }
         }
-        .padding(.horizontal, Theme.Spacing.xxl)
-        .padding(.vertical, Theme.Spacing.l + 2)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var readyStep: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.l - 2) {
             HStack(alignment: .center, spacing: Theme.Spacing.l - 2) {
-                SectionIcon(symbol: "checkmark.seal.fill", tint: Theme.Tone.success.color(for: colorScheme), diameter: 56, fontSize: 28)
+                SectionIcon(symbol: "checkmark.seal.fill", tint: Theme.Tone.success.color, diameter: 56, fontSize: 28)
                 VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                     Text("Setup complete")
                         .font(Theme.Typography.headline)
@@ -211,16 +258,16 @@ struct OnboardingView: View {
 
             HStack(spacing: Theme.Spacing.s) {
                 Image(systemName: "lightbulb.fill")
-                    .foregroundStyle(.yellow)
+                    .foregroundStyle(Theme.Tone.warning.color)
                     .symbolRenderingMode(.hierarchical)
                 Text("Say \"new line\", \"period\", \"comma\", or \"scratch that\" while dictating.")
                     .font(Theme.Typography.caption)
                     .foregroundStyle(.secondary)
             }
+            .padding(Theme.Spacing.s + 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .tintedCard(Theme.Tone.warning.color, radius: Theme.Radius.medium)
         }
-        .padding(.horizontal, Theme.Spacing.xxl)
-        .padding(.vertical, Theme.Spacing.l + 2)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Footer
@@ -267,7 +314,7 @@ struct OnboardingView: View {
         HStack(alignment: .top, spacing: Theme.Spacing.m) {
             Image(systemName: icon)
                 .font(.system(size: 14))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Brand.accent)
                 .symbolRenderingMode(.hierarchical)
                 .frame(width: 22, alignment: .center)
             VStack(alignment: .leading, spacing: 2) {
@@ -294,6 +341,7 @@ struct OnboardingView: View {
                 Button(buttonTitle, action: action)
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .disabled(appState.connectionState != .connected)
                 .padding(.top, Theme.Spacing.xs)
             }
             Spacer()
@@ -302,10 +350,16 @@ struct OnboardingView: View {
         .cardSurface(radius: Theme.Radius.medium)
     }
 
-    private func backendChoice(id: String, title: String, subtitle: String, icon: String, tint: Color) -> some View {
+    private func onboardingChoice(id: String, title: String, subtitle: String, icon: String, tint: Color) -> some View {
         let isCurrent = (id == "none" && !appState.config.grammar.enabled)
             || (id != "none" && appState.config.grammar.enabled && appState.config.grammar.backend == id)
-        return Button {
+        return ChoiceCard(
+            icon: icon,
+            tint: tint,
+            title: title,
+            subtitle: subtitle,
+            isSelected: isCurrent
+        ) {
             if id == "none" {
                 appState.config.grammar.enabled = false
                 appState.ipcClient?.sendBackendSwitch("none")
@@ -315,43 +369,14 @@ struct OnboardingView: View {
                 appState.ipcClient?.sendBackendSwitch(id)
             }
             withAnimation(reduceMotion ? .none : .smooth(duration: 0.22)) { step = .ready }
-        } label: {
-            HStack(spacing: Theme.Spacing.m) {
-                SectionIcon(symbol: icon, tint: tint)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: Theme.Spacing.xs + 2) {
-                        Text(title).font(Theme.Typography.bodyEmphasized)
-                        if isCurrent {
-                            StatusPill(text: "Current", tone: .info)
-                        }
-                    }
-                    Text(subtitle)
-                        .font(Theme.Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(Theme.Spacing.m)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.secondary.opacity(isCurrent ? 0.12 : 0.07),
-                        in: RoundedRectangle(cornerRadius: Theme.Radius.medium))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.medium)
-                    .strokeBorder(
-                        isCurrent ? Color.accentColor.opacity(0.4) : Color.secondary.opacity(0.10),
-                        lineWidth: isCurrent ? 1.5 : 1
-                    )
-            )
         }
-        .buttonStyle(.plain)
-        .accessibilityHint(isCurrent ? "Currently selected" : "Tap to select \(title)")
     }
 
     private func finish() {
         OnboardingFlag.markCompleted()
+        // Real dismissal: onboarding lives in a proper Window scene now. (In
+        // the old hand-made NSWindow, dismiss() was a silent no-op — the
+        // "Get started does nothing" bug.)
         dismiss()
     }
 }
@@ -376,65 +401,3 @@ enum OnboardingFlag {
     }
 }
 
-// MARK: - Window presenter
-
-@MainActor
-final class OnboardingPresenter {
-    static let shared = OnboardingPresenter()
-
-    private var window: NSWindow?
-
-    private init() {}
-
-    func present(with state: AppState) {
-        if let existing = window {
-            NSApp.setActivationPolicy(.regular)
-            NSApp.activate(ignoringOtherApps: true)
-            existing.makeKeyAndOrderFront(nil)
-            existing.orderFrontRegardless()
-            return
-        }
-        let hosting = NSHostingController(rootView: OnboardingView().environment(state))
-        hosting.preferredContentSize = NSSize(width: 600, height: 580)
-        let window = NSWindow(contentViewController: hosting)
-        window.styleMask = [.titled, .closable, .fullSizeContentView]
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.title = ""
-        window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 600, height: 580))
-        window.setFrameAutosaveName("LocalWhisperOnboarding")
-        if !window.setFrameUsingName("LocalWhisperOnboarding") {
-            window.center()
-        }
-        window.level = .normal
-        window.delegate = OnboardingWindowDelegate.shared
-        self.window = window
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
-        window.orderFrontRegardless()
-    }
-
-    fileprivate func didClose() {
-        self.window = nil
-        let anotherWindowOpen = NSApp.windows.contains { win in
-            win.isVisible && win.title.localizedCaseInsensitiveContains("settings")
-        }
-        if !anotherWindowOpen {
-            NSApp.setActivationPolicy(.accessory)
-        }
-    }
-}
-
-@MainActor
-private final class OnboardingWindowDelegate: NSObject, NSWindowDelegate {
-    static let shared = OnboardingWindowDelegate()
-
-    nonisolated func windowWillClose(_ notification: Notification) {
-        Task { @MainActor in
-            OnboardingFlag.markCompleted()
-            OnboardingPresenter.shared.didClose()
-        }
-    }
-}

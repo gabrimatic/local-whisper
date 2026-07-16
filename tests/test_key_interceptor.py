@@ -203,6 +203,22 @@ class TestBindingMatch:
         result, event = _press(interceptor, KEY_T, _flags("cmd"))
         assert result is event
 
+    def test_capture_guard_passes_our_combo_through_without_firing(self, interceptor):
+        # While a Settings shortcut recorder is capturing, OUR combos must
+        # PASS THROUGH (so the recorder's local monitor can see and refuse
+        # them) — not fire, and not be swallowed like the busy guard does.
+        fired = []
+        interceptor.register_shortcut({"ctrl", "shift"}, "g", lambda: fired.append(1))
+        interceptor.set_capture_guard(lambda: True)
+        result, event = _press(interceptor, KEY_G, _flags("ctrl", "shift"))
+        assert result is event
+        assert fired == []
+        # Capture over: the binding fires and suppresses again.
+        interceptor.set_capture_guard(lambda: False)
+        result, _ = _press(interceptor, KEY_G, _flags("ctrl", "shift"))
+        assert result is None
+        assert fired == [1]
+
 
 class TestRecordKeySuppression:
     def test_record_keycode_swallowed_when_idle(self, interceptor):

@@ -71,10 +71,12 @@ final class AppState {
             switch phase {
             case .error:
                 self.latchedErrorText = normalizedStatus
-            case .recording, .processing, .speaking:
-                // New activity replaces the stale error.
+            case .recording, .processing, .speaking, .done:
+                // Any new activity — including a successful result — replaces
+                // the stale error. (Done used to preserve it, so "Copied!"
+                // flipped back to an old failure message afterwards.)
                 self.latchedErrorText = ""
-            case .idle, .done:
+            case .idle:
                 // Preserve the latched error through the trailing idle tick.
                 break
             }
@@ -117,6 +119,25 @@ final class AppState {
 
         case .dictationTestResult(let result):
             self.dictationTestResult = result
+
+        case .connectionChanged(let state):
+            self.connectionState = state
+            switch state {
+            case .connected:
+                // A fresh connection starts clean: errors latched against the
+                // previous service instance are no longer meaningful.
+                self.latchedErrorText = ""
+            case .disconnected:
+                // A download that was in flight when the service died will
+                // never send another progress message — drop the frozen bars
+                // so engine cards don't show a dead "Downloading" state.
+                for (target, progress) in self.downloadStates
+                where progress.phase == "downloading" || progress.phase == "preparing" || progress.phase == "warming" {
+                    self.downloadStates.removeValue(forKey: target)
+                }
+            case .connecting:
+                break
+            }
 
         case .notification(let title, let body):
             let content = UNMutableNotificationContent()

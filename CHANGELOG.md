@@ -4,6 +4,26 @@ This changelog tracks notable Local Whisper changes.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- Added a rich menu bar panel replacing the plain dropdown: live status with waveform and timer while recording, quick toggles for paste-at-cursor, replacements, read-aloud, and sounds, engine and grammar pickers fed by the live engine registry, recent transcriptions with click-to-copy and audio reveal, and a Start button when the background service is down.
+- Added inline switch feedback on engine cards, determinate download bars with a real total from a repo-size preflight, and busy-gating so actions the service would reject are disabled instead of failing silently.
+- Added a capture mode that pauses shortcut interception while a keybinding recorder is armed, so currently-bound combos reach the recorder and show their conflict instead of firing the action.
+
+### Changed
+
+- Redesigned the entire macOS settings window on a new design system: a graphite brand sidebar with grouped navigation and a live service pill, card-based panels with inline descriptions instead of hover tooltips, and consistent light and dark appearances.
+- Rebuilt onboarding and the settings window as proper window scenes with reliable activation, ordering, and close behavior, replacing the old Settings scene and hand-made window hacks.
+- The Activity panel, folder shortcuts, and history captions now follow the configured backup directory instead of assuming `~/.whisper`.
+
+### Fixed
+
+- Fixed the onboarding "Get started" button doing nothing, engine and grammar switches silently reverting while the service restarts, stale error text resurfacing after successful work, frozen download bars after a service crash, and the overlay freezing on screen when the service dies mid-recording or a display disconnects.
+- Fixed config edits applying out of order: service-side message handling is now strictly serial, queued edits replay only after the reconnect snapshot, and no-op writes no longer reload the active engine.
+- Fixed replacement-rule editing creating case-duplicate or orphaned rules, and made vocabulary import tolerant of header rows, arrow files with commas in values, and TOML-escaped lines pasted from config.toml.
+
 ## [1.8.0] - 2026-07-14
 
 ### Added

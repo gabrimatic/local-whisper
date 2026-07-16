@@ -1,53 +1,123 @@
 import SwiftUI
+import AppKit
 
 // MARK: - Theme
 //
-// Single source of truth for typography, spacing, color tones, corner radii, and
-// icon defaults. Every visible surface (overlay, menu bar, settings panels,
-// onboarding, About) reads from here so the app stays internally consistent.
+// Single source of truth for the app's visual language: color palette,
+// typography, spacing, radii, and semantic tones. Every surface (settings
+// window, menu bar panel, overlay, onboarding, About) reads from here.
+//
+// Identity: graphite surfaces, mint as the one interactive accent, sky as a
+// secondary informational hue. The settings sidebar is always graphite-dark
+// regardless of system appearance; content areas adapt to light/dark.
+
+extension Color {
+    /// Appearance-resolving color (light/dark decided at draw time).
+    static func dynamic(light: NSColor, dark: NSColor) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+        })
+    }
+
+    init(hex: UInt32) {
+        self.init(
+            red: Double((hex >> 16) & 0xFF) / 255.0,
+            green: Double((hex >> 8) & 0xFF) / 255.0,
+            blue: Double(hex & 0xFF) / 255.0
+        )
+    }
+}
+
+private func nsHex(_ hex: UInt32, _ alpha: CGFloat = 1.0) -> NSColor {
+    NSColor(
+        srgbRed: CGFloat((hex >> 16) & 0xFF) / 255.0,
+        green: CGFloat((hex >> 8) & 0xFF) / 255.0,
+        blue: CGFloat(hex & 0xFF) / 255.0,
+        alpha: alpha
+    )
+}
 
 enum Theme {
 
-    enum Brand {
-        static let background = Color(red: 9 / 255, green: 16 / 255, blue: 19 / 255)
-        static let panel = Color(red: 18 / 255, green: 24 / 255, blue: 33 / 255)
-        static let accent = Color(red: 117 / 255, green: 227 / 255, blue: 190 / 255)
-        static let sky = Color(red: 141 / 255, green: 220 / 255, blue: 255 / 255)
+    // MARK: Palette
 
+    enum Brand {
+        // Graphite family (sidebar + dark surfaces).
+        static let graphiteDeep = Color(hex: 0x0A0F14)
+        static let graphite     = Color(hex: 0x10161D)
+        static let graphiteEdge = Color(hex: 0x1C2530)
+
+        // Mint — the single interactive accent.
+        static let mintDark  = Color(hex: 0x75E3BE)
+        static let mintLight = Color(hex: 0x00775A)
+        static let accent = Color.dynamic(light: nsHex(0x00775A), dark: nsHex(0x75E3BE))
+
+        // Sky — secondary informational hue.
+        static let skyDark  = Color(hex: 0x8DDCFF)
+        static let skyLight = Color(hex: 0x006491)
+        static let sky = Color.dynamic(light: nsHex(0x006491), dark: nsHex(0x8DDCFF))
+
+        // Legacy call sites resolve by scheme; both map to the dynamic colors.
         static func accent(for colorScheme: ColorScheme) -> Color {
-            colorScheme == .dark ? accent : Color(red: 0 / 255, green: 113 / 255, blue: 86 / 255)
+            colorScheme == .dark ? mintDark : mintLight
         }
 
         static func sky(for colorScheme: ColorScheme) -> Color {
-            colorScheme == .dark ? sky : Color(red: 0 / 255, green: 100 / 255, blue: 145 / 255)
+            colorScheme == .dark ? skyDark : skyLight
         }
+    }
+
+    // MARK: Surfaces
+
+    enum Surface {
+        /// Content-area window background.
+        static let window = Color.dynamic(light: nsHex(0xF4F5F7), dark: nsHex(0x10161D))
+        /// Raised card fill sitting on `window`.
+        static let card = Color.dynamic(light: .white, dark: nsHex(0x171F29))
+        /// Slightly recessed fill (search fields, key wells, code chips).
+        static let well = Color.dynamic(light: nsHex(0xECEEF1), dark: nsHex(0x121922))
+        /// Hairline stroke around cards.
+        static let stroke = Color.dynamic(light: nsHex(0x000000, 0.10), dark: nsHex(0xFFFFFF, 0.08))
+        /// Inset divider between card rows.
+        static let divider = Color.dynamic(light: nsHex(0x000000, 0.07), dark: nsHex(0xFFFFFF, 0.06))
+        /// Hover wash over interactive rows.
+        static let hover = Color.dynamic(light: nsHex(0x000000, 0.045), dark: nsHex(0xFFFFFF, 0.05))
+
+        // Sidebar is always graphite, independent of system appearance.
+        static let sidebarTop = Brand.graphiteDeep
+        static let sidebarBottom = Color(hex: 0x0E141B)
+        static let sidebarStroke = Color.white.opacity(0.07)
+        static let sidebarTextPrimary = Color.white.opacity(0.92)
+        static let sidebarTextSecondary = Color.white.opacity(0.55)
+        static let sidebarTextTertiary = Color.white.opacity(0.35)
     }
 
     // MARK: Typography
 
     enum Typography {
-        // Display: hero numbers and big counts (Activity stat cards, About hero).
+        /// Hero numbers (Activity stat cards) and About hero.
         static let display = Font.system(size: 28, weight: .semibold, design: .rounded)
-        // Title: window-level page titles (panel headers, About heading).
+        /// Panel page titles.
+        static let pageTitle = Font.system(size: 22, weight: .bold, design: .rounded)
+        /// Window-level titles (About heading, onboarding steps).
         static let title = Font.system(size: 20, weight: .semibold, design: .rounded)
-        // Section header inside a Form / panel.
+        /// Card titles / section headers above cards.
         static let sectionHeader = Font.system(size: 13, weight: .semibold)
-        // Headline: card titles inside panels.
+        /// Card titles inside panels.
         static let headline = Font.system(size: 15, weight: .semibold)
-        // Default body text.
+        /// Default body text.
         static let body = Font.system(size: 13, weight: .regular)
-        // Body with emphasis (button labels, list item titles).
         static let bodyEmphasized = Font.system(size: 13, weight: .medium)
-        // Caption: supporting text under a label.
-        static let caption = Font.system(size: 11, weight: .regular)
-        static let captionEmphasized = Font.system(size: 11, weight: .medium)
-        // Monospaced for numeric stats and key glyphs.
+        /// Supporting text under a label.
+        static let caption = Font.system(size: 11.5, weight: .regular)
+        static let captionEmphasized = Font.system(size: 11.5, weight: .medium)
+        /// Monospaced for numeric stats and key glyphs.
         static let mono = Font.system(size: 12, weight: .regular, design: .monospaced)
         static let monoLarge = Font.system(size: 17, weight: .semibold, design: .monospaced)
         static let monoSmall = Font.system(size: 11, weight: .regular, design: .monospaced)
     }
 
-    // MARK: Spacing (multiples of 4 for predictable rhythm)
+    // MARK: Spacing (multiples of 4)
 
     enum Spacing {
         static let xs: CGFloat = 4
@@ -68,6 +138,14 @@ enum Theme {
         static let pill: CGFloat = 999
     }
 
+    // MARK: Motion
+
+    enum Motion {
+        static let panelSwitch = Animation.snappy(duration: 0.20)
+        static let hover = Animation.easeOut(duration: 0.12)
+        static let state = Animation.smooth(duration: 0.18)
+    }
+
     // MARK: Status tones (semantic colors used by StatusPill, badges, dots)
 
     enum Tone {
@@ -76,80 +154,51 @@ enum Theme {
         case warning
         case danger
         case info
+        case accent
 
         @MainActor
         var color: Color {
-            color(for: .dark)
-        }
-
-        @MainActor
-        func color(for colorScheme: ColorScheme) -> Color {
             switch self {
             case .neutral: return .secondary
-            case .success:
-                return colorScheme == .dark ? .green : Color(nsColor: .systemGreen).mix(with: .black, by: 0.32)
-            case .warning:
-                return colorScheme == .dark ? .orange : Color(nsColor: .systemOrange).mix(with: .black, by: 0.25)
-            case .danger:
-                return colorScheme == .dark ? .red : Color(nsColor: .systemRed).mix(with: .black, by: 0.18)
-            case .info:
-                return colorScheme == .dark ? .accentColor : Color(nsColor: .controlAccentColor).mix(with: .black, by: 0.18)
+            case .success: return Color.dynamic(light: nsHex(0x1E7D45), dark: nsHex(0x4CD97B))
+            case .warning: return Color.dynamic(light: nsHex(0xA05A00), dark: nsHex(0xFFB454))
+            case .danger:  return Color.dynamic(light: nsHex(0xB3261E), dark: nsHex(0xFF6B5E))
+            case .info:    return Brand.sky
+            case .accent:  return Brand.accent
             }
-        }
-    }
-
-    // MARK: Sidebar accents (per Settings section)
-
-    enum SectionAccent {
-        case recording, transcription, grammar, voice, vocabulary, output, shortcuts, activity, advanced, about
-
-        @MainActor
-        var color: Color {
-            color(for: .dark)
         }
 
         @MainActor
         func color(for colorScheme: ColorScheme) -> Color {
-            switch self {
-            case .recording:    return .red
-            case .transcription: return .blue
-            case .grammar:      return .indigo
-            case .voice:        return colorScheme == .dark ? .teal : Color(nsColor: .systemTeal).mix(with: .black, by: 0.20)
-            case .vocabulary:   return .orange
-            case .output:       return Theme.Brand.sky(for: colorScheme)
-            case .shortcuts:    return .pink
-            case .activity:     return colorScheme == .dark ? .green : Color(nsColor: .systemGreen).mix(with: .black, by: 0.32)
-            case .advanced:     return .gray
-            case .about:        return .secondary
-            }
+            color
         }
     }
 }
 
-// MARK: - View modifiers and helpers built on Theme
+// MARK: - View helpers built on Theme
 
 extension View {
 
-    /// Card surface used for stat cards, credits, and grouped content blocks.
+    /// Card surface used for grouped content blocks.
     func cardSurface(radius: CGFloat = Theme.Radius.large) -> some View {
-        background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: radius))
+        background(Theme.Surface.card, in: RoundedRectangle(cornerRadius: radius))
             .overlay(
                 RoundedRectangle(cornerRadius: radius)
-                    .strokeBorder(Color.secondary.opacity(0.10))
+                    .strokeBorder(Theme.Surface.stroke, lineWidth: 1)
             )
     }
 
-    /// Tinted card surface (used for highlighted action cards like "replay tutorial").
+    /// Tinted card surface (highlighted action cards).
     func tintedCard(_ color: Color, radius: CGFloat = Theme.Radius.large) -> some View {
         background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: radius))
             .overlay(
                 RoundedRectangle(cornerRadius: radius)
-                    .strokeBorder(color.opacity(0.18))
+                    .strokeBorder(color.opacity(0.20), lineWidth: 1)
             )
     }
 }
 
-// MARK: - Stable section labels (icon + text with consistent metrics)
+// MARK: - Section icon chip (rounded-square, brand-consistent)
 
 struct SectionIcon: View {
     let symbol: String
@@ -160,18 +209,19 @@ struct SectionIcon: View {
 
     var body: some View {
         ZStack {
-            Circle()
+            RoundedRectangle(cornerRadius: diameter * 0.3, style: .continuous)
                 .fill(tint.opacity(colorScheme == .dark ? 0.16 : 0.12))
                 .frame(width: diameter, height: diameter)
                 .overlay(
-                    Circle()
-                        .strokeBorder(tint.opacity(colorScheme == .dark ? 0.18 : 0.24), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: diameter * 0.3, style: .continuous)
+                        .strokeBorder(tint.opacity(colorScheme == .dark ? 0.22 : 0.24), lineWidth: 1)
                 )
             Image(systemName: symbol)
                 .font(.system(size: fontSize, weight: .semibold))
                 .foregroundStyle(tint)
                 .symbolRenderingMode(.hierarchical)
         }
+        .accessibilityHidden(true)
     }
 }
 
@@ -206,6 +256,23 @@ enum KeyboardGlyph {
     static func display(_ raw: String) -> String {
         tokens(for: raw).joined()
     }
+
+    /// Trigger keys are physical key sides ("alt_r"), not modifier combos —
+    /// render them with the side qualifier next to the symbol.
+    static func triggerTokens(for key: String) -> [String] {
+        switch key {
+        case "alt_r":   return ["⌥", "Right"]
+        case "alt_l":   return ["⌥", "Left"]
+        case "ctrl_r":  return ["⌃", "Right"]
+        case "ctrl_l":  return ["⌃", "Left"]
+        case "cmd_r":   return ["⌘", "Right"]
+        case "cmd_l":   return ["⌘", "Left"]
+        case "shift_r": return ["⇧", "Right"]
+        case "shift_l": return ["⇧", "Left"]
+        case "caps_lock": return ["⇪"]
+        default:        return [key.uppercased()]
+        }
+    }
 }
 
 // MARK: - KeyCap rendering (small key glyph chip)
@@ -218,12 +285,12 @@ struct KeyCap: View {
         Text(label)
             .font(Theme.Typography.monoSmall)
             .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Color.secondary.opacity(emphasis ? 0.22 : 0.16),
-                        in: RoundedRectangle(cornerRadius: 4))
+            .padding(.vertical, 2.5)
+            .background(Theme.Surface.well, in: RoundedRectangle(cornerRadius: 5))
             .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(Color.secondary.opacity(0.18), lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: 5)
+                    .strokeBorder(Theme.Surface.stroke, lineWidth: 1)
+                    .opacity(emphasis ? 1.5 : 1)
             )
             .foregroundStyle(.primary)
     }

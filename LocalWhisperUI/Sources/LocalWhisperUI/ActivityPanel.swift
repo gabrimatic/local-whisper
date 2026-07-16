@@ -5,24 +5,23 @@ import Charts
 
 struct ActivityPanel: View {
     @Environment(AppState.self) private var appState
-    @Environment(\.colorScheme) private var colorScheme
     @State private var snapshot: ActivitySnapshot = .empty
     @State private var loading = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: Theme.Spacing.l + 2) {
-                statCards
-                activityChart
-                Grid(alignment: .leading, horizontalSpacing: Theme.Spacing.l + 2, verticalSpacing: Theme.Spacing.l + 2) {
-                    GridRow {
-                        topWordsCard
-                        topRepsCard
-                    }
+        PanelScaffold(
+            title: "Activity",
+            subtitle: "Your dictation usage at a glance."
+        ) {
+            statCards
+            activityChart
+            Grid(alignment: .top, horizontalSpacing: Theme.Spacing.l, verticalSpacing: Theme.Spacing.l) {
+                GridRow {
+                    topWordsCard
+                    topRepsCard
                 }
-                refreshFooter
             }
-            .padding(Theme.Spacing.xl)
+            refreshFooter
         }
         .task { await refresh() }
         .onChange(of: appState.phase) { _, newPhase in
@@ -36,12 +35,12 @@ struct ActivityPanel: View {
     // MARK: - Stat cards
 
     private var statCards: some View {
-        Grid(horizontalSpacing: Theme.Spacing.l - 2, verticalSpacing: Theme.Spacing.l - 2) {
+        Grid(horizontalSpacing: Theme.Spacing.m, verticalSpacing: Theme.Spacing.m) {
             GridRow {
-                statCard(title: "Sessions", value: "\(snapshot.totalSessions)", icon: "waveform", tint: .red, footnote: snapshot.firstSessionFootnote)
-                statCard(title: "Words", value: snapshot.totalWords.formatted(.number), icon: "textformat", tint: .blue, footnote: snapshot.wordsPerSessionFootnote)
-                statCard(title: "Today", value: "\(snapshot.todaySessions)", icon: "sun.max.fill", tint: .orange, footnote: "\(snapshot.todayWords.formatted(.number)) words")
-                statCard(title: "Last 7 days", value: "\(snapshot.weekSessions)", icon: "calendar", tint: Theme.Tone.success.color(for: colorScheme), footnote: "\(snapshot.weekWords.formatted(.number)) words")
+                statCard(title: "Sessions", value: "\(snapshot.totalSessions)", icon: "waveform", tint: Theme.Brand.accent, footnote: snapshot.firstSessionFootnote)
+                statCard(title: "Words", value: snapshot.totalWords.formatted(.number), icon: "textformat", tint: Theme.Brand.sky, footnote: snapshot.wordsPerSessionFootnote)
+                statCard(title: "Today", value: "\(snapshot.todaySessions)", icon: "sun.max.fill", tint: Theme.Tone.warning.color, footnote: "\(snapshot.todayWords.formatted(.number)) words")
+                statCard(title: "Last 7 days", value: "\(snapshot.weekSessions)", icon: "calendar", tint: Theme.Tone.success.color, footnote: "\(snapshot.weekWords.formatted(.number)) words")
             }
         }
     }
@@ -50,6 +49,7 @@ struct ActivityPanel: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs + 2) {
             HStack(spacing: Theme.Spacing.xs + 2) {
                 Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(tint)
                     .symbolRenderingMode(.hierarchical)
                 Text(title)
@@ -71,7 +71,7 @@ struct ActivityPanel: View {
             }
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
         .padding(Theme.Spacing.l - 2)
         .cardSurface(radius: Theme.Radius.medium)
     }
@@ -97,11 +97,11 @@ struct ActivityPanel: View {
                         x: .value("Day", bucket.date, unit: .day),
                         y: .value("Words", bucket.words)
                     )
-                    .foregroundStyle(Color.accentColor.gradient)
+                    .foregroundStyle(Theme.Brand.accent.gradient)
                     .cornerRadius(3)
                 }
                 .chartXAxis {
-                    AxisMarks(values: .stride(by: .day, count: 5)) { value in
+                    AxisMarks(values: .stride(by: .day, count: 5)) { _ in
                         AxisGridLine()
                         AxisTick()
                         AxisValueLabel(format: .dateTime.month(.abbreviated).day())
@@ -118,34 +118,29 @@ struct ActivityPanel: View {
     }
 
     private var emptyChart: some View {
-        VStack(spacing: Theme.Spacing.xs + 2) {
-            Image(systemName: "chart.bar")
-                .font(.title2)
-                .foregroundStyle(.secondary)
-                .symbolRenderingMode(.hierarchical)
-            Text("No activity yet")
-                .font(Theme.Typography.bodyEmphasized)
-            Text("Record something. The chart fills in as you go.")
-                .font(Theme.Typography.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, minHeight: 180)
+        EmptyStateView(
+            icon: "chart.bar",
+            title: "No activity yet",
+            message: "Record something. The chart fills in as you go."
+        )
+        .frame(minHeight: 160)
     }
 
     // MARK: - Top word / replacement cards
 
     private var topWordsCard: some View {
-        listCard(title: "Top words", icon: "textformat.size", tint: .indigo, items: snapshot.topWords, emptyText: "Words you say often will appear here.")
+        listCard(title: "Top words", icon: "textformat.size", tint: Theme.Brand.sky, items: snapshot.topWords, emptyText: "Words you say often will appear here.")
     }
 
     private var topRepsCard: some View {
-        listCard(title: "Top replacements", icon: "arrow.left.arrow.right", tint: .orange, items: snapshot.topReplacements, emptyText: "Replacement triggers you actually use will rank here.")
+        listCard(title: "Top replacements", icon: "arrow.left.arrow.right", tint: Theme.Brand.accent, items: snapshot.topReplacements, emptyText: "Replacement triggers you actually use will rank here.")
     }
 
     private func listCard(title: String, icon: String, tint: Color, items: [ActivityCount], emptyText: String) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.m - 2) {
             HStack(spacing: Theme.Spacing.xs + 2) {
                 Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(tint)
                     .symbolRenderingMode(.hierarchical)
                 Text(title).font(Theme.Typography.headline)
@@ -218,9 +213,12 @@ struct ActivityPanel: View {
     private func refresh() async {
         loading = true
         defer { loading = false }
+        // Resolve from the live config: with a custom backup directory the
+        // hardcoded ~/.whisper/history would show permanently-zero stats.
+        let historyDir = AppDirectories.historyDir(appState.config)
         let triggers = Set(appState.config.replacements.rules.keys.map { $0.lowercased() })
         let snap = await Task.detached(priority: .userInitiated) {
-            ActivitySnapshot.compute(historyDir: AppDirectories.text, replacementTriggers: triggers)
+            ActivitySnapshot.compute(historyDir: historyDir, replacementTriggers: triggers)
         }.value
         snapshot = snap
     }
@@ -437,7 +435,7 @@ struct ActivitySnapshot: Sendable {
         "the","and","for","that","this","with","you","are","was","but","not","have","had","has","were",
         "from","they","what","when","your","just","can","one","all","get","got","like","its","into","out",
         "about","because","there","then","than","them","their","over","also","more","some","other","such",
-        "would","could","should","will","been","being","does","did","doing","done","make","made","make","very",
+        "would","could","should","will","been","being","does","did","doing","done","make","made","very",
         "really","right","know","think","thing","things","stuff","yeah","okay","ok","actually","basically"
     ]
 }

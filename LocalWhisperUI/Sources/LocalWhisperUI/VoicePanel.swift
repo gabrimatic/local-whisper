@@ -6,94 +6,108 @@ struct VoicePanel: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
-        ScrollView {
-            Form {
-                ttsSection
-                if appState.config.tts.enabled {
-                    ttsAdvancedSection
-                }
-                dictationSection
+        PanelScaffold(
+            title: "Voice",
+            subtitle: "Read text aloud and speak punctuation while dictating."
+        ) {
+            ttsCard
+            if appState.config.tts.enabled {
+                ttsAdvancedCard
             }
-            .formStyle(.grouped)
+            dictationCard
         }
     }
 
     // MARK: - TTS
 
-    private var ttsSection: some View {
-        Section {
-            Toggle("Read selected text aloud", isOn: Binding(
-                get: { appState.config.tts.enabled },
-                set: { v in
-                    appState.config.tts.enabled = v
-                    appState.ipcClient?.sendConfigUpdate(section: "tts", key: "enabled", value: v)
-                }
-            ))
-            .help("Press the speak shortcut in any app to hear the selection. Press it again to stop.")
+    private var ttsCard: some View {
+        SettingsCard(
+            icon: "speaker.wave.2.fill",
+            title: "Text to speech",
+            description: "Kokoro-82M runs entirely on-device after the first download."
+        ) {
+            ToggleRow(
+                title: "Read selected text aloud",
+                subtitle: "Press the speak shortcut in any app to hear the selection. Press it again to stop.",
+                isOn: appState.config.tts.enabled
+            ) { v in
+                appState.config.tts.enabled = v
+                appState.ipcClient?.sendConfigUpdate(section: "tts", key: "enabled", value: v)
+            }
 
             if !appState.config.tts.enabled {
-                InlineNotice(
-                    kind: .info,
-                    text: "Activating Read selected text aloud downloads Kokoro-82M (~170 MB) and uses espeak-ng plus the spaCy en_core_web_sm dictionary. The download starts the moment you flip this toggle on."
-                )
+                WideRow {
+                    InlineNotice(
+                        kind: .info,
+                        text: "Activating Read selected text aloud downloads Kokoro-82M (~170 MB) and uses espeak-ng plus the spaCy en_core_web_sm dictionary. The download starts the moment you flip this toggle on."
+                    )
+                }
             }
 
             if let progress = appState.downloadStates["kokoro_tts"] {
-                DownloadProgressBar(progress: progress)
+                WideRow {
+                    DownloadProgressBar(progress: progress)
+                }
             }
 
-            if appState.config.tts.enabled {
+            // The recorder stays visible even while TTS is off: the combo
+            // still reserves its slot in the conflict map, and freeing it
+            // must not require enabling TTS (which starts a model download).
+            WideRow {
                 ShortcutRecorderField(
                     title: "Speak shortcut",
-                    description: "Reads the current selection aloud; press again to stop.",
+                    description: appState.config.tts.enabled
+                        ? "Reads the current selection aloud; press again to stop."
+                        : "Active once Read aloud is on. Recorded now so other shortcuts can't take it.",
                     icon: "speaker.wave.2.fill",
-                    tint: .teal,
+                    tint: Theme.Brand.sky,
                     value: appState.config.tts.speakShortcut,
                     defaultValue: "alt+t",
                     conflicts: ttsConflicts,
+                    blockedKeys: blockedTriggerKeys,
                     onCommit: { v in
                         appState.config.tts.speakShortcut = v
                         appState.ipcClient?.sendConfigUpdate(section: "tts", key: "speak_shortcut", value: v)
                     }
                 )
+            }
 
-                Picker("Voice", selection: Binding(
-                    get: { appState.config.kokoroTts.voice },
-                    set: { v in
-                        appState.config.kokoroTts.voice = v
-                        appState.ipcClient?.sendConfigUpdate(section: "kokoro_tts", key: "voice", value: v)
+            if appState.config.tts.enabled {
+                SettingRow(title: "Voice") {
+                    Picker("Voice", selection: Binding(
+                        get: { appState.config.kokoroTts.voice },
+                        set: { v in
+                            appState.config.kokoroTts.voice = v
+                            appState.ipcClient?.sendConfigUpdate(section: "kokoro_tts", key: "voice", value: v)
+                        }
+                    )) {
+                        Section("American female") {
+                            Text("Heart").tag("af_heart")
+                            Text("Bella").tag("af_bella")
+                            Text("Nova").tag("af_nova")
+                            Text("Sky").tag("af_sky")
+                            Text("Sarah").tag("af_sarah")
+                            Text("Nicole").tag("af_nicole")
+                        }
+                        Section("American male") {
+                            Text("Adam").tag("am_adam")
+                            Text("Echo").tag("am_echo")
+                            Text("Eric").tag("am_eric")
+                            Text("Liam").tag("am_liam")
+                        }
+                        Section("British female") {
+                            Text("Alice").tag("bf_alice")
+                            Text("Emma").tag("bf_emma")
+                        }
+                        Section("British male") {
+                            Text("Daniel").tag("bm_daniel")
+                            Text("George").tag("bm_george")
+                        }
                     }
-                )) {
-                    Section("American female") {
-                        Text("Heart").tag("af_heart")
-                        Text("Bella").tag("af_bella")
-                        Text("Nova").tag("af_nova")
-                        Text("Sky").tag("af_sky")
-                        Text("Sarah").tag("af_sarah")
-                        Text("Nicole").tag("af_nicole")
-                    }
-                    Section("American male") {
-                        Text("Adam").tag("am_adam")
-                        Text("Echo").tag("am_echo")
-                        Text("Eric").tag("am_eric")
-                        Text("Liam").tag("am_liam")
-                    }
-                    Section("British female") {
-                        Text("Alice").tag("bf_alice")
-                        Text("Emma").tag("bf_emma")
-                    }
-                    Section("British male") {
-                        Text("Daniel").tag("bm_daniel")
-                        Text("George").tag("bm_george")
-                    }
+                    .pickerStyle(.menu)
+                    .fixedSize()
                 }
             }
-        } header: {
-            SettingsSectionHeader(
-                symbol: "speaker.wave.2.fill",
-                title: "Text to speech",
-                description: "Kokoro-82M runs entirely on-device after the first download."
-            )
         }
     }
 
@@ -110,53 +124,69 @@ struct VoicePanel: View {
         return map
     }
 
-    private var ttsAdvancedSection: some View {
-        Section {
-            LabeledContent("Model") {
+    private var blockedTriggerKeys: [String: String] {
+        let trigger = appState.config.hotkey.key
+        guard ShortcutSpec.functionKeys.contains(trigger) else { return [:] }
+        return [trigger: "recording trigger key"]
+    }
+
+    private var ttsAdvancedCard: some View {
+        SettingsCard(
+            icon: "wrench.and.screwdriver",
+            title: "Advanced"
+        ) {
+            SettingRow(
+                title: "Model",
+                subtitle: "Hugging Face model ID. The default runs offline after setup; a changed model downloads on the next speak."
+            ) {
                 DeferredTextField(label: "mlx-community/Kokoro-…", initialValue: appState.config.kokoroTts.model) { v in
                     appState.config.kokoroTts.model = v
                     appState.ipcClient?.sendConfigUpdate(section: "kokoro_tts", key: "model", value: v)
                 }
                 .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 320)
+                .frame(width: 280)
             }
-            .help("Hugging Face model ID. Default mlx-community/Kokoro-82M-bf16 runs offline after setup. A changed model downloads on the next speak.")
-        } header: {
-            SettingsSectionHeader(symbol: "wrench.and.screwdriver", title: "Advanced")
         }
     }
 
     // MARK: - Dictation commands
 
-    private var dictationSection: some View {
-        Section {
-            Toggle("Speak punctuation and whitespace", isOn: Binding(
-                get: { appState.config.dictation.enabled },
-                set: { v in
-                    appState.config.dictation.enabled = v
-                    appState.ipcClient?.sendConfigUpdate(section: "dictation", key: "enabled", value: v)
-                }
-            ))
-            .help("Replaces phrases like \"new line\" or \"period\" with the literal character before grammar runs.")
+    private var dictationCard: some View {
+        SettingsCard(
+            icon: "text.cursor",
+            title: "Dictation commands",
+            description: "Voice phrases that turn into punctuation, whitespace, or text edits."
+        ) {
+            ToggleRow(
+                title: "Speak punctuation and whitespace",
+                subtitle: "Replaces phrases like \"new line\" or \"period\" with the literal character before grammar runs.",
+                isOn: appState.config.dictation.enabled
+            ) { v in
+                appState.config.dictation.enabled = v
+                appState.ipcClient?.sendConfigUpdate(section: "dictation", key: "enabled", value: v)
+            }
 
-            Toggle("Remove speech fillers (um, uh, er…)", isOn: Binding(
-                get: { appState.config.dictation.stripFillers },
-                set: { v in
-                    appState.config.dictation.stripFillers = v
-                    appState.ipcClient?.sendConfigUpdate(section: "dictation", key: "strip_fillers", value: v)
-                }
-            ))
-            .help("The filler list is English. Turn this off when dictating in languages where those are real words (German \"er\", \"um\").")
+            // Filler stripping runs inside the dictation-commands pass, so it
+            // is honestly disabled when the master toggle is off instead of
+            // pretending to be active.
+            ToggleRow(
+                title: "Remove speech fillers (um, uh, er…)",
+                subtitle: appState.config.dictation.enabled
+                    ? "The filler list is English. Turn this off when dictating in languages where those are real words."
+                    : "Requires \"Speak punctuation and whitespace\" to be on.",
+                isOn: appState.config.dictation.stripFillers
+            ) { v in
+                appState.config.dictation.stripFillers = v
+                appState.ipcClient?.sendConfigUpdate(section: "dictation", key: "strip_fillers", value: v)
+            }
+            .disabled(!appState.config.dictation.enabled)
+            .opacity(appState.config.dictation.enabled ? 1.0 : 0.55)
 
             if appState.config.dictation.enabled {
-                DictationCommandsEditor()
+                WideRow {
+                    DictationCommandsEditor()
+                }
             }
-        } header: {
-            SettingsSectionHeader(
-                symbol: "text.cursor",
-                title: "Dictation commands",
-                description: "Voice phrases that turn into punctuation, whitespace, or text edits."
-            )
         }
     }
 
@@ -166,7 +196,6 @@ struct VoicePanel: View {
 
 struct DictationCommandsEditor: View {
     @Environment(AppState.self) private var appState
-    @Environment(\.colorScheme) private var colorScheme
 
     @State private var newPhrase: String = ""
     @State private var newReplacement: String = ""
@@ -223,13 +252,16 @@ struct DictationCommandsEditor: View {
                                     appState.ipcClient?.sendDictationCommandRemove(spoken: command.phrase)
                                 } label: {
                                     Image(systemName: "minus.circle.fill")
-                                        .foregroundStyle(Theme.Tone.danger.color(for: colorScheme))
+                                        .foregroundStyle(Theme.Tone.danger.color)
                                         .symbolRenderingMode(.hierarchical)
                                 }
                                 .buttonStyle(.plain)
                                 .help("Remove custom command \"\(command.phrase)\".")
                                 .accessibilityLabel("Remove command \(command.phrase)")
-                            } else {
+                            } else if command.replacement != scratchSentinel {
+                                // The scratch sentinel is engine behavior, not
+                                // replaceable text — overriding it would just
+                                // break "scratch that".
                                 Button {
                                     newPhrase = command.phrase
                                     newReplacement = displayEscape(command.replacement)
@@ -341,7 +373,10 @@ struct DictationCommandsEditor: View {
             .replacingOccurrences(of: "\t", with: "\\t")
     }
 
+    private var scratchSentinel: String { "__SCRATCH__" }
+
     private func visualize(_ s: String) -> String {
+        if s == scratchSentinel { return "removes last phrase" }
         let mapped = s
             .replacingOccurrences(of: "\n\n", with: "¶¶")
             .replacingOccurrences(of: "\n", with: "¶")

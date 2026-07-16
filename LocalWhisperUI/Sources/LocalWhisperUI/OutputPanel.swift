@@ -6,32 +6,36 @@ struct OutputPanel: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
-        ScrollView {
-            Form {
-                overlaySection
-                deliverySection
-                feedbackSection
-                historySection
-            }
-            .formStyle(.grouped)
+        PanelScaffold(
+            title: "Output",
+            subtitle: "Overlay, sounds, paste behavior, and history."
+        ) {
+            overlayCard
+            deliveryCard
+            feedbackCard
+            historyCard
         }
     }
 
     // MARK: - Overlay
 
-    private var overlaySection: some View {
-        Section {
-            Toggle("Show floating overlay", isOn: Binding(
-                get: { appState.config.ui.showOverlay },
-                set: { v in
-                    appState.config.ui.showOverlay = v
-                    appState.ipcClient?.sendConfigUpdate(section: "ui", key: "show_overlay", value: v)
-                }
-            ))
-            .help("A glassy pill near the bottom of the screen showing live recording state.")
+    private var overlayCard: some View {
+        SettingsCard(
+            icon: "rectangle.on.rectangle",
+            title: "Live overlay",
+            description: "What appears on-screen while recording, transcribing, or speaking."
+        ) {
+            ToggleRow(
+                title: "Show floating overlay",
+                subtitle: "A glassy pill near the bottom of the screen with live recording state.",
+                isOn: appState.config.ui.showOverlay
+            ) { v in
+                appState.config.ui.showOverlay = v
+                appState.ipcClient?.sendConfigUpdate(section: "ui", key: "show_overlay", value: v)
+            }
 
             if appState.config.ui.showOverlay {
-                LabeledContent("Opacity") {
+                SettingRow(title: "Opacity") {
                     CommitSlider(
                         value: appState.config.ui.overlayOpacity,
                         in: 0.3...1.0,
@@ -45,107 +49,89 @@ struct OutputPanel: View {
                     }
                 }
             }
-        } header: {
-            SettingsSectionHeader(
-                symbol: "rectangle.on.rectangle",
-                title: "Live overlay",
-                description: "What appears on-screen while recording, transcribing, or speaking."
-            )
         }
     }
 
     // MARK: - Delivery (paste / clipboard)
 
-    private var deliverySection: some View {
-        Section {
-            Toggle("Paste at cursor", isOn: Binding(
-                get: { appState.config.ui.autoPaste },
-                set: { v in
-                    appState.config.ui.autoPaste = v
-                    appState.ipcClient?.sendConfigUpdate(section: "ui", key: "auto_paste", value: v)
-                }
-            ))
-            .help("Pastes the transcription directly where your cursor is. Your clipboard is preserved.")
-        } header: {
-            SettingsSectionHeader(
-                symbol: "doc.on.clipboard",
-                title: "Delivery",
-                description: appState.config.ui.autoPaste
-                    ? "Transcription pastes at the cursor, then your clipboard is restored."
-                    : "Transcription is copied to the clipboard so you can paste manually."
-            )
+    private var deliveryCard: some View {
+        SettingsCard(
+            icon: "doc.on.clipboard",
+            title: "Delivery",
+            description: appState.config.ui.autoPaste
+                ? "Transcription pastes at the cursor, then your clipboard is restored."
+                : "Transcription is copied to the clipboard so you can paste manually."
+        ) {
+            ToggleRow(
+                title: "Paste at cursor",
+                subtitle: "Types the transcription right where your cursor is. Your clipboard is preserved either way.",
+                isOn: appState.config.ui.autoPaste
+            ) { v in
+                appState.config.ui.autoPaste = v
+                appState.ipcClient?.sendConfigUpdate(section: "ui", key: "auto_paste", value: v)
+            }
         }
     }
 
     // MARK: - Feedback (sounds / notifications)
 
-    private var feedbackSection: some View {
-        Section {
-            Toggle("Play sounds", isOn: Binding(
-                get: { appState.config.ui.soundsEnabled },
-                set: { v in
-                    appState.config.ui.soundsEnabled = v
-                    appState.ipcClient?.sendConfigUpdate(section: "ui", key: "sounds_enabled", value: v)
-                }
-            ))
-            .help("Subtle start/stop chimes and an error blip.")
+    private var feedbackCard: some View {
+        SettingsCard(
+            icon: "bell.badge",
+            title: "Feedback",
+            description: "Audio cues and macOS notifications."
+        ) {
+            ToggleRow(
+                title: "Play sounds",
+                subtitle: "Subtle start/stop chimes and an error blip.",
+                isOn: appState.config.ui.soundsEnabled
+            ) { v in
+                appState.config.ui.soundsEnabled = v
+                appState.ipcClient?.sendConfigUpdate(section: "ui", key: "sounds_enabled", value: v)
+            }
 
-            Toggle("Show notifications", isOn: Binding(
-                get: { appState.config.ui.notificationsEnabled },
-                set: { v in
-                    appState.config.ui.notificationsEnabled = v
-                    appState.ipcClient?.sendConfigUpdate(section: "ui", key: "notifications_enabled", value: v)
-                }
-            ))
-            .help("System notifications for completion and errors.")
-        } header: {
-            SettingsSectionHeader(
-                symbol: "bell.badge",
-                title: "Feedback",
-                description: "Audio cues and macOS notifications."
-            )
+            ToggleRow(
+                title: "Show notifications",
+                subtitle: "System notifications for completion and errors.",
+                isOn: appState.config.ui.notificationsEnabled
+            ) { v in
+                appState.config.ui.notificationsEnabled = v
+                appState.ipcClient?.sendConfigUpdate(section: "ui", key: "notifications_enabled", value: v)
+            }
         }
     }
 
     // MARK: - History
 
-    private var historySection: some View {
-        Section {
-            LabeledContent("Keep entries") {
-                HStack(spacing: Theme.Spacing.xs + 2) {
-                    DeferredIntTextField(
-                        label: "100",
-                        initialValue: appState.config.backup.historyLimit
-                    ) { value in
-                        let clamped = min(max(value, 1), 1000)
-                        appState.config.backup.historyLimit = clamped
-                        appState.ipcClient?.sendConfigUpdate(section: "backup", key: "history_limit", value: clamped)
-                    }
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 70)
-                    Stepper("",
-                        value: Binding(
-                            get: { appState.config.backup.historyLimit },
-                            set: { v in
-                                appState.config.backup.historyLimit = v
-                                appState.ipcClient?.sendConfigUpdate(section: "backup", key: "history_limit", value: v)
-                            }
-                        ),
-                        in: 1...1000
-                    )
-                    .labelsHidden()
-                    Text("of 1,000 max")
-                        .font(Theme.Typography.caption)
-                        .foregroundStyle(.secondary)
+    private var historyCard: some View {
+        SettingsCard(
+            icon: "clock.arrow.circlepath",
+            title: "History",
+            description: "Past transcriptions live at \(historyDirDisplay)."
+        ) {
+            SettingRow(
+                title: "Keep entries",
+                subtitle: "How many past transcriptions stay on disk and in the menu (1 to 1,000)."
+            ) {
+                // Single writer: a text field AND a stepper over one config
+                // key fought each other (stale field text overwrote a newer
+                // stepper change on blur).
+                DeferredIntTextField(
+                    label: "100",
+                    initialValue: appState.config.backup.historyLimit,
+                    clamp: 1...1000
+                ) { value in
+                    appState.config.backup.historyLimit = value
+                    appState.ipcClient?.sendConfigUpdate(section: "backup", key: "history_limit", value: value)
                 }
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 64)
             }
-            .help("Number of past transcriptions to keep on disk and show in the menu (1 to 1,000).")
-        } header: {
-            SettingsSectionHeader(
-                symbol: "clock.arrow.circlepath",
-                title: "History",
-                description: "Past transcriptions live at ~/.whisper/history."
-            )
         }
+    }
+
+    private var historyDirDisplay: String {
+        let path = AppDirectories.historyDir(appState.config)
+        return path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
     }
 }

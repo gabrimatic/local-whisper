@@ -335,11 +335,17 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
             # triggers map to None here and are unaffected.
             interceptor.set_record_keycode(KEYCODE_FOR_KEY_NAME.get(config.hotkey.key))
 
-            # Interception pauses while recording/processing.
+            # Interception pauses while recording/processing. Capture mode is
+            # separate: while the Settings shortcut recorder is armed, bound
+            # combos must PASS THROUGH (not be swallowed) so they reach the
+            # recorder and it can show its conflict notice.
             interceptor.set_enabled_guard(
                 lambda: (not self.recorder.recording
                          and not self._busy
                          and not (self._shortcut_processor and self._shortcut_processor.is_busy()))
+            )
+            interceptor.set_capture_guard(
+                lambda: getattr(self, "_shortcut_capture_paused", False)
             )
 
     def _set_record_key(self, key_name: str) -> bool:

@@ -341,6 +341,26 @@ class IPCMixin:
                 threading.Thread(target=self._request_microphone_permission, daemon=True).start()
             elif action == "request_accessibility_permission":
                 threading.Thread(target=self._request_accessibility_permission, daemon=True).start()
+        elif msg_type == "capture_mode":
+            # The Settings shortcut recorder is (or stopped) capturing a key
+            # combo: suspend shortcut interception so currently-bound combos
+            # reach the recorder instead of firing their action. A watchdog
+            # clears the pause in case the UI dies mid-capture.
+            active = bool(msg.get("active"))
+            self._shortcut_capture_paused = active
+            if active:
+                generation = getattr(self, "_capture_pause_generation", 0) + 1
+                self._capture_pause_generation = generation
+
+                def _expire():
+                    if getattr(self, "_capture_pause_generation", 0) == generation:
+                        self._shortcut_capture_paused = False
+
+                # The Swift recorder auto-stops at 25s; this backstop only
+                # matters if the UI dies mid-capture.
+                timer = threading.Timer(30.0, _expire)
+                timer.daemon = True
+                timer.start()
         elif msg_type == "engine_switch":
             engine = msg.get("engine", "")
             threading.Thread(target=self._switch_engine, args=(engine,), daemon=True).start()
@@ -371,6 +391,16 @@ class IPCMixin:
                 section_config = getattr(self.config, config_section_attr(section), None)
                 if section_config is not None:
                     old_value = getattr(section_config, key, None)
+                    if old_value == value:
+                        # No-op write: skip the file rewrite and every side
+                        # effect. A focus-in/focus-out on the model field must
+                        # not unload and reload the active engine. If the RAW
+                        # input only matched after canonicalization ("Shift+
+                        # Control+G" -> "ctrl+shift+g"), re-sync the UI so it
+                        # shows the canonical form.
+                        if msg.get("value") != value:
+                            self._send_config_snapshot()
+                        return
                 if not update_config_field(section, key, value):
                     # Write refused (broken config.toml / disk error). The
                     # in-memory value was rolled back — tell the user and

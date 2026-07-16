@@ -286,11 +286,13 @@ private struct WaveformView: View {
     }
 
     private func barColor(for value: Double, position: Int) -> Color {
+        // Brand mint, brightening toward the newest bars; warning tint only
+        // when the level approaches clipping.
         let recencyBoost = Double(position) / Double(max(1, samples.count - 1))
         let baseOpacity = 0.45 + recencyBoost * 0.55
         if value < 0.2 { return .secondary.opacity(baseOpacity * 0.7) }
-        if value < 0.65 { return .green.opacity(baseOpacity) }
-        return .orange.opacity(baseOpacity)
+        if value < 0.8 { return Theme.Brand.accent.opacity(baseOpacity) }
+        return Theme.Tone.warning.color.opacity(baseOpacity)
     }
 }
 

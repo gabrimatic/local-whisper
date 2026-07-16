@@ -1,10 +1,10 @@
 import SwiftUI
 
-// MARK: - Per-engine settings sections
+// MARK: - Per-engine settings cards
 //
-// Split out of TranscriptionPanel so the panel can focus on model management
-// and stay under the 700-line guideline. Each section owns a single engine's
-// knobs and is rendered by TranscriptionPanel below the active engine card.
+// Split out of TranscriptionPanel so the panel can focus on model management.
+// Each card owns a single engine's knobs and is rendered by TranscriptionPanel
+// below the engine cards, for the active engine only.
 
 // MARK: - Parakeet-TDT
 
@@ -12,8 +12,15 @@ struct ParakeetSection: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
-        Section {
-            LabeledContent("Model") {
+        SettingsCard(
+            icon: "waveform.badge.mic",
+            title: "Parakeet-TDT v3 settings",
+            description: "Tuning knobs for the active engine."
+        ) {
+            SettingRow(
+                title: "Model",
+                subtitle: "Hugging Face model ID. Use an mlx-community/parakeet-* checkpoint."
+            ) {
                 DeferredTextField(
                     label: "Model",
                     initialValue: appState.config.parakeet.model
@@ -22,169 +29,185 @@ struct ParakeetSection: View {
                     appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "model", value: value)
                 }
                 .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 320)
-            }
-            .help("Hugging Face model ID. Use an mlx-community/parakeet-* checkpoint.")
-
-            RestartNote()
-
-            DisclosureGroup("Chunking") {
-                LabeledContent("Chunk duration") {
-                    HStack {
-                        Stepper("", value: Binding(
-                            get: { appState.config.parakeet.chunkDuration },
-                            set: { v in
-                                appState.config.parakeet.chunkDuration = v
-                                appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "chunk_duration", value: v)
-                            }
-                        ), in: 0...600, step: 15)
-                        .labelsHidden()
-                        Text(appState.config.parakeet.chunkDuration <= 0 ? "Off" : "\(Int(appState.config.parakeet.chunkDuration))s")
-                            .monoStat(width: 60)
-                    }
-                }
-                .help("Split long audio into overlapping windows. 0 disables chunking (requires local attention for very long audio). Default 120s.")
-
-                LabeledContent("Overlap") {
-                    HStack {
-                        Stepper("", value: Binding(
-                            get: { appState.config.parakeet.overlapDuration },
-                            set: { v in
-                                appState.config.parakeet.overlapDuration = v
-                                appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "overlap_duration", value: v)
-                            }
-                        ), in: 0...60, step: 5)
-                        .labelsHidden()
-                        Text("\(Int(appState.config.parakeet.overlapDuration))s")
-                            .monoStat(width: 60)
-                    }
-                }
-                .help("Overlap between consecutive chunks. Default 15s.")
+                .frame(width: 280)
             }
 
-            DisclosureGroup("Decoding") {
-                Picker("Strategy", selection: Binding(
-                    get: { appState.config.parakeet.decoding },
-                    set: { v in
-                        appState.config.parakeet.decoding = v
-                        appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "decoding", value: v)
-                    }
-                )) {
-                    Text("Greedy (fast)").tag("greedy")
-                    Text("Beam (slower, slight quality gain)").tag("beam")
-                }
-                .help("Greedy picks the top token at each step. Beam explores multiple hypotheses.")
+            WideRow {
+                RestartNote()
+            }
 
-                if appState.config.parakeet.decoding == "beam" {
-                    LabeledContent("Beam size") {
-                        HStack {
-                            Stepper("", value: Binding(
-                                get: { appState.config.parakeet.beamSize },
+            WideRow {
+                DisclosureGroup("Chunking") {
+                    VStack(spacing: 0) {
+                        SettingRow(
+                            title: "Chunk duration",
+                            subtitle: "Split long audio into overlapping windows. 0 disables chunking. Default 120s."
+                        ) {
+                            StepperRowControl(
+                                value: Int(appState.config.parakeet.chunkDuration),
+                                range: 0...600,
+                                step: 15,
+                                display: appState.config.parakeet.chunkDuration <= 0 ? "Off" : "\(Int(appState.config.parakeet.chunkDuration))s",
+                                displayWidth: 56
+                            ) { v in
+                                appState.config.parakeet.chunkDuration = Double(v)
+                                appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "chunk_duration", value: Double(v))
+                            }
+                        }
+
+                        SettingRow(
+                            title: "Overlap",
+                            subtitle: "Overlap between consecutive chunks. Default 15s."
+                        ) {
+                            StepperRowControl(
+                                value: Int(appState.config.parakeet.overlapDuration),
+                                range: 0...60,
+                                step: 5,
+                                display: "\(Int(appState.config.parakeet.overlapDuration))s",
+                                displayWidth: 56
+                            ) { v in
+                                appState.config.parakeet.overlapDuration = Double(v)
+                                appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "overlap_duration", value: Double(v))
+                            }
+                        }
+                    }
+                    .padding(.top, Theme.Spacing.xs)
+                }
+                .font(Theme.Typography.bodyEmphasized)
+            }
+
+            WideRow {
+                DisclosureGroup("Decoding") {
+                    VStack(spacing: 0) {
+                        SettingRow(
+                            title: "Strategy",
+                            subtitle: "Greedy picks the top token at each step. Beam explores multiple hypotheses."
+                        ) {
+                            Picker("Strategy", selection: Binding(
+                                get: { appState.config.parakeet.decoding },
                                 set: { v in
+                                    appState.config.parakeet.decoding = v
+                                    appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "decoding", value: v)
+                                }
+                            )) {
+                                Text("Greedy (fast)").tag("greedy")
+                                Text("Beam (slower, slight quality gain)").tag("beam")
+                            }
+                            .pickerStyle(.menu)
+                            .fixedSize()
+                        }
+
+                        if appState.config.parakeet.decoding == "beam" {
+                            SettingRow(title: "Beam size") {
+                                StepperRowControl(
+                                    value: appState.config.parakeet.beamSize,
+                                    range: 1...16,
+                                    step: 1,
+                                    display: "\(appState.config.parakeet.beamSize)",
+                                    displayWidth: 40
+                                ) { v in
                                     appState.config.parakeet.beamSize = v
                                     appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "beam_size", value: v)
                                 }
-                            ), in: 1...16, step: 1)
-                            .labelsHidden()
-                            Text("\(appState.config.parakeet.beamSize)")
-                                .monoStat(width: 44)
-                        }
-                    }
-
-                    LabeledContent("Length penalty") {
-                        HStack {
-                            Slider(value: Binding(
-                                get: { appState.config.parakeet.lengthPenalty },
-                                set: { v in
-                                    appState.config.parakeet.lengthPenalty = v
-                                    appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "length_penalty", value: v)
-                                }
-                            ), in: 0...1, step: 0.01)
-                            Text(String(format: "%.3f", appState.config.parakeet.lengthPenalty))
-                                .monoStat(width: 60)
-                        }
-                    }
-
-                    LabeledContent("Patience") {
-                        HStack {
-                            Slider(value: Binding(
-                                get: { appState.config.parakeet.patience },
-                                set: { v in
-                                    appState.config.parakeet.patience = v
-                                    appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "patience", value: v)
-                                }
-                            ), in: 1...10, step: 0.1)
-                            Text(String(format: "%.1f", appState.config.parakeet.patience))
-                                .monoStat(width: 44)
-                        }
-                    }
-
-                    LabeledContent("Duration reward") {
-                        HStack {
-                            Slider(value: Binding(
-                                get: { appState.config.parakeet.durationReward },
-                                set: { v in
-                                    appState.config.parakeet.durationReward = v
-                                    appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "duration_reward", value: v)
-                                }
-                            ), in: 0...1, step: 0.01)
-                            Text(String(format: "%.2f", appState.config.parakeet.durationReward))
-                                .monoStat(width: 44)
-                        }
-                    }
-                    .help("<0.5 favors token logprobs, >0.5 favors duration logprobs. Default 0.67.")
-                }
-
-                LabeledContent("Timeout") {
-                    HStack {
-                        Stepper("", value: Binding(
-                            get: { appState.config.parakeet.timeout },
-                            set: { v in
-                                appState.config.parakeet.timeout = v
-                                appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "timeout", value: v)
                             }
-                        ), in: 0...600, step: 10)
-                        .labelsHidden()
-                        Text(appState.config.parakeet.timeout == 0 ? "Unlimited" : "\(Int(appState.config.parakeet.timeout))s")
-                            .monoStat(width: 70)
+
+                            SettingRow(title: "Length penalty") {
+                                CommitSlider(
+                                    value: appState.config.parakeet.lengthPenalty,
+                                    in: 0...1,
+                                    step: 0.01,
+                                    onCommit: { v in
+                                        appState.config.parakeet.lengthPenalty = v
+                                        appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "length_penalty", value: v)
+                                    }
+                                ) { v in
+                                    Text(String(format: "%.3f", v)).monoStat(width: 48)
+                                }
+                            }
+
+                            SettingRow(title: "Patience") {
+                                CommitSlider(
+                                    value: appState.config.parakeet.patience,
+                                    in: 1...10,
+                                    step: 0.1,
+                                    onCommit: { v in
+                                        appState.config.parakeet.patience = v
+                                        appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "patience", value: v)
+                                    }
+                                ) { v in
+                                    Text(String(format: "%.1f", v)).monoStat(width: 40)
+                                }
+                            }
+
+                            SettingRow(
+                                title: "Duration reward",
+                                subtitle: "Below 0.5 favors token logprobs, above favors duration logprobs. Default 0.67."
+                            ) {
+                                CommitSlider(
+                                    value: appState.config.parakeet.durationReward,
+                                    in: 0...1,
+                                    step: 0.01,
+                                    onCommit: { v in
+                                        appState.config.parakeet.durationReward = v
+                                        appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "duration_reward", value: v)
+                                    }
+                                ) { v in
+                                    Text(String(format: "%.2f", v)).monoStat(width: 40)
+                                }
+                            }
+                        }
+
+                        SettingRow(
+                            title: "Timeout",
+                            subtitle: "Maximum seconds to wait for transcription. 0 means no limit."
+                        ) {
+                            StepperRowControl(
+                                value: Int(appState.config.parakeet.timeout),
+                                range: 0...600,
+                                step: 10,
+                                display: appState.config.parakeet.timeout == 0 ? "Unlimited" : "\(Int(appState.config.parakeet.timeout))s"
+                            ) { v in
+                                appState.config.parakeet.timeout = Double(v)
+                                appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "timeout", value: Double(v))
+                            }
+                        }
                     }
+                    .padding(.top, Theme.Spacing.xs)
                 }
-                .help("Maximum seconds to wait for transcription. 0 = no limit.")
+                .font(Theme.Typography.bodyEmphasized)
             }
 
-            DisclosureGroup("Advanced") {
-                Toggle("Local attention", isOn: Binding(
-                    get: { appState.config.parakeet.localAttention },
-                    set: { v in
-                        appState.config.parakeet.localAttention = v
-                        appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "local_attention", value: v)
-                    }
-                ))
-                .help("Reduces peak memory for very long unchunked audio. Leave off unless chunk duration is 0.")
+            WideRow {
+                DisclosureGroup("Advanced") {
+                    VStack(spacing: 0) {
+                        ToggleRow(
+                            title: "Local attention",
+                            subtitle: "Reduces peak memory for very long unchunked audio. Leave off unless chunk duration is 0.",
+                            isOn: appState.config.parakeet.localAttention
+                        ) { v in
+                            appState.config.parakeet.localAttention = v
+                            appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "local_attention", value: v)
+                        }
 
-                if appState.config.parakeet.localAttention {
-                    LabeledContent("Context size") {
-                        HStack {
-                            Stepper("", value: Binding(
-                                get: { appState.config.parakeet.localAttentionContextSize },
-                                set: { v in
+                        if appState.config.parakeet.localAttention {
+                            SettingRow(title: "Context size") {
+                                StepperRowControl(
+                                    value: appState.config.parakeet.localAttentionContextSize,
+                                    range: 64...2048,
+                                    step: 64,
+                                    display: "\(appState.config.parakeet.localAttentionContextSize)",
+                                    displayWidth: 56
+                                ) { v in
                                     appState.config.parakeet.localAttentionContextSize = v
                                     appState.ipcClient?.sendConfigUpdate(section: "parakeet_v3", key: "local_attention_context_size", value: v)
                                 }
-                            ), in: 64...2048, step: 64)
-                            .labelsHidden()
-                            Text("\(appState.config.parakeet.localAttentionContextSize)")
-                                .monoStat(width: 60)
+                            }
                         }
                     }
+                    .padding(.top, Theme.Spacing.xs)
                 }
+                .font(Theme.Typography.bodyEmphasized)
             }
-        } header: {
-            SettingsSectionHeader(
-                symbol: "waveform.badge.mic",
-                title: "Parakeet-TDT v3 settings",
-                description: "Tuning knobs for the active engine."
-            )
         }
     }
 }
@@ -195,8 +218,15 @@ struct Qwen3Section: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
-        Section {
-            LabeledContent("Model") {
+        SettingsCard(
+            icon: "sparkle",
+            title: "Qwen3-ASR settings",
+            description: "Tuning knobs for the active engine."
+        ) {
+            SettingRow(
+                title: "Model",
+                subtitle: "Hugging Face model ID. Must be an MLX-quantized variant."
+            ) {
                 DeferredTextField(
                     label: "Model",
                     initialValue: appState.config.qwen3Asr.model
@@ -205,146 +235,157 @@ struct Qwen3Section: View {
                     appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "model", value: value)
                 }
                 .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 320)
+                .frame(width: 280)
             }
-            .help("Hugging Face model ID. Must be an MLX-quantized variant.")
 
-            RestartNote()
+            WideRow {
+                RestartNote()
+            }
 
-            DisclosureGroup("Sampling") {
-                LabeledContent("Temperature") {
-                    HStack {
-                        Slider(value: Binding(
-                            get: { appState.config.qwen3Asr.temperature },
-                            set: { v in
-                                appState.config.qwen3Asr.temperature = v
-                                appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "temperature", value: v)
+            WideRow {
+                DisclosureGroup("Sampling") {
+                    VStack(spacing: 0) {
+                        SettingRow(
+                            title: "Temperature",
+                            subtitle: "0.0 is greedy. Higher values increase variation. Default 0.0."
+                        ) {
+                            CommitSlider(
+                                value: appState.config.qwen3Asr.temperature,
+                                in: 0...1,
+                                step: 0.05,
+                                onCommit: { v in
+                                    appState.config.qwen3Asr.temperature = v
+                                    appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "temperature", value: v)
+                                }
+                            ) { v in
+                                Text(String(format: "%.2f", v)).monoStat(width: 40)
                             }
-                        ), in: 0...1, step: 0.05)
-                        Text(String(format: "%.2f", appState.config.qwen3Asr.temperature))
-                            .monoStat(width: 44)
-                    }
-                }
-                .help("0.0 is greedy. Higher values increase variation. Default 0.0.")
+                        }
 
-                LabeledContent("Top P") {
-                    HStack {
-                        Slider(value: Binding(
-                            get: { appState.config.qwen3Asr.topP },
-                            set: { v in
-                                appState.config.qwen3Asr.topP = v
-                                appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "top_p", value: v)
+                        SettingRow(
+                            title: "Top P",
+                            subtitle: "Active when temperature is above 0. Default 1.0."
+                        ) {
+                            CommitSlider(
+                                value: appState.config.qwen3Asr.topP,
+                                in: 0...1,
+                                step: 0.05,
+                                onCommit: { v in
+                                    appState.config.qwen3Asr.topP = v
+                                    appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "top_p", value: v)
+                                }
+                            ) { v in
+                                Text(String(format: "%.2f", v)).monoStat(width: 40)
                             }
-                        ), in: 0...1, step: 0.05)
-                        Text(String(format: "%.2f", appState.config.qwen3Asr.topP))
-                            .monoStat(width: 44)
-                    }
-                }
-                .help("Active when temperature > 0. Default 1.0.")
+                        }
 
-                LabeledContent("Top K") {
-                    HStack {
-                        Stepper("", value: Binding(
-                            get: { appState.config.qwen3Asr.topK },
-                            set: { v in
+                        SettingRow(
+                            title: "Top K",
+                            subtitle: "Top-K sampling when temperature is above 0. 0 disables. Default 0."
+                        ) {
+                            StepperRowControl(
+                                value: appState.config.qwen3Asr.topK,
+                                range: 0...200,
+                                step: 1,
+                                display: appState.config.qwen3Asr.topK == 0 ? "Off" : "\(appState.config.qwen3Asr.topK)",
+                                displayWidth: 40
+                            ) { v in
                                 appState.config.qwen3Asr.topK = v
                                 appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "top_k", value: v)
                             }
-                        ), in: 0...200, step: 1)
-                        .labelsHidden()
-                        Text(appState.config.qwen3Asr.topK == 0 ? "Off" : "\(appState.config.qwen3Asr.topK)")
-                            .monoStat(width: 44)
+                        }
                     }
+                    .padding(.top, Theme.Spacing.xs)
                 }
-                .help("Top-K sampling. Active when temperature > 0. 0 disables. Default 0.")
+                .font(Theme.Typography.bodyEmphasized)
             }
 
-            DisclosureGroup("Decoding") {
-                LabeledContent("Repetition penalty") {
-                    HStack {
-                        Slider(value: Binding(
-                            get: { appState.config.qwen3Asr.repetitionPenalty },
-                            set: { v in
-                                appState.config.qwen3Asr.repetitionPenalty = v
-                                appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "repetition_penalty", value: v)
+            WideRow {
+                DisclosureGroup("Decoding") {
+                    VStack(spacing: 0) {
+                        SettingRow(
+                            title: "Repetition penalty",
+                            subtitle: "Penalty for repeated tokens. 1.0 disables. Default 1.2."
+                        ) {
+                            CommitSlider(
+                                value: appState.config.qwen3Asr.repetitionPenalty,
+                                in: 1.0...2.0,
+                                step: 0.05,
+                                onCommit: { v in
+                                    appState.config.qwen3Asr.repetitionPenalty = v
+                                    appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "repetition_penalty", value: v)
+                                }
+                            ) { v in
+                                Text(String(format: "%.2f", v)).monoStat(width: 40)
                             }
-                        ), in: 1.0...2.0, step: 0.05)
-                        Text(String(format: "%.2f", appState.config.qwen3Asr.repetitionPenalty))
-                            .monoStat(width: 44)
-                    }
-                }
-                .help("Penalty for repeated tokens. 1.0 disables. Default 1.2.")
+                        }
 
-                LabeledContent("Repetition context") {
-                    HStack {
-                        Stepper("", value: Binding(
-                            get: { appState.config.qwen3Asr.repetitionContextSize },
-                            set: { v in
+                        SettingRow(
+                            title: "Repetition context",
+                            subtitle: "Tokens of context for the repetition penalty. Default 100."
+                        ) {
+                            StepperRowControl(
+                                value: appState.config.qwen3Asr.repetitionContextSize,
+                                range: 1...500,
+                                step: 10,
+                                display: "\(appState.config.qwen3Asr.repetitionContextSize)",
+                                displayWidth: 40
+                            ) { v in
                                 appState.config.qwen3Asr.repetitionContextSize = v
                                 appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "repetition_context_size", value: v)
                             }
-                        ), in: 1...500, step: 10)
-                        .labelsHidden()
-                        Text("\(appState.config.qwen3Asr.repetitionContextSize)")
-                            .monoStat(width: 44)
-                    }
-                }
-                .help("Tokens of context for the repetition penalty. Default 100.")
+                        }
 
-                LabeledContent("Chunk duration") {
-                    HStack {
-                        Stepper("", value: Binding(
-                            get: { appState.config.qwen3Asr.chunkDuration },
-                            set: { v in
-                                appState.config.qwen3Asr.chunkDuration = v
-                                appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "chunk_duration", value: v)
+                        SettingRow(
+                            title: "Chunk duration",
+                            subtitle: "Maximum chunk size for very long audio. Default 1200s."
+                        ) {
+                            StepperRowControl(
+                                value: Int(appState.config.qwen3Asr.chunkDuration),
+                                range: 60...3600,
+                                step: 60,
+                                display: "\(Int(appState.config.qwen3Asr.chunkDuration))s",
+                                displayWidth: 56
+                            ) { v in
+                                appState.config.qwen3Asr.chunkDuration = Double(v)
+                                appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "chunk_duration", value: Double(v))
                             }
-                        ), in: 60...3600, step: 60)
-                        .labelsHidden()
-                        Text("\(Int(appState.config.qwen3Asr.chunkDuration))s")
-                            .monoStat(width: 60)
-                    }
-                }
-                .help("Maximum chunk size for very long audio. Default 1200s (20 minutes).")
+                        }
 
-                LabeledContent("Max tokens") {
-                    HStack {
-                        Stepper("", value: Binding(
-                            get: { appState.config.qwen3Asr.maxTokens },
-                            set: { v in
+                        SettingRow(
+                            title: "Max tokens",
+                            subtitle: "Maximum decoded tokens per request. 0 uses the engine default."
+                        ) {
+                            StepperRowControl(
+                                value: appState.config.qwen3Asr.maxTokens,
+                                range: 0...4096,
+                                step: 64,
+                                display: appState.config.qwen3Asr.maxTokens == 0 ? "Default" : "\(appState.config.qwen3Asr.maxTokens)"
+                            ) { v in
                                 appState.config.qwen3Asr.maxTokens = v
                                 appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "max_tokens", value: v)
                             }
-                        ), in: 0...4096, step: 64)
-                        .labelsHidden()
-                        Text(appState.config.qwen3Asr.maxTokens == 0 ? "Default" : "\(appState.config.qwen3Asr.maxTokens)")
-                            .monoStat(width: 70)
-                    }
-                }
-                .help("Maximum decoded tokens per request. 0 uses the engine default.")
+                        }
 
-                LabeledContent("Timeout") {
-                    HStack {
-                        Stepper("", value: Binding(
-                            get: { appState.config.qwen3Asr.timeout },
-                            set: { v in
-                                appState.config.qwen3Asr.timeout = v
-                                appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "timeout", value: v)
+                        SettingRow(
+                            title: "Timeout",
+                            subtitle: "Maximum seconds to wait for transcription. 0 means no limit."
+                        ) {
+                            StepperRowControl(
+                                value: Int(appState.config.qwen3Asr.timeout),
+                                range: 0...600,
+                                step: 10,
+                                display: appState.config.qwen3Asr.timeout == 0 ? "Unlimited" : "\(Int(appState.config.qwen3Asr.timeout))s"
+                            ) { v in
+                                appState.config.qwen3Asr.timeout = Double(v)
+                                appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "timeout", value: Double(v))
                             }
-                        ), in: 0...600, step: 10)
-                        .labelsHidden()
-                        Text(appState.config.qwen3Asr.timeout == 0 ? "Unlimited" : "\(Int(appState.config.qwen3Asr.timeout))s")
-                            .monoStat(width: 70)
+                        }
                     }
+                    .padding(.top, Theme.Spacing.xs)
                 }
-                .help("Maximum seconds to wait for transcription. 0 = no limit.")
+                .font(Theme.Typography.bodyEmphasized)
             }
-        } header: {
-            SettingsSectionHeader(
-                symbol: "sparkle",
-                title: "Qwen3-ASR settings",
-                description: "Tuning knobs for the active engine."
-            )
         }
     }
 }
@@ -355,8 +396,15 @@ struct AppleSpeechSection: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
-        Section {
-            LabeledContent("Language") {
+        SettingsCard(
+            icon: "apple.logo",
+            title: "Apple SpeechTranscriber settings",
+            description: "On-device transcription through SpeechAnalyzer on macOS 26 or later."
+        ) {
+            SettingRow(
+                title: "Language",
+                subtitle: "BCP 47 locale such as en-US, de-DE, or fa-IR. SpeechTranscriber requires an explicit supported locale."
+            ) {
                 DeferredTextField(
                     label: "Locale",
                     initialValue: appState.config.appleSpeech.locale
@@ -366,35 +414,30 @@ struct AppleSpeechSection: View {
                     appState.ipcClient?.sendConfigUpdate(section: "apple_speech", key: "locale", value: locale)
                 }
                 .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 180)
+                .frame(width: 140)
             }
-            .help("BCP 47 locale such as en-US, de-DE, or fa-IR. SpeechTranscriber requires an explicit supported locale.")
 
-            LabeledContent("Timeout") {
-                HStack {
-                    Stepper("", value: Binding(
-                        get: { appState.config.appleSpeech.timeout },
-                        set: { value in
-                            appState.config.appleSpeech.timeout = value
-                            appState.ipcClient?.sendConfigUpdate(section: "apple_speech", key: "timeout", value: value)
-                        }
-                    ), in: 0...3600, step: 30)
-                    .labelsHidden()
-                    Text(appState.config.appleSpeech.timeout == 0 ? "Unlimited" : "\(Int(appState.config.appleSpeech.timeout))s")
-                        .monoStat(width: 70)
+            SettingRow(
+                title: "Timeout",
+                subtitle: "Maximum time to wait for a completed transcription. 0 means no limit."
+            ) {
+                StepperRowControl(
+                    value: Int(appState.config.appleSpeech.timeout),
+                    range: 0...3600,
+                    step: 30,
+                    display: appState.config.appleSpeech.timeout == 0 ? "Unlimited" : "\(Int(appState.config.appleSpeech.timeout))s"
+                ) { value in
+                    appState.config.appleSpeech.timeout = Double(value)
+                    appState.ipcClient?.sendConfigUpdate(section: "apple_speech", key: "timeout", value: Double(value))
                 }
             }
-            .help("Maximum time to wait for a completed transcription. 0 = no limit.")
 
-            Text("Audio stays on-device. Apple downloads, updates, and shares the language asset through macOS; Local Whisper does not manage the model files directly.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        } header: {
-            SettingsSectionHeader(
-                symbol: "apple.logo",
-                title: "Apple SpeechTranscriber settings",
-                description: "On-device transcription through SpeechAnalyzer on macOS 26 or later."
-            )
+            WideRow {
+                InlineNotice(
+                    kind: .info,
+                    text: "Audio stays on-device. Apple downloads, updates, and shares the language asset through macOS; Local Whisper does not manage the model files directly."
+                )
+            }
         }
     }
 }
@@ -414,192 +457,224 @@ struct WhisperKitSection: View {
     ]
 
     var body: some View {
-        Section {
-            LabeledContent("Server URL") {
+        SettingsCard(
+            icon: "server.rack",
+            title: "WhisperKit settings",
+            description: "Posts 30-second clips to a local server. Supports many languages."
+        ) {
+            SettingRow(title: "Server URL") {
                 DeferredTextField(label: "URL", initialValue: appState.config.whisper.url) { value in
                     appState.config.whisper.url = value
                     appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "url", value: value)
                 }
                 .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 320)
+                .frame(width: 280)
             }
 
-            LabeledContent("Check URL") {
+            SettingRow(title: "Check URL") {
                 DeferredTextField(label: "http://localhost:50060/", initialValue: appState.config.whisper.checkUrl) { value in
                     appState.config.whisper.checkUrl = value
                     appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "check_url", value: value)
                 }
                 .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 320)
+                .frame(width: 280)
             }
 
-            RestartNote()
+            WideRow {
+                RestartNote()
+            }
 
-            Picker("Preset", selection: modelPresetBinding) {
-                ForEach(modelPresets, id: \.id) { preset in
-                    Text(preset.label).tag(preset.id)
+            SettingRow(
+                title: "Preset",
+                subtitle: "Argmax recommends Large v3 626 MB for maximum multilingual accuracy."
+            ) {
+                Picker("Preset", selection: modelPresetBinding) {
+                    ForEach(modelPresets, id: \.id) { preset in
+                        Text(preset.label).tag(preset.id)
+                    }
+                    Text("Custom").tag("custom")
                 }
-                Text("Custom").tag("custom")
+                .pickerStyle(.menu)
+                .fixedSize()
             }
-            .pickerStyle(.menu)
-            .help("Argmax recommends Large v3 626 MB for maximum multilingual accuracy.")
 
-            LabeledContent("Model") {
+            SettingRow(title: "Model") {
                 DeferredTextField(label: "Model", initialValue: appState.config.whisper.model) { value in
                     appState.config.whisper.model = value
                     appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "model", value: value)
                 }
                 .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 320)
+                .frame(width: 280)
             }
 
-            Picker("Language", selection: Binding(
-                get: { appState.config.whisper.language },
-                set: { newValue in
-                    appState.config.whisper.language = newValue
-                    appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "language", value: newValue)
-                }
-            )) {
-                Section("Auto") {
-                    Text("Detect from audio").tag("auto")
-                }
-                Section("Common") {
-                    Text("English").tag("en")
-                    Text("Spanish").tag("es")
-                    Text("French").tag("fr")
-                    Text("German").tag("de")
-                    Text("Portuguese").tag("pt")
-                    Text("Italian").tag("it")
-                }
-                Section("Other") {
-                    Text("Persian").tag("fa")
-                    Text("Arabic").tag("ar")
-                    Text("Chinese").tag("zh")
-                    Text("Japanese").tag("ja")
-                    Text("Korean").tag("ko")
-                    Text("Russian").tag("ru")
-                }
-            }
-
-            DisclosureGroup("Decoding") {
-                LabeledContent("Temperature") {
-                    HStack {
-                        Slider(value: Binding(
-                            get: { appState.config.whisper.temperature },
-                            set: { v in
-                                appState.config.whisper.temperature = v
-                                appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "temperature", value: v)
-                            }
-                        ), in: 0...1, step: 0.05)
-                        Text(String(format: "%.2f", appState.config.whisper.temperature))
-                            .monoStat(width: 44)
-                    }
-                }
-
-                LabeledContent("Compression-ratio threshold") {
-                    HStack {
-                        Slider(value: Binding(
-                            get: { appState.config.whisper.compressionRatioThreshold },
-                            set: { v in
-                                appState.config.whisper.compressionRatioThreshold = v
-                                appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "compression_ratio_threshold", value: v)
-                            }
-                        ), in: 1...5, step: 0.1)
-                        Text(String(format: "%.1f", appState.config.whisper.compressionRatioThreshold))
-                            .monoStat(width: 44)
-                    }
-                }
-                .help("Filters segments above this ratio as likely repetitive or hallucinated. Default 2.4.")
-
-                LabeledContent("No-speech threshold") {
-                    HStack {
-                        Slider(value: Binding(
-                            get: { appState.config.whisper.noSpeechThreshold },
-                            set: { v in
-                                appState.config.whisper.noSpeechThreshold = v
-                                appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "no_speech_threshold", value: v)
-                            }
-                        ), in: 0...1, step: 0.05)
-                        Text(String(format: "%.2f", appState.config.whisper.noSpeechThreshold))
-                            .monoStat(width: 44)
-                    }
-                }
-                .help("Filters segments above this no-speech probability. Default 0.6.")
-
-                LabeledContent("Log-probability threshold") {
-                    HStack {
-                        Slider(value: Binding(
-                            get: { appState.config.whisper.logprobThreshold },
-                            set: { v in
-                                appState.config.whisper.logprobThreshold = v
-                                appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "logprob_threshold", value: v)
-                            }
-                        ), in: -2...0, step: 0.05)
-                        Text(String(format: "%.2f", appState.config.whisper.logprobThreshold))
-                            .monoStat(width: 44)
-                    }
-                }
-                .help("Filters segments below this log-probability. Default -1.0.")
-
-                Stepper("Temperature fallback count: \(appState.config.whisper.temperatureFallbackCount)",
-                    value: Binding(
-                        get: { appState.config.whisper.temperatureFallbackCount },
-                        set: { v in
-                            appState.config.whisper.temperatureFallbackCount = v
-                            appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "temperature_fallback_count", value: v)
-                        }
-                    ),
-                    in: 1...10
-                )
-            }
-
-            DisclosureGroup("Vocabulary hints") {
-                Picker("Preset", selection: Binding(
-                    get: { appState.config.whisper.promptPreset },
-                    set: { v in
-                        appState.config.whisper.promptPreset = v
-                        appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "prompt_preset", value: v)
+            SettingRow(title: "Language") {
+                Picker("Language", selection: Binding(
+                    get: { appState.config.whisper.language },
+                    set: { newValue in
+                        appState.config.whisper.language = newValue
+                        appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "language", value: newValue)
                     }
                 )) {
-                    Text("None").tag("none")
-                    Text("Technical").tag("technical")
-                    Text("Dictation").tag("dictation")
-                    Text("Custom").tag("custom")
-                }
-
-                if appState.config.whisper.promptPreset == "custom" {
-                    LabeledContent("Custom prompt") {
-                        DeferredTextEditor(initialValue: appState.config.whisper.prompt) { value in
-                            appState.config.whisper.prompt = value
-                            appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "prompt", value: value)
-                        }
-                        .font(.system(size: 12))
-                        .frame(height: 60)
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.3)))
+                    Section("Auto") {
+                        Text("Detect from audio").tag("auto")
+                    }
+                    Section("Common") {
+                        Text("English").tag("en")
+                        Text("Spanish").tag("es")
+                        Text("French").tag("fr")
+                        Text("German").tag("de")
+                        Text("Portuguese").tag("pt")
+                        Text("Italian").tag("it")
+                    }
+                    Section("Other") {
+                        Text("Persian").tag("fa")
+                        Text("Arabic").tag("ar")
+                        Text("Chinese").tag("zh")
+                        Text("Japanese").tag("ja")
+                        Text("Korean").tag("ko")
+                        Text("Russian").tag("ru")
                     }
                 }
+                .pickerStyle(.menu)
+                .fixedSize()
             }
 
-            LabeledContent("Timeout") {
-                HStack {
-                    Stepper("", value: Binding(
-                        get: { appState.config.whisper.timeout },
-                        set: { v in
-                            appState.config.whisper.timeout = v
-                            appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "timeout", value: v)
+            WideRow {
+                DisclosureGroup("Decoding") {
+                    VStack(spacing: 0) {
+                        SettingRow(title: "Temperature") {
+                            CommitSlider(
+                                value: appState.config.whisper.temperature,
+                                in: 0...1,
+                                step: 0.05,
+                                onCommit: { v in
+                                    appState.config.whisper.temperature = v
+                                    appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "temperature", value: v)
+                                }
+                            ) { v in
+                                Text(String(format: "%.2f", v)).monoStat(width: 40)
+                            }
                         }
-                    ), in: 0...300, step: 5)
-                    .labelsHidden()
-                    Text(appState.config.whisper.timeout == 0 ? "Unlimited" : "\(Int(appState.config.whisper.timeout))s")
-                        .monoStat(width: 70)
+
+                        SettingRow(
+                            title: "Compression-ratio threshold",
+                            subtitle: "Filters segments above this ratio as likely repetitive or hallucinated. Default 2.4."
+                        ) {
+                            CommitSlider(
+                                value: appState.config.whisper.compressionRatioThreshold,
+                                in: 1...5,
+                                step: 0.1,
+                                onCommit: { v in
+                                    appState.config.whisper.compressionRatioThreshold = v
+                                    appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "compression_ratio_threshold", value: v)
+                                }
+                            ) { v in
+                                Text(String(format: "%.1f", v)).monoStat(width: 40)
+                            }
+                        }
+
+                        SettingRow(
+                            title: "No-speech threshold",
+                            subtitle: "Filters segments above this no-speech probability. Default 0.6."
+                        ) {
+                            CommitSlider(
+                                value: appState.config.whisper.noSpeechThreshold,
+                                in: 0...1,
+                                step: 0.05,
+                                onCommit: { v in
+                                    appState.config.whisper.noSpeechThreshold = v
+                                    appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "no_speech_threshold", value: v)
+                                }
+                            ) { v in
+                                Text(String(format: "%.2f", v)).monoStat(width: 40)
+                            }
+                        }
+
+                        SettingRow(
+                            title: "Log-probability threshold",
+                            subtitle: "Filters segments below this log-probability. Default -1.0."
+                        ) {
+                            CommitSlider(
+                                value: appState.config.whisper.logprobThreshold,
+                                in: -2...0,
+                                step: 0.05,
+                                onCommit: { v in
+                                    appState.config.whisper.logprobThreshold = v
+                                    appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "logprob_threshold", value: v)
+                                }
+                            ) { v in
+                                Text(String(format: "%.2f", v)).monoStat(width: 40)
+                            }
+                        }
+
+                        SettingRow(title: "Temperature fallback count") {
+                            StepperRowControl(
+                                value: appState.config.whisper.temperatureFallbackCount,
+                                range: 1...10,
+                                step: 1,
+                                display: "\(appState.config.whisper.temperatureFallbackCount)",
+                                displayWidth: 40
+                            ) { v in
+                                appState.config.whisper.temperatureFallbackCount = v
+                                appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "temperature_fallback_count", value: v)
+                            }
+                        }
+                    }
+                    .padding(.top, Theme.Spacing.xs)
+                }
+                .font(Theme.Typography.bodyEmphasized)
+            }
+
+            WideRow {
+                DisclosureGroup("Vocabulary hints") {
+                    VStack(spacing: 0) {
+                        SettingRow(title: "Preset") {
+                            Picker("Preset", selection: Binding(
+                                get: { appState.config.whisper.promptPreset },
+                                set: { v in
+                                    appState.config.whisper.promptPreset = v
+                                    appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "prompt_preset", value: v)
+                                }
+                            )) {
+                                Text("None").tag("none")
+                                Text("Technical").tag("technical")
+                                Text("Dictation").tag("dictation")
+                                Text("Custom").tag("custom")
+                            }
+                            .pickerStyle(.menu)
+                            .fixedSize()
+                        }
+
+                        if appState.config.whisper.promptPreset == "custom" {
+                            WideRow {
+                                Text("Custom prompt")
+                                    .font(Theme.Typography.bodyEmphasized)
+                                DeferredTextEditor(initialValue: appState.config.whisper.prompt) { value in
+                                    appState.config.whisper.prompt = value
+                                    appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "prompt", value: value)
+                                }
+                                .font(.system(size: 12))
+                                .frame(height: 60)
+                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.Surface.stroke))
+                            }
+                        }
+                    }
+                    .padding(.top, Theme.Spacing.xs)
+                }
+                .font(Theme.Typography.bodyEmphasized)
+            }
+
+            SettingRow(title: "Timeout", subtitle: "Maximum wait per request. 0 means no limit.") {
+                StepperRowControl(
+                    value: Int(appState.config.whisper.timeout),
+                    range: 0...300,
+                    step: 5,
+                    display: appState.config.whisper.timeout == 0 ? "Unlimited" : "\(Int(appState.config.whisper.timeout))s"
+                ) { v in
+                    appState.config.whisper.timeout = Double(v)
+                    appState.ipcClient?.sendConfigUpdate(section: "whisper", key: "timeout", value: Double(v))
                 }
             }
-        } header: {
-            SettingsSectionHeader(
-                symbol: "server.rack",
-                title: "WhisperKit settings",
-                description: "Posts 30-second clips to a local server. Supports many languages."
-            )
         }
     }
 

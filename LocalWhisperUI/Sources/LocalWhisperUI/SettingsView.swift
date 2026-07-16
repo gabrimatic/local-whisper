@@ -1,246 +1,302 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Settings root with sidebar
+// MARK: - Settings window shell
+//
+// Custom Window scene (not the SwiftUI Settings scene) so the app fully owns
+// chrome, sizing, and activation. Layout: a permanently graphite sidebar on
+// the left (brand identity, independent of system appearance) and an adaptive
+// content area on the right. The hosting NSWindow is resolved through
+// WindowAccessor — never NSApp.keyWindow guessing.
 
 struct SettingsView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selection: SettingsSection = .recording
     @SceneStorage("settings.selection") private var storedSelection: String = SettingsSection.recording.rawValue
+    @State private var hostWindow: NSWindow?
 
     var body: some View {
         HStack(spacing: 0) {
-            sidebar
-            Divider()
+            SettingsSidebar(selection: $selection)
+
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.Surface.window)
         }
-        .frame(minWidth: 780, minHeight: 540)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .ignoresSafeArea()
+        .frame(
+            minWidth: 880, idealWidth: 960, maxWidth: .infinity,
+            minHeight: 620, idealHeight: 680, maxHeight: .infinity
+        )
+        .background(
+            WindowAccessor { window in
+                guard hostWindow !== window else { return }
+                hostWindow = window
+                SettingsWindowChrome.configure(window)
+                SettingsWindowChrome.bringForward(window)
+            }
+        )
         .onAppear {
             if let restored = SettingsSection(rawValue: storedSelection) {
                 selection = restored
             }
-            Self.activateRegular()
-            Self.configureSettingsWindowChrome()
+            if let forced = LaunchFlags.initialPanel {
+                selection = forced
+            }
+            ActivationPolicy.shared.acquire()
             // Clear focus so DeferredTextFields don't swallow the Right Option
             // hotkey while the Settings window is key. Without this, double-tap
             // registers start + stop because the focused field consumes one edge.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                Self.configureSettingsWindowChrome()
-                NSApp.keyWindow?.makeFirstResponder(nil)
+                hostWindow?.makeFirstResponder(nil)
             }
+        }
+        .onDisappear {
+            ActivationPolicy.shared.release()
         }
         .onChange(of: selection) { _, newValue in
             storedSelection = newValue.rawValue
             // Drop focus when navigating between panels so a focused field
             // in one panel can't continue intercepting hotkeys.
-            NSApp.keyWindow?.makeFirstResponder(nil)
+            hostWindow?.makeFirstResponder(nil)
         }
-        .onDisappear(perform: Self.restoreAccessoryPolicy)
-    }
-
-    // MARK: - Sidebar
-
-    private var sidebar: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.l) {
-            SettingsSidebarHeader()
-                .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.top, Theme.Spacing.xl)
-
-            VStack(spacing: Theme.Spacing.xs) {
-                ForEach(SettingsSection.allCases) { section in
-                    SettingsSidebarRow(
-                        section: section,
-                        isSelected: selection == section
-                    ) {
-                        selection = section
-                    }
-                }
-            }
-            .padding(.horizontal, Theme.Spacing.m)
-
-            Spacer(minLength: 0)
-        }
-        .frame(width: 228)
-        .background(.regularMaterial)
     }
 
     // MARK: - Detail panels
 
-    @ViewBuilder
     private var detail: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SettingsDetailHeader(section: selection)
-                .padding(.horizontal, Theme.Spacing.xxxl)
-                .padding(.top, Theme.Spacing.xl)
-                .padding(.bottom, Theme.Spacing.s)
-
-            switch selection {
-            case .recording:    RecordingPanel().environment(appState)
-            case .transcription: TranscriptionPanel().environment(appState)
-            case .grammar:      GrammarPanel().environment(appState)
-            case .voice:        VoicePanel().environment(appState)
-            case .vocabulary:   VocabularyPanel().environment(appState)
-            case .output:       OutputPanel().environment(appState)
-            case .shortcuts:    ShortcutsPanel().environment(appState)
-            case .activity:     ActivityPanel().environment(appState)
-            case .advanced:     AdvancedPanel().environment(appState)
-            case .about:        AboutView().environment(appState)
-            }
+        ZStack {
+            panelContent
+                .id(selection)
+                .transition(
+                    reduceMotion
+                        ? .opacity
+                        : .asymmetric(
+                            insertion: .opacity.combined(with: .offset(y: 6)),
+                            removal: .opacity
+                        )
+                )
         }
+        .animation(reduceMotion ? nil : Theme.Motion.panelSwitch, value: selection)
     }
 
-    @MainActor
-    private static func activateRegular() {
-        // Promote to a regular app while a Settings window is on screen so
-        // it appears in Cmd+Tab and macOS treats it like an app, not a
-        // floating utility window. Reverted in restoreAccessoryPolicy().
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    @MainActor
-    private static func configureSettingsWindowChrome() {
-        guard let window = NSApp.keyWindow else { return }
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-    }
-
-    @MainActor
-    private static func restoreAccessoryPolicy() {
-        // Defer the policy switch — SwiftUI tears the window down before this
-        // fires, so checking immediately misses the case where another panel
-        // is being opened in the same tick.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            let stillOpen = NSApp.windows.contains { win in
-                win.isVisible && win.identifier?.rawValue.contains("Settings") == true
-            }
-            if !stillOpen {
-                NSApp.setActivationPolicy(.accessory)
-            }
+    @ViewBuilder
+    private var panelContent: some View {
+        switch selection {
+        case .recording:    RecordingPanel().environment(appState)
+        case .transcription: TranscriptionPanel().environment(appState)
+        case .grammar:      GrammarPanel().environment(appState)
+        case .voice:        VoicePanel().environment(appState)
+        case .vocabulary:   VocabularyPanel().environment(appState)
+        case .output:       OutputPanel().environment(appState)
+        case .shortcuts:    ShortcutsPanel().environment(appState)
+        case .activity:     ActivityPanel().environment(appState)
+        case .advanced:     AdvancedPanel().environment(appState)
+        case .about:        AboutView().environment(appState)
         }
     }
 }
 
-// MARK: - Sidebar chrome
+// MARK: - Sidebar
 
-private struct SettingsSidebarHeader: View {
-    @Environment(\.colorScheme) private var colorScheme
+private struct SettingsSidebar: View {
+    @Binding var selection: SettingsSection
+    @Environment(AppState.self) private var appState
 
     var body: some View {
-        let accent = Theme.Brand.accent(for: colorScheme)
-        HStack(spacing: Theme.Spacing.m) {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+                .padding(.top, 54)   // clears the traffic lights
+                .padding(.horizontal, Theme.Spacing.l)
+                .padding(.bottom, Theme.Spacing.xl)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.Spacing.l) {
+                    ForEach(SettingsSection.groups, id: \.title) { group in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(group.title)
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .kerning(0.8)
+                                .foregroundStyle(Theme.Surface.sidebarTextTertiary)
+                                .padding(.horizontal, Theme.Spacing.m)
+                                .padding(.bottom, 3)
+                            ForEach(group.sections) { section in
+                                SidebarRow(
+                                    section: section,
+                                    isSelected: selection == section
+                                ) {
+                                    selection = section
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, Theme.Spacing.m)
+            }
+            .scrollIndicators(.never)
+
+            Spacer(minLength: Theme.Spacing.s)
+
+            footer
+                .padding(.horizontal, Theme.Spacing.l)
+                .padding(.bottom, Theme.Spacing.l)
+        }
+        .frame(width: 224)
+        .background(
+            LinearGradient(
+                colors: [Theme.Surface.sidebarTop, Theme.Surface.sidebarBottom],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(Theme.Surface.sidebarStroke)
+                .frame(width: 1)
+        }
+        .environment(\.colorScheme, .dark)
+    }
+
+    private var header: some View {
+        HStack(spacing: Theme.Spacing.m - 2) {
             ZStack {
-                RoundedRectangle(cornerRadius: Theme.Radius.medium)
-                    .fill(accent.opacity(colorScheme == .dark ? 0.16 : 0.12))
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(Theme.Brand.mintDark.opacity(0.14))
                 Image(systemName: "waveform")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(accent)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Theme.Brand.mintDark)
                     .symbolRenderingMode(.hierarchical)
             }
-            .frame(width: 40, height: 40)
+            .frame(width: 34, height: 34)
             .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.medium)
-                    .strokeBorder(accent.opacity(colorScheme == .dark ? 0.20 : 0.28), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(Theme.Brand.mintDark.opacity(0.25), lineWidth: 1)
             )
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text("Local Whisper")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Theme.Surface.sidebarTextPrimary)
                 Text("Settings")
                     .font(Theme.Typography.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Surface.sidebarTextSecondary)
             }
             .lineLimit(1)
         }
-        .padding(.top, Theme.Spacing.xl)
+    }
+
+    private var footer: some View {
+        HStack(spacing: Theme.Spacing.s) {
+            Circle()
+                .fill(connectionColor)
+                .frame(width: 7, height: 7)
+            Text(connectionText)
+                .font(Theme.Typography.caption)
+                .foregroundStyle(Theme.Surface.sidebarTextSecondary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(Theme.Spacing.s + 2)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: Theme.Radius.small + 2))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.small + 2)
+                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Service \(connectionText)")
+    }
+
+    private var connectionColor: Color {
+        switch appState.connectionState {
+        case .connected:    return Theme.Brand.mintDark
+        case .connecting:   return .secondary
+        case .disconnected: return Color(hex: 0xFFB454)
+        }
+    }
+
+    private var connectionText: String {
+        switch appState.connectionState {
+        case .connected:    return "Service connected"
+        case .connecting:   return "Connecting…"
+        case .disconnected: return "Service not running"
+        }
     }
 }
 
-private struct SettingsSidebarRow: View {
+private struct SidebarRow: View {
     let section: SettingsSection
     let isSelected: Bool
     let action: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
+
+    @State private var hovering = false
 
     var body: some View {
-        let tint = section.accent.color(for: colorScheme)
         Button(action: action) {
-            HStack(spacing: Theme.Spacing.m) {
+            HStack(spacing: Theme.Spacing.s + 1) {
                 Image(systemName: section.symbol)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 12.5, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(isSelected ? tint : .secondary)
-                    .frame(width: 22)
+                    .foregroundStyle(isSelected ? Theme.Brand.mintDark : Theme.Surface.sidebarTextSecondary)
+                    .frame(width: 19)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(section.title)
-                        .font(Theme.Typography.bodyEmphasized)
-                        .foregroundStyle(isSelected ? .primary : .secondary)
-                    Text(section.sidebarSubtitle)
-                        .font(Theme.Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                Text(section.title)
+                    .font(Theme.Typography.bodyEmphasized)
+                    .foregroundStyle(isSelected ? Theme.Surface.sidebarTextPrimary : Theme.Surface.sidebarTextSecondary)
 
                 Spacer(minLength: 0)
             }
-            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.medium))
-            .padding(.horizontal, Theme.Spacing.m)
-            .padding(.vertical, 9)
+            .padding(.horizontal, Theme.Spacing.m - 2)
+            .padding(.vertical, 7)
+            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.small + 2))
             .background {
+                RoundedRectangle(cornerRadius: Theme.Radius.small + 2, style: .continuous)
+                    .fill(
+                        isSelected
+                            ? Theme.Brand.mintDark.opacity(0.14)
+                            : (hovering ? Color.white.opacity(0.05) : Color.clear)
+                    )
+            }
+            .overlay {
                 if isSelected {
-                    RoundedRectangle(cornerRadius: Theme.Radius.medium)
-                        .fill(tint.opacity(colorScheme == .dark ? 0.16 : 0.12))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.Radius.medium)
-                                .strokeBorder(tint.opacity(colorScheme == .dark ? 0.20 : 0.26), lineWidth: 1)
-                        )
+                    RoundedRectangle(cornerRadius: Theme.Radius.small + 2, style: .continuous)
+                        .strokeBorder(Theme.Brand.mintDark.opacity(0.22), lineWidth: 1)
                 }
             }
         }
         .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(Theme.Motion.hover, value: hovering)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 }
 
-private struct SettingsDetailHeader: View {
-    let section: SettingsSection
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        let tint = section.accent.color(for: colorScheme)
-        HStack(alignment: .center, spacing: Theme.Spacing.m) {
-            SectionIcon(symbol: section.symbol, tint: tint, diameter: 34, fontSize: 15)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(section.title)
-                    .font(Theme.Typography.title)
-                Text(section.subtitle)
-                    .font(Theme.Typography.captionEmphasized)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer(minLength: 0)
-        }
-    }
-}
-
-// MARK: - Sidebar sections
+// MARK: - Sections
 
 enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
     case recording
     case transcription
     case grammar
-    case voice
     case vocabulary
-    case output
+    case voice
     case shortcuts
+    case output
     case activity
     case advanced
     case about
 
     var id: String { rawValue }
+
+    struct Group {
+        let title: String
+        let sections: [SettingsSection]
+    }
+
+    static let groups: [Group] = [
+        Group(title: "DICTATION", sections: [.recording, .transcription, .grammar, .vocabulary]),
+        Group(title: "TOOLS", sections: [.voice, .shortcuts, .output]),
+        Group(title: "APP", sections: [.activity, .advanced, .about]),
+    ]
 
     var title: String {
         switch self {
@@ -259,31 +315,16 @@ enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
 
     var subtitle: String {
         switch self {
-        case .recording:    return "Hotkey, mic, audio cleanup"
-        case .transcription: return "Choose and tune the speech engine"
-        case .grammar:      return "Optional cleanup pass"
-        case .voice:        return "Read aloud and dictation commands"
-        case .vocabulary:   return "Replacements that fix recurring words"
-        case .output:       return "Overlay, sounds, paste, history"
-        case .shortcuts:    return "Global text-transform keybindings"
-        case .activity:     return "Usage statistics"
-        case .advanced:     return "Storage and diagnostics"
-        case .about:        return "Version and credits"
-        }
-    }
-
-    var sidebarSubtitle: String {
-        switch self {
-        case .recording:    return "Hotkey and mic"
-        case .transcription: return "Speech engine"
-        case .grammar:      return "Cleanup pass"
-        case .voice:        return "Read aloud"
-        case .vocabulary:   return "Replacements"
-        case .output:       return "Paste and history"
-        case .shortcuts:    return "Keybindings"
-        case .activity:     return "Stats"
-        case .advanced:     return "Diagnostics"
-        case .about:        return "Credits"
+        case .recording:    return "Trigger key, microphone handling, and audio cleanup."
+        case .transcription: return "Choose and tune the on-device speech engine."
+        case .grammar:      return "An optional cleanup pass over every transcript."
+        case .voice:        return "Read text aloud and speak punctuation while dictating."
+        case .vocabulary:   return "Teach Local Whisper your names, jargon, and slang."
+        case .output:       return "Overlay, sounds, paste behavior, and history."
+        case .shortcuts:    return "Global keybindings that transform selected text."
+        case .activity:     return "Your dictation usage at a glance."
+        case .advanced:     return "Service status, permissions, storage, and diagnostics."
+        case .about:        return "Version, credits, and the tutorial."
         }
     }
 
@@ -293,7 +334,7 @@ enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .transcription: return "waveform"
         case .grammar:      return "text.badge.checkmark"
         case .voice:        return "speaker.wave.2.fill"
-        case .vocabulary:   return "character.book.closed"
+        case .vocabulary:   return "character.book.closed.fill"
         case .output:       return "rectangle.on.rectangle"
         case .shortcuts:    return "command"
         case .activity:     return "chart.bar.fill"
@@ -301,22 +342,4 @@ enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .about:        return "info.circle.fill"
         }
     }
-
-    var accent: Theme.SectionAccent {
-        switch self {
-        case .recording:    return .recording
-        case .transcription: return .transcription
-        case .grammar:      return .grammar
-        case .voice:        return .voice
-        case .vocabulary:   return .vocabulary
-        case .output:       return .output
-        case .shortcuts:    return .shortcuts
-        case .activity:     return .activity
-        case .advanced:     return .advanced
-        case .about:        return .about
-        }
-    }
-
-    @MainActor
-    var tint: Color { accent.color }
 }

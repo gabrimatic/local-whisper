@@ -9,6 +9,7 @@ final class OverlayWindowController {
     private var panel: NSPanel?
     private let appState: AppState
     private var safetyHideTask: Task<Void, Never>?
+    private var disconnectGraceTask: Task<Void, Never>?
     private var lastVisibilityRepair: CFTimeInterval = 0
 
     init(appState: AppState) {
@@ -20,6 +21,7 @@ final class OverlayWindowController {
             self?.repairLiveOverlay(for: phase)
         }
         observeOverlayConfig()
+        observeConnection()
     }
 
     /// Observe `show_overlay` and `overlay_opacity` so the live pill reacts when the user
@@ -34,6 +36,35 @@ final class OverlayWindowController {
                 guard let self else { return }
                 self.applyOverlayConfig()
                 self.observeOverlayConfig()
+            }
+        }
+    }
+
+    /// If the service dies (kill -9, crash) mid-recording, no further state
+    /// updates will ever arrive — without this, the pill sat frozen on
+    /// "Recording…" above every Space forever. Give a reconnect a short
+    /// grace period, then retreat to idle.
+    private func observeConnection() {
+        withObservationTracking {
+            _ = appState.connectionState
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.handleConnectionChange()
+                self.observeConnection()
+            }
+        }
+    }
+
+    private func handleConnectionChange() {
+        guard appState.connectionState == .disconnected, appState.phase != .idle else { return }
+        disconnectGraceTask?.cancel()
+        disconnectGraceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            if self.appState.connectionState != .connected && self.appState.phase != .idle {
+                self.appState.phase = .idle
+                self.hidePanel()
             }
         }
     }
@@ -123,6 +154,18 @@ final class OverlayWindowController {
         safetyHideTask?.cancel()
         safetyHideTask = nil
 
+        // Safety net: Python schedules an idle state ~1.5s after done /
+        // ~2s after error, but if that message is dropped or the service
+        // is killed mid-flight the done/error phase would latch forever —
+        // freezing the menu bar icon even when the overlay is disabled.
+        // Armed regardless of show_overlay for exactly that reason.
+        switch phase {
+        case .done, .error:
+            armSafetyHide(after: 6.0)
+        default:
+            break
+        }
+
         guard appState.config.ui.showOverlay else {
             hidePanel()
             return
@@ -135,15 +178,20 @@ final class OverlayWindowController {
             showPanel()
         case .done, .error:
             showPanel()
-            // Safety net: Python schedules an idle state ~1.5s after done /
-            // ~2s after error, but if that message is dropped or the service
-            // is killed mid-flight the overlay would stay forever. After 6s
-            // of done/error with no further updates, force the pill out.
-            armSafetyHide(after: 6.0)
         }
     }
 
     private func repairLiveOverlay(for phase: AppPhase) {
+        switch phase {
+        case .done, .error:
+            // A SECOND done/error arriving within the safety window must
+            // restart the clock, or result #2 gets force-hidden ~1s in.
+            safetyHideTask?.cancel()
+            armSafetyHide(after: 6.0)
+        default:
+            break
+        }
+
         guard appState.config.ui.showOverlay else { return }
         switch phase {
         case .recording, .processing, .speaking:
@@ -173,6 +221,14 @@ final class OverlayWindowController {
         let now = CACurrentMediaTime()
         guard now - lastVisibilityRepair >= 1.0 else { return }
         lastVisibilityRepair = now
+
+        // Display unplugged / arrangement changed since the pill was placed:
+        // a frame that no longer intersects any screen is "visible" to AppKit
+        // but invisible to the user. Re-place it on the live screen.
+        if !NSScreen.screens.contains(where: { $0.frame.intersects(panel.frame) }) {
+            positionPanel(panel)
+        }
+
         panel.level = .screenSaver
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.orderFrontRegardless()

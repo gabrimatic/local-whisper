@@ -663,18 +663,54 @@ enum IncomingMessage: Sendable {
     case notification(title: String, body: String)
     case replacementTestResult(PipelineTestResult)
     case dictationTestResult(PipelineTestResult)
+    /// Internal (not from the wire): connection transitions, delivered through
+    /// the same ordered stream as wire messages so they can never race them.
+    case connectionChanged(ConnectionState)
+}
+
+/// Array that skips undecodable elements instead of failing the whole
+/// message — one malformed history entry must not drop the entire update
+/// during service/app version skew.
+struct LossyArray<Element: Decodable>: Decodable {
+    var elements: [Element]
+
+    init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        var result: [Element] = []
+        while !container.isAtEnd {
+            if let element = try? container.decode(Element.self) {
+                result.append(element)
+            } else {
+                // Skip the broken element, keeping position.
+                _ = try? container.decode(AnyDecodable.self)
+            }
+        }
+        elements = result
+    }
+
+    private struct AnyDecodable: Decodable {}
+}
+
+/// Value wrapper that decodes to nil instead of failing — one undecodable
+/// engine entry must not drop the whole engines list during version skew.
+struct Lossy<T: Decodable>: Decodable {
+    let value: T?
+
+    init(from decoder: Decoder) throws {
+        value = try? T(from: decoder)
+    }
 }
 
 private struct RawIncoming: Decodable {
     var type: String
     var config: AppConfig?
-    var phase: AppPhase?
+    var phase: String?
     var duration_seconds: Double?
     var rms_level: Double?
     var text: String?
     var status_text: String?
-    var entries: [HistoryEntry]?
-    var engines: [String: EngineStatus]?
+    var entries: LossyArray<HistoryEntry>?
+    var engines: [String: Lossy<EngineStatus>]?
 }
 
 // Separate struct so the `phase` field on download_progress — which uses its
@@ -732,17 +768,19 @@ func decodeIncomingMessage(_ data: Data) throws -> IncomingMessage {
         }
         return .configSnapshot(config)
     case "state_update":
+        // Unknown phase strings from a newer service map to .idle instead of
+        // throwing away the whole update.
         return .stateUpdate(
-            phase: raw.phase ?? .idle,
+            phase: raw.phase.flatMap(AppPhase.init(rawValue:)) ?? .idle,
             durationSeconds: raw.duration_seconds ?? 0,
             rmsLevel: raw.rms_level ?? 0,
             text: raw.text,
             statusText: raw.status_text
         )
     case "history_update":
-        return .historyUpdate(raw.entries ?? [])
+        return .historyUpdate(raw.entries?.elements ?? [])
     case "engines_status":
-        return .enginesStatus(Array((raw.engines ?? [:]).values))
+        return .enginesStatus((raw.engines ?? [:]).values.compactMap(\.value))
     case "notification":
         if let msg = try? JSONDecoder().decode(NotificationMessage.self, from: data) {
             return .notification(title: msg.title, body: msg.body)
@@ -772,6 +810,14 @@ struct ActionMessage: Encodable, Sendable {
 struct EngineSwitchMessage: Encodable, Sendable {
     var type = "engine_switch"
     var engine: String
+}
+
+/// Suspends the service's shortcut interception while a recorder captures a
+/// combo, so pressing a currently-bound combo reaches the recorder instead of
+/// firing its action.
+struct CaptureModeMessage: Encodable, Sendable {
+    var type = "capture_mode"
+    var active: Bool
 }
 
 struct EngineRemoveCacheMessage: Encodable, Sendable {

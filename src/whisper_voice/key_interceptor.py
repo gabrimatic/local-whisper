@@ -181,6 +181,18 @@ class KeyInterceptor:
         """
         self._enabled_guard = guard
 
+    def set_capture_guard(self, guard: Callable[[], bool]):
+        """
+        Set a guard for shortcut-recorder capture mode.
+
+        While it returns True, matched combos PASS THROUGH to the frontmost
+        app (the Settings window, whose recorder swallows them locally) —
+        unlike the enabled guard, which swallows our combos while busy. A
+        swallowed event would never reach the recorder, so the "already used
+        by X" conflict notice could never appear.
+        """
+        self._capture_guard = guard
+
     def start(self) -> bool:
         """
         Start the event tap in a background thread.
@@ -359,6 +371,11 @@ class KeyInterceptor:
                     callback = bound_callback
                     break
             if callback is None:
+                return event
+            capture_guard = getattr(self, "_capture_guard", None)
+            if capture_guard and capture_guard():
+                # A Settings shortcut recorder is capturing: hand OUR combo
+                # to the frontmost app so the recorder can see and refuse it.
                 return event
             if self._enabled_guard and not self._enabled_guard():
                 # This combo is OURS but the app is busy (recording or mid-

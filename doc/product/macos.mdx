@@ -25,33 +25,31 @@ Double-tap dictation follows `ui.auto_paste`: clipboard by default, cursor paste
 
 ## Menu bar
 
-The menu bar shows service state and exposes:
+The menu bar icon opens a status panel:
 
-| Item | Purpose |
+| Area | Purpose |
 | --- | --- |
-| Status | Current state, active engine, and backend subtitle |
-| Engine | Switch transcription engine in place |
-| Grammar | Switch grammar backend in place |
-| Replacements | Toggle replacements and show rule count |
-| Retry Last / Copy Last | Re-transcribe or re-copy |
-| Transcriptions | Recent entries, click to copy |
-| Recordings | Audio files, click to reveal in Finder |
-| Settings | Full sidebar settings window |
-| Service | Restart, check for updates, and open logs |
+| Status | Connection pill and a live hero — waveform and timer while recording, transcription progress, latched errors, and a Start button when the service is down |
+| Quick toggles | Paste at cursor, replacements, read aloud, and sounds |
+| Engine / Grammar | Switch the transcription engine and grammar backend in place |
+| Recent | Latest transcriptions — click to copy, hover to reveal the audio in Finder |
+| Footer | Settings, retry last transcription, a More menu, and quit |
+
+The More menu carries copy-last, the transcripts, audio, and log folders, update check, service restart, and the tutorial replay. Esc closes the panel; controls that need the service disable themselves while it is unreachable instead of failing silently.
 
 ## Settings panels
 
 | Panel | Covers |
 | --- | --- |
 | Recording | Trigger key, double-tap window, audio cleanup, and duration limits |
-| Transcription | Engine picker, verified model cache state, inline download progress, cancel, and per-engine sampling or decoding parameters |
-| Grammar | Backend picker and per-backend connection and limits |
-| Voice | Text-to-speech voice, shortcut, and dictation command help |
+| Transcription | Engine cards with verified model cache state, inline download progress, cancel, and per-engine sampling or decoding parameters |
+| Grammar | Backend chooser and per-backend connection and limits |
 | Vocabulary | Searchable replacement editor with import and export |
-| Output | Overlay, sounds, notifications, paste-at-cursor, and history limit |
+| Voice | Text-to-speech voice and shortcut, plus the dictation commands editor and tester |
 | Shortcuts | Proofread, rewrite, prompt-engineer bindings, and cheatsheet |
+| Output | Overlay, sounds, notifications, paste-at-cursor, and history limit |
 | Activity | Sessions, words, 30-day chart, top words, and top replacement triggers |
-| Advanced | Permission request buttons, storage paths, model idle unload, service log, doctor, restart, and update |
+| Advanced | Live service status, permission request buttons, storage paths, model idle unload, service log, and doctor |
 | About | Version, credits, and replay tutorial |
 
 Settings save to `~/.whisper/config.toml` and apply immediately — the trigger key, transform shortcuts, and the TTS shortcut all rebind live. Engine and grammar backend switches happen in place with rollback.

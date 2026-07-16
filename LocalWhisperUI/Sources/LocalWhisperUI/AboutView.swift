@@ -6,6 +6,12 @@ import AppKit
 struct AboutView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openWindow) private var openWindow
+
+    static let bundledIcon: NSImage? = {
+        guard let path = Bundle.main.path(forResource: "AppIcon", ofType: "icns") else { return nil }
+        return NSImage(contentsOfFile: path)
+    }()
 
     private var version: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -24,7 +30,8 @@ struct AboutView: View {
                 authorCard
                 tutorialCard
             }
-            .padding(Theme.Spacing.xxl)
+            .padding(.horizontal, Theme.Spacing.xxxl)
+            .padding(.vertical, Theme.Spacing.xxxl)
             .frame(maxWidth: 640)
             .frame(maxWidth: .infinity)
         }
@@ -34,19 +41,32 @@ struct AboutView: View {
 
     private var hero: some View {
         VStack(spacing: Theme.Spacing.m) {
-            ZStack {
-                Circle()
-                    .fill(LinearGradient(
-                        colors: [Color.accentColor.opacity(0.30), Color.accentColor.opacity(0.05)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ))
-                    .frame(width: 120, height: 120)
-                Image(systemName: "waveform.badge.mic")
-                    .font(.system(size: 56, weight: .regular))
-                    .foregroundStyle(.primary)
-                    .symbolRenderingMode(.hierarchical)
-                    .modifier(BreatheIfMotionAllowed(reduceMotion: reduceMotion))
+            Group {
+                // The real app icon, loaded straight from the bundle (immune
+                // to LaunchServices cache misses); brand glyph as fallback
+                // for bare-binary dev runs.
+                if let icon = Self.bundledIcon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .interpolation(.high)
+                        .frame(width: 108, height: 108)
+                        .shadow(color: .black.opacity(0.30), radius: 16, y: 7)
+                } else {
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient(
+                                colors: [Theme.Brand.accent.opacity(0.28), Theme.Brand.accent.opacity(0.04)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ))
+                            .frame(width: 116, height: 116)
+                        Image(systemName: "waveform.badge.mic")
+                            .font(.system(size: 52, weight: .regular))
+                            .foregroundStyle(.primary)
+                            .symbolRenderingMode(.hierarchical)
+                            .modifier(BreatheIfMotionAllowed(reduceMotion: reduceMotion))
+                    }
+                }
             }
             .accessibilityHidden(true)
 
@@ -127,6 +147,7 @@ struct AboutView: View {
             }
         }
         .padding(Theme.Spacing.l + 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .cardSurface()
     }
 
@@ -193,6 +214,7 @@ struct AboutView: View {
             .buttonStyle(.link)
         }
         .padding(Theme.Spacing.l)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .cardSurface()
     }
 
@@ -202,7 +224,7 @@ struct AboutView: View {
         HStack(spacing: Theme.Spacing.m) {
             Image(systemName: "play.circle.fill")
                 .font(.title2)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Theme.Brand.accent)
                 .symbolRenderingMode(.hierarchical)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Replay tutorial")
@@ -213,12 +235,13 @@ struct AboutView: View {
             }
             Spacer()
             Button("Replay") {
-                OnboardingPresenter.shared.present(with: appState)
+                openWindow(id: AppWindowID.onboarding)
             }
             .buttonStyle(.bordered)
         }
         .padding(Theme.Spacing.l - 2)
-        .tintedCard(.accentColor)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .tintedCard(Theme.Brand.accent)
     }
 
     private func openExternal(_ string: String) {

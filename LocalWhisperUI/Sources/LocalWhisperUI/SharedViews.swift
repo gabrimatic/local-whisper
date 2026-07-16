@@ -26,13 +26,23 @@ struct DeferredTextField: View {
         TextField(label, text: $localValue, prompt: Text(label).foregroundStyle(.tertiary))
             .labelsHidden()
             .focused($isFocused)
-            .onSubmit { onCommit(localValue) }
+            .onSubmit { commit() }
             .onChange(of: isFocused) { _, focused in
-                if !focused { onCommit(localValue) }
+                if !focused { commit() }
             }
             .onChange(of: initialValue) { _, newValue in
                 if !isFocused { localValue = newValue }
             }
+    }
+
+    // Only real changes commit. Click-in/click-out used to fire a no-op
+    // config write — which, for engine model fields, made the service unload
+    // and reload the whole engine. (No lastSent-style de-dup here: the
+    // service skips unchanged writes itself, and a de-dup that never reset
+    // silently swallowed legitimate re-commits after a server-side revert.)
+    private func commit() {
+        guard localValue != initialValue else { return }
+        onCommit(localValue)
     }
 }
 
@@ -40,15 +50,20 @@ struct DeferredIntTextField: View {
     let label: String
     let placeholder: String
     let initialValue: Int
+    /// When set, typed values clamp into this range and the FIELD shows the
+    /// clamped value — otherwise the display could keep a number that was
+    /// never saved.
+    let clamp: ClosedRange<Int>?
     let onCommit: (Int) -> Void
 
     @State private var localValue: String
     @FocusState private var isFocused: Bool
 
-    init(label: String, placeholder: String = "", initialValue: Int, onCommit: @escaping (Int) -> Void) {
+    init(label: String, placeholder: String = "", initialValue: Int, clamp: ClosedRange<Int>? = nil, onCommit: @escaping (Int) -> Void) {
         self.label = label
         self.placeholder = placeholder
         self.initialValue = initialValue
+        self.clamp = clamp
         self.onCommit = onCommit
         _localValue = State(initialValue: initialValue == 0 ? "" : "\(initialValue)")
     }
@@ -68,7 +83,13 @@ struct DeferredIntTextField: View {
 
     private func commit() {
         if let v = Int(localValue) {
-            onCommit(v)
+            let applied = clamp.map { min(max(v, $0.lowerBound), $0.upperBound) } ?? v
+            if applied != v {
+                localValue = "\(applied)"
+            }
+            if applied != initialValue {
+                onCommit(applied)
+            }
             return
         }
         // Empty or unparseable: snap back. Never overwrite a real value
@@ -95,7 +116,7 @@ struct DeferredTextEditor: View {
         TextEditor(text: $localValue)
             .focused($isFocused)
             .onChange(of: isFocused) { _, focused in
-                if !focused { onCommit(localValue) }
+                if !focused, localValue != initialValue { onCommit(localValue) }
             }
             .onChange(of: initialValue) { _, newValue in
                 if !isFocused { localValue = newValue }
@@ -134,13 +155,17 @@ struct CommitSlider<Label: View>: View {
     }
 
     var body: some View {
-        HStack {
+        HStack(spacing: Theme.Spacing.s) {
             Slider(value: $localValue, in: range, step: step) { editing in
                 dragging = editing
                 if !editing {
                     onCommit(localValue)
                 }
             }
+            .controlSize(.small)
+            // Fixed track width: sliders next to short labels otherwise
+            // stretch across the whole card and every row looks different.
+            .frame(width: 210)
             label(localValue)
         }
         .onChange(of: value) { _, newValue in
@@ -149,15 +174,36 @@ struct CommitSlider<Label: View>: View {
     }
 }
 
+// MARK: - Stepper with a monospaced value readout
+
+struct StepperRowControl: View {
+    let value: Int
+    let range: ClosedRange<Int>
+    let step: Int
+    let display: String
+    var displayWidth: CGFloat = 70
+    let onChange: (Int) -> Void
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.s) {
+            Text(display)
+                .monoStat(width: displayWidth)
+            Stepper("", value: Binding(get: { value }, set: onChange), in: range, step: step)
+                .labelsHidden()
+        }
+    }
+}
+
 // MARK: - Restart hint row
 
 struct RestartNote: View {
     @Environment(AppState.self) private var appState
-    var message: String = "Requires service restart to take effect."
+    var message: String = "Requires a service restart to take effect."
 
     var body: some View {
         HStack(spacing: Theme.Spacing.s) {
-            Image(systemName: "info.circle")
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
             Text(message)
                 .font(Theme.Typography.caption)
@@ -172,60 +218,37 @@ struct RestartNote: View {
     }
 }
 
-// MARK: - Settings section header (icon + title + description)
-
-struct SettingsSectionHeader: View {
-    let symbol: String
-    let title: String
-    var description: String? = nil
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.s) {
-            Image(systemName: symbol)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 14)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(Theme.Typography.sectionHeader)
-                if let description {
-                    Text(description)
-                        .font(Theme.Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Spacer()
-        }
-        .padding(.bottom, 2)
-        .textCase(nil)
-    }
-}
-
 // MARK: - Inline notice rows (used by panels for warnings / info)
 
 struct InlineNotice: View {
     enum Kind { case info, warning, error, success }
     let kind: Kind
     let text: String
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(alignment: .top, spacing: Theme.Spacing.s) {
             Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(tint)
                 .symbolRenderingMode(.hierarchical)
+                .padding(.top, 1)
             Text(text)
                 .font(Theme.Typography.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
+        .padding(Theme.Spacing.s + 2)
+        .background(tint.opacity(0.07), in: RoundedRectangle(cornerRadius: Theme.Radius.small + 2))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.small + 2)
+                .strokeBorder(tint.opacity(0.16), lineWidth: 1)
+        )
     }
 
     private var icon: String {
         switch kind {
-        case .info:    return "info.circle"
+        case .info:    return "info.circle.fill"
         case .warning: return "exclamationmark.triangle.fill"
         case .error:   return "xmark.octagon.fill"
         case .success: return "checkmark.seal.fill"
@@ -234,10 +257,10 @@ struct InlineNotice: View {
 
     private var tint: Color {
         switch kind {
-        case .info:    return .secondary
-        case .warning: return Theme.Tone.warning.color(for: colorScheme)
-        case .error:   return Theme.Tone.danger.color(for: colorScheme)
-        case .success: return Theme.Tone.success.color(for: colorScheme)
+        case .info:    return Theme.Brand.sky
+        case .warning: return Theme.Tone.warning.color
+        case .error:   return Theme.Tone.danger.color
+        case .success: return Theme.Tone.success.color
         }
     }
 }
@@ -253,7 +276,7 @@ struct StatusPill: View {
     var body: some View {
         HStack(spacing: 4) {
             Circle()
-                .fill(tone.color(for: colorScheme))
+                .fill(tone.color)
                 .frame(width: 6, height: 6)
             Text(text)
                 .font(Theme.Typography.captionEmphasized)
@@ -262,19 +285,20 @@ struct StatusPill: View {
         .padding(.horizontal, Theme.Spacing.s)
         .padding(.vertical, 3)
         .background(background, in: Capsule())
+        .overlay(Capsule().strokeBorder(tone.color.opacity(0.18), lineWidth: 1))
         .foregroundStyle(foreground)
         .accessibilityElement(children: .combine)
     }
 
     private var background: AnyShapeStyle {
-        let opacity: Double = colorScheme == .dark ? 0.22 : 0.14
-        return AnyShapeStyle(tone.color(for: colorScheme).opacity(opacity))
+        let opacity: Double = colorScheme == .dark ? 0.16 : 0.10
+        return AnyShapeStyle(tone.color.opacity(opacity))
     }
 
     private var foreground: Color {
         switch tone {
         case .neutral: return .secondary
-        default:       return tone.color(for: colorScheme)
+        default:       return tone.color
         }
     }
 }
@@ -399,26 +423,20 @@ struct DownloadProgressBar: View {
 struct HoverHighlight: ViewModifier {
     @State private var hovering = false
     var cornerRadius: CGFloat = Theme.Radius.medium
-    var baseOpacity: Double = 0.07
-    var hoverOpacity: Double = 0.14
 
     func body(content: Content) -> some View {
         content
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(Color.secondary.opacity(hovering ? hoverOpacity : baseOpacity))
+                    .fill(hovering ? Theme.Surface.hover : Color.clear)
             )
             .onHover { hovering = $0 }
-            .animation(.easeOut(duration: 0.12), value: hovering)
+            .animation(Theme.Motion.hover, value: hovering)
     }
 }
 
 extension View {
-    func hoverHighlight(
-        cornerRadius: CGFloat = Theme.Radius.medium,
-        base: Double = 0.07,
-        hover: Double = 0.14
-    ) -> some View {
-        modifier(HoverHighlight(cornerRadius: cornerRadius, baseOpacity: base, hoverOpacity: hover))
+    func hoverHighlight(cornerRadius: CGFloat = Theme.Radius.medium) -> some View {
+        modifier(HoverHighlight(cornerRadius: cornerRadius))
     }
 }

@@ -43,7 +43,10 @@ def expected_size_bytes(hf_repo: str) -> Optional[int]:
     total: Optional[int]
     try:
         from huggingface_hub import model_info
-        info = model_info(hf_repo, files_metadata=True)
+        # Bounded: this preflight runs on the engine-switch thread before the
+        # download watcher starts. A stalled network must degrade to an
+        # indeterminate bar, not hang the switch.
+        info = model_info(hf_repo, files_metadata=True, timeout=5)
         siblings = getattr(info, "siblings", None) or []
         total_bytes = 0
         for sib in siblings:

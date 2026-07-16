@@ -27,6 +27,12 @@ enum ShortcutSpec {
 
     static let functionKeys: Set<String> = Set((1...12).map { "f\($0)" })
 
+    /// Essential system/app shortcuts that a global event tap must never
+    /// hijack. Only plain ⌘ combos are blocked — adding ⌃ or ⌥ is fine.
+    static let reservedBareCmdKeys: Set<String> = [
+        "q", "w", "c", "v", "x", "a", "z", "s", "n", "t", "f", "h", "m", "p", ",",
+    ]
+
     /// Canonical modifier order used by the Python normalizer.
     static func canonicalCombo(modifiers: [String], key: String) -> String {
         let order = ["ctrl", "alt", "shift", "cmd"]
@@ -48,7 +54,34 @@ enum ShortcutSpec {
         if modifiers.isEmpty && !functionKeys.contains(key) {
             return (combo: "", error: "Add a modifier (⌃⌥⇧⌘) — a bare \"\(key.uppercased())\" would hijack normal typing.")
         }
+        if modifiers == ["cmd"] && reservedBareCmdKeys.contains(key) {
+            return (combo: "", error: "⌘\(key.uppercased()) is reserved by macOS and apps — add ⌃ or ⌥ to the combo.")
+        }
         return (combo: canonicalCombo(modifiers: modifiers, key: key), error: nil)
+    }
+}
+
+// MARK: - One recorder at a time
+//
+// Two fields recording simultaneously meant a keypress committed to whichever
+// installed its monitor first — visually, the wrong field. Starting a new
+// capture stops any other live one.
+
+@MainActor
+enum ShortcutCaptureCoordinator {
+    private static var activeID: UUID?
+    private static var stopActive: (() -> Void)?
+
+    static func begin(id: UUID, stop: @escaping () -> Void) {
+        if activeID != id { stopActive?() }
+        activeID = id
+        stopActive = stop
+    }
+
+    static func end(id: UUID) {
+        guard activeID == id else { return }
+        activeID = nil
+        stopActive = nil
     }
 }
 
@@ -61,12 +94,42 @@ struct ShortcutRecorderField: View {
     let value: String
     let defaultValue: String
     /// Other live bindings to refuse: canonical combo -> owner label.
-    let conflicts: [String: String]
+    /// Autoclosure so conflicts are read from LIVE state at keypress time,
+    /// not frozen at monitor-install time.
+    private let conflictsProvider: () -> [String: String]
+    /// Key parts that can never be bound regardless of modifiers (the
+    /// dictation trigger key intercepts its keycode wholesale): key -> owner.
+    private let blockedKeysProvider: () -> [String: String]
     let onCommit: (String) -> Void
 
+    init(
+        title: String,
+        description: String,
+        icon: String,
+        tint: Color,
+        value: String,
+        defaultValue: String,
+        conflicts: @autoclosure @escaping () -> [String: String],
+        blockedKeys: @autoclosure @escaping () -> [String: String] = [:],
+        onCommit: @escaping (String) -> Void
+    ) {
+        self.title = title
+        self.description = description
+        self.icon = icon
+        self.tint = tint
+        self.value = value
+        self.defaultValue = defaultValue
+        self.conflictsProvider = conflicts
+        self.blockedKeysProvider = blockedKeys
+        self.onCommit = onCommit
+    }
+
+    @Environment(AppState.self) private var appState
     @State private var isRecording = false
     @State private var errorText: String?
     @State private var monitor: Any?
+    @State private var fieldID = UUID()
+    @State private var captureTimeout: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
@@ -76,7 +139,7 @@ struct ShortcutRecorderField: View {
                     .symbolRenderingMode(.hierarchical)
                     .frame(width: 18)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(Theme.Typography.body)
+                    Text(title).font(Theme.Typography.bodyEmphasized)
                     Text(description)
                         .font(Theme.Typography.caption)
                         .foregroundStyle(.secondary)
@@ -91,7 +154,7 @@ struct ShortcutRecorderField: View {
                         stopRecording()
                         // Same conflict rule as recording: a reset must not
                         // silently steal a combo another binding now owns.
-                        if let owner = conflicts[defaultValue], defaultValue != value {
+                        if let owner = conflictsProvider()[defaultValue], defaultValue != value {
                             errorText = "\(KeyboardGlyph.display(defaultValue)) is already used by \(owner)."
                         } else {
                             errorText = nil
@@ -128,7 +191,7 @@ struct ShortcutRecorderField: View {
             HStack(spacing: 4) {
                 if isRecording {
                     Image(systemName: "record.circle")
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.Tone.danger.color)
                     Text("Press shortcut…")
                         .font(Theme.Typography.caption)
                         .foregroundStyle(.secondary)
@@ -147,12 +210,12 @@ struct ShortcutRecorderField: View {
             .frame(minWidth: 110)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.small)
-                    .fill(Color.secondary.opacity(isRecording ? 0.18 : 0.08))
+                    .fill(isRecording ? Theme.Surface.hover : Theme.Surface.well)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.small)
                     .strokeBorder(
-                        isRecording ? Color.red.opacity(0.6) : Color.secondary.opacity(0.2),
+                        isRecording ? Theme.Tone.danger.color.opacity(0.6) : Theme.Surface.stroke,
                         lineWidth: 1
                     )
             )
@@ -169,8 +232,22 @@ struct ShortcutRecorderField: View {
     }
 
     private func startRecording() {
+        ShortcutCaptureCoordinator.begin(id: fieldID) {
+            stopRecording()
+        }
         errorText = nil
         isRecording = true
+        // Pause the service's global event tap so a combo that is currently
+        // bound reaches this recorder instead of firing its action.
+        appState.ipcClient?.send(CaptureModeMessage(active: true))
+        // Auto-stop BEFORE the service's 30s capture watchdog expires, so
+        // interception can never silently re-arm under a live recorder.
+        captureTimeout = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 25_000_000_000)
+            guard !Task.isCancelled else { return }
+            stopRecording()
+            errorText = "Recording timed out — click the field to try again."
+        }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             handle(event: event)
             return nil  // swallow the keystroke while recording
@@ -178,11 +255,17 @@ struct ShortcutRecorderField: View {
     }
 
     private func stopRecording() {
+        captureTimeout?.cancel()
+        captureTimeout = nil
         if let monitor {
             NSEvent.removeMonitor(monitor)
         }
         monitor = nil
+        if isRecording {
+            appState.ipcClient?.send(CaptureModeMessage(active: false))
+        }
         isRecording = false
+        ShortcutCaptureCoordinator.end(id: fieldID)
     }
 
     private func handle(event: NSEvent) {
@@ -199,7 +282,12 @@ struct ShortcutRecorderField: View {
             return
         }
         let combo = parsed.combo
-        if let owner = conflicts[combo], !combo.isEmpty, combo != value {
+        if let keyPart = combo.split(separator: "+").last.map(String.init),
+           let owner = blockedKeysProvider()[keyPart] {
+            errorText = "\(keyPart.uppercased()) is your \(owner) — any combo on that key would be intercepted before it could fire."
+            return
+        }
+        if let owner = conflictsProvider()[combo], !combo.isEmpty, combo != value {
             errorText = "\(KeyboardGlyph.display(combo)) is already used by \(owner)."
             return
         }

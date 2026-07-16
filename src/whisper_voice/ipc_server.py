@@ -35,7 +35,12 @@ class IPCServer:
         self._on_connect: Optional[Callable[[], None]] = None
         self._server: Optional[socket.socket] = None
         self._running = False
-        self._dispatch_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ipc-dispatch")
+        # ONE worker: client messages must commit in arrival order. With four
+        # workers, rapid same-key config updates (slider drags) and the
+        # reconnect replay (remove-then-add) could interleave and persist a
+        # stale value. Long-running handlers spawn their own threads inside
+        # _handle_ipc_message, so serial dispatch stays responsive.
+        self._dispatch_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ipc-dispatch")
 
     def set_message_handler(self, callback: Callable[[dict], None]):
         """Register handler for incoming messages from the Swift client."""
@@ -49,11 +54,17 @@ class IPCServer:
         """Thread-safe send. Drops the client on timeout or failure.
 
         State updates are snapshots, not a log — if another thread is already
-        writing, we drop rather than queue. Writes are non-blocking with a
-        total-time cap so a stalled consumer can never freeze the caller.
+        writing, we drop rather than queue. Everything else (config_snapshot,
+        tester results, download progress) is meaningful exactly once, so
+        those block briefly for the lock instead: a dropped config_snapshot
+        left the UI permanently stale. Writes themselves stay non-blocking
+        with a total-time cap so a stalled consumer can never freeze callers.
         """
-        if not self._send_lock.acquire(timeout=_SEND_LOCK_ACQUIRE_TIMEOUT):
-            return
+        if msg.get("type") == "state_update":
+            if not self._send_lock.acquire(timeout=_SEND_LOCK_ACQUIRE_TIMEOUT):
+                return
+        else:
+            self._send_lock.acquire()
         try:
             with self._client_lock:
                 client = self._client

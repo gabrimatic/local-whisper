@@ -158,16 +158,35 @@ class SwitchingMixin:
         """
         with self._state_lock:
             if self._busy:
-                log("Cannot switch engine while processing", "WARN")
-                return
-            self._busy = True
-            self._settings_operation_active = True
+                busy = True
+            else:
+                busy = False
+                self._busy = True
+                self._settings_operation_active = True
+        if busy:
+            log("Cannot switch engine while processing", "WARN")
+            self._send_state_error("Busy — try the engine switch again in a moment")
+            # A model-field edit already persisted its new value before
+            # dispatching this switch; roll it back so config and the loaded
+            # engine can't diverge until a restart.
+            if rollback_config is not None:
+                from .config import update_config_field
+                r_section, r_key, r_old = rollback_config
+                if r_old is not None:
+                    update_config_field(r_section, r_key, r_old)
+                    self.config = get_config()
+            # The UI's engine picker flipped optimistically — snap it back.
+            self._send_config_snapshot()
+            self._send_engines_status()
+            return
 
         if engine_name not in ENGINE_REGISTRY:
             with self._state_lock:
                 self._settings_operation_active = False
                 self._busy = False
             self._send_state_error(f"Unknown engine: {engine_name}")
+            # Snap back the optimistic picker in the UI.
+            self._send_config_snapshot()
             return
 
         from .config import update_config_field
@@ -192,8 +211,12 @@ class SwitchingMixin:
         if needs_download and cache_dir and hf_repo:
             self._register_download_cancel(engine_name, cancel_event)
         if cache_dir and hf_repo:
+            # Preflight the repo size (cached, tolerant of being offline) so
+            # the Settings bar is determinate instead of a barber pole.
+            from .engines.download_progress import expected_size_bytes
+            total_bytes = (expected_size_bytes(hf_repo) or 0) if needs_download else 0
             watcher = DownloadWatcher(
-                engine_name, Path(cache_dir), 0, self.ipc.send
+                engine_name, Path(cache_dir), total_bytes, self.ipc.send
             )
             watcher.start()
 
@@ -364,6 +387,10 @@ class SwitchingMixin:
         """Switch grammar backend in-process. Runs in background thread."""
         if self._busy:
             log("Cannot switch backend while processing", "WARN")
+            # The UI flipped optimistically — snap it back and say why,
+            # instead of silently showing a state the service is not in.
+            self._send_state_error("Busy — try the grammar switch again in a moment")
+            self._send_config_snapshot()
             return
         from .config import update_config_backend
 
@@ -512,8 +539,10 @@ class SwitchingMixin:
         model_id = self.config.kokoro_tts.model
         cache_path = kokoro_cache_path(model_id)
         downloaded = hf_cache_complete(cache_path, ("config.json", "kokoro-v1_0.safetensors"))
+        from .engines.download_progress import expected_size_bytes
+        kokoro_total = (expected_size_bytes(model_id) or 0) if not downloaded else 0
         watcher = DownloadWatcher(
-            "kokoro_tts", cache_path, 0, self.ipc.send
+            "kokoro_tts", cache_path, kokoro_total, self.ipc.send
         )
         watcher.start()
         cancel_event = threading.Event()
