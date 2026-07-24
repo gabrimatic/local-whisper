@@ -12,6 +12,8 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
+from whisper_voice.ui_bundle import preferred_ui_binary
+
 from .constants import (
     C_BOLD,
     C_CYAN,
@@ -23,6 +25,7 @@ from .constants import (
     CMD_SOCKET_PATH,
     INSTALL_BREW,
     INSTALL_SOURCE,
+    LAUNCHAGENT_PLIST,
     MODEL_DIR,
     get_install_method,
 )
@@ -396,10 +399,7 @@ def cmd_doctor(args: list):
             core_ok = False
 
     # 10. Swift UI binary
-    from .build import _homebrew_ui_binary
-    from .constants import LAUNCHAGENT_PLIST
-    ui_app = Path.home() / ".whisper" / "LocalWhisperUI.app"
-    ui_found = ui_app.is_dir() or (install_method == INSTALL_BREW and _homebrew_ui_binary().exists())
+    ui_found = preferred_ui_binary().exists()
     if ui_found:
         _doctor_pass("LocalWhisperUI.app")
     else:
@@ -408,7 +408,7 @@ def cmd_doctor(args: list):
             _doctor_fixing("Building Swift UI...")
             from .build import cmd_build
             cmd_build()
-            if ui_app.is_dir() or _homebrew_ui_binary().exists():
+            if preferred_ui_binary().exists():
                 _doctor_pass("LocalWhisperUI.app built")
             else:
                 _doctor_warn("Swift UI build failed (service works without it)")

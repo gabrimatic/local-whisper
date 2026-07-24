@@ -8,6 +8,12 @@ import sys
 import time
 from pathlib import Path
 
+from whisper_voice.ui_bundle import (
+    home_speech_binary,
+    home_ui_binary,
+    homebrew_ui_binary,
+)
+
 from .constants import C_DIM, C_GREEN, C_RED, C_RESET, C_YELLOW, INSTALL_BREW, get_install_method
 from .lifecycle import _is_running, cmd_start, cmd_stop
 
@@ -21,11 +27,11 @@ def _local_whisper_ui_dir() -> Path:
 
 def _local_whisper_ui_binary() -> Path:
     """Return the expected path of the installed LocalWhisperUI binary."""
-    return Path.home() / ".whisper" / "LocalWhisperUI.app" / "Contents" / "MacOS" / "LocalWhisperUI"
+    return home_ui_binary()
 
 
 def _local_whisper_speech_binary() -> Path:
-    return Path.home() / ".whisper" / "LocalWhisperUI.app" / "Contents" / "MacOS" / "LocalWhisperSpeech"
+    return home_speech_binary()
 
 
 def _local_whisper_ui_sources_newer_than_binary() -> bool:
@@ -55,9 +61,9 @@ _LOCAL_WHISPER_UI_INFO_PLIST = """\
     <key>CFBundleName</key>
     <string>Local Whisper</string>
     <key>CFBundleVersion</key>
-    <string>1.10.0</string>
+    <string>1.10.1</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.10.0</string>
+    <string>1.10.1</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>LSUIElement</key>
@@ -129,7 +135,7 @@ def _build_local_whisper_ui(swift: str) -> bool:
 
 def _homebrew_ui_binary() -> Path:
     """Return the expected path of the LocalWhisperUI binary in a Homebrew Cellar install."""
-    return Path(sys.prefix).parent / "LocalWhisperUI.app" / "Contents" / "MacOS" / "LocalWhisperUI"
+    return homebrew_ui_binary()
 
 
 def cmd_build():
@@ -137,8 +143,7 @@ def cmd_build():
     if get_install_method() == INSTALL_BREW:
         # Homebrew builds the Swift UI during formula install
         cellar_bin = _homebrew_ui_binary()
-        home_bin = _local_whisper_ui_binary()
-        if cellar_bin.exists() or home_bin.exists():
+        if cellar_bin.exists():
             print(f"{C_GREEN}LocalWhisperUI already installed{C_RESET} (Homebrew)")
         else:
             print(f"{C_YELLOW}LocalWhisperUI not available.{C_RESET}")

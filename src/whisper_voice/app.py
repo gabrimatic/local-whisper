@@ -42,6 +42,7 @@ from .shortcuts import (
 )
 from .transcriber import Transcriber
 from .tts_processor import TTSProcessor
+from .ui_bundle import preferred_ui_binary
 from .utils import (
     C_BOLD,
     C_CYAN,
@@ -422,9 +423,7 @@ class App(IPCMixin, RecordingMixin, PipelineMixin, CommandsMixin, SwitchingMixin
 
     def _spawn_swift_ui(self):
         """Launch the Swift UI binary as a subprocess."""
-        swift_binary = (
-            Path.home() / ".whisper" / "LocalWhisperUI.app" / "Contents" / "MacOS" / "LocalWhisperUI"
-        )
+        swift_binary = preferred_ui_binary()
         if not swift_binary.exists():
             log("Swift UI binary not found. Running headless.")
             return

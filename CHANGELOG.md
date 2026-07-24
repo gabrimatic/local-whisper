@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-07-24
+
+### Fixed
+
+- Fixed Homebrew upgrades continuing to launch an older per-user menu app. The service now prefers the UI bundle installed with its current Homebrew version, and the formula packages both the menu app and native Apple Speech helper.
+
 ## [1.10.0] - 2026-07-24
 
 ### Added
