@@ -71,6 +71,23 @@ def test_engine_status_uses_configured_qwen_model_cache(monkeypatch, tmp_path):
     assert state["cache_dir"].endswith("models--mlx-community--Qwen3-ASR-1.7B-8bit")
 
 
+def test_qwen_prefetch_can_target_variant_without_changing_config(monkeypatch, tmp_path):
+    import whisper_voice.engines.status as status_mod
+
+    monkeypatch.setattr(status_mod, "MODEL_DIR", tmp_path)
+    configured = "mlx-community/Qwen3-ASR-1.7B-bf16"
+    requested = "mlx-community/Qwen3-ASR-0.6B-bf16"
+    monkeypatch.setattr(
+        "whisper_voice.config.get_config",
+        lambda: SimpleNamespace(qwen3_asr=SimpleNamespace(model=configured)),
+    )
+
+    metadata = status_mod.engine_model_metadata("qwen3_asr", hf_repo=requested)
+
+    assert metadata["hf_repo"] == requested
+    assert metadata["cache_dir"].endswith("models--mlx-community--Qwen3-ASR-0.6B-bf16")
+
+
 def test_apple_speech_status_reports_system_managed_asset(monkeypatch):
     import whisper_voice.engines.status as status_mod
 

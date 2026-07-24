@@ -364,25 +364,41 @@ finally:
         ;;
 
     qwen3_asr)
-        if run_with_timeout "$MODEL_PREP_TIMEOUT_SECONDS" env HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
+        QWEN_MODEL=$("$VENV_DIR/bin/python3" -c "
+from whisper_voice.config import load_config
+print(load_config().qwen3_asr.model)
+" 2>/dev/null || echo "mlx-community/Qwen3-ASR-1.7B-bf16")
+
+        if run_with_timeout "$MODEL_PREP_TIMEOUT_SECONDS" env HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 QWEN_MODEL="$QWEN_MODEL" "$VENV_DIR/bin/python3" -c "
+import os
 from qwen3_asr_mlx import Qwen3ASR
-Qwen3ASR.from_pretrained('mlx-community/Qwen3-ASR-1.7B-bf16')
+Qwen3ASR.from_pretrained(os.environ['QWEN_MODEL'])
 " 2>/dev/null; then
-            log_ok "Qwen3-ASR model"
+            log_ok "Qwen3-ASR model ($QWEN_MODEL)"
         elif [[ "$?" -eq 124 ]]; then
             log_warn "Qwen3-ASR model check timed out (will retry on first use)"
         else
             log_warn "Qwen3-ASR download failed (will retry on first use)"
         fi
 
-        QWEN_WARM_SENTINEL="$MODEL_DIR/.qwen3_warmed"
-        if [[ -f "$QWEN_WARM_SENTINEL" ]]; then
+        QWEN_WARM_SENTINEL_NAME=$(QWEN_MODEL="$QWEN_MODEL" "$VENV_DIR/bin/python3" -c "
+import os
+from whisper_voice.engines.qwen3_models import qwen3_warm_sentinel_name
+print(qwen3_warm_sentinel_name(os.environ['QWEN_MODEL']))
+")
+        QWEN_WARM_SENTINEL="$MODEL_DIR/$QWEN_WARM_SENTINEL_NAME"
+        QWEN_LEGACY_WARMED=false
+        if [[ "$QWEN_MODEL" == "mlx-community/Qwen3-ASR-1.7B-bf16" && -f "$MODEL_DIR/.qwen3_warmed" ]]; then
+            QWEN_LEGACY_WARMED=true
+        fi
+        if [[ -f "$QWEN_WARM_SENTINEL" || "$QWEN_LEGACY_WARMED" == true ]]; then
             log_ok "Qwen3-ASR already warmed up"
         else
             log_info "Warming up Qwen3-ASR (compiling MLX graph, 60-120s, one-time)..."
-            if run_with_timeout "$MODEL_PREP_TIMEOUT_SECONDS" env HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 "$VENV_DIR/bin/python3" -c "
+            if run_with_timeout "$MODEL_PREP_TIMEOUT_SECONDS" env HF_HUB_CACHE="$MODEL_DIR" HF_HUB_DISABLE_TELEMETRY=1 QWEN_MODEL="$QWEN_MODEL" "$VENV_DIR/bin/python3" -c "
+import os
 from qwen3_asr_mlx import Qwen3ASR
-model = Qwen3ASR.from_pretrained('mlx-community/Qwen3-ASR-1.7B-bf16')
+model = Qwen3ASR.from_pretrained(os.environ['QWEN_MODEL'])
 model.warm_up()
 " 2>/dev/null; then
                 touch "$QWEN_WARM_SENTINEL"
@@ -497,9 +513,9 @@ if [[ -d "$SWIFT_UI_DIR" ]]; then
     <key>CFBundleName</key>
     <string>Local Whisper</string>
     <key>CFBundleVersion</key>
-    <string>1.9.0</string>
+    <string>1.10.0</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.9.0</string>
+    <string>1.10.0</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>LSUIElement</key>

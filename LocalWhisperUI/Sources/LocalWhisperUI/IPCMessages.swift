@@ -111,6 +111,7 @@ struct ParakeetConfig: Codable, Sendable {
 
 struct Qwen3ASRConfig: Codable, Sendable {
     var model: String = "mlx-community/Qwen3-ASR-1.7B-bf16"
+    var useVocabulary: Bool = true
     var timeout: Double = 0
     var temperature: Double = 0.0
     var topP: Double = 1.0
@@ -122,6 +123,7 @@ struct Qwen3ASRConfig: Codable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case model, timeout, temperature
+        case useVocabulary = "use_vocabulary"
         case topP = "top_p"
         case topK = "top_k"
         case repetitionContextSize = "repetition_context_size"
@@ -136,6 +138,7 @@ struct Qwen3ASRConfig: Codable, Sendable {
         let d = Self()
         guard let c = try? decoder.container(keyedBy: CodingKeys.self) else { return }
         model = c.decodeOr(String.self, .model, d.model)
+        useVocabulary = c.decodeOr(Bool.self, .useVocabulary, d.useVocabulary)
         timeout = c.decodeOr(Double.self, .timeout, d.timeout)
         temperature = c.decodeOr(Double.self, .temperature, d.temperature)
         topP = c.decodeOr(Double.self, .topP, d.topP)

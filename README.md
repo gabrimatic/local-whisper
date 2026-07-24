@@ -171,11 +171,22 @@ In-process via [parakeet-mlx](https://github.com/senstella/parakeet-mlx). No ser
 
 ### Qwen3-ASR
 
-In-process via [qwen3-asr-mlx](https://github.com/gabrimatic/qwen3-asr-mlx). No local server. Native long-audio support, up to 20 minutes in a single pass. Qwen3-ASR detects language from the audio. Switch with `wh engine qwen3_asr`.
+In-process via [qwen3-asr-mlx](https://github.com/gabrimatic/qwen3-asr-mlx). No local server. Native long-audio support, up to 20 minutes in a single pass. Qwen3-ASR detects language from the audio. Switch with `wh engine qwen3_asr`; choose a size in Settings or `wh config`, or run `wh engine qwen3_asr 1.7b` / `wh engine qwen3_asr 0.6b`.
+
+Local Whisper uses a community-maintained MLX conversion and runtime, not Qwen's official PyTorch stack. The default `mlx-community/Qwen3-ASR-1.7B-bf16` model provides higher quality. The `mlx-community/Qwen3-ASR-0.6B-bf16` option uses less memory and has lower latency, with a quality tradeoff. Both paths download once from Hugging Face and then run locally.
+
+Both supported variants can use your enabled Vocabulary rules as Qwen3-ASR
+context and hotwords. Local Whisper sends the full spoken-to-preferred mapping
+only to engines and models that explicitly declare contextual-prompting
+support; Parakeet-TDT, WhisperKit, and Apple SpeechTranscriber receive none of
+it. The prompt is built in process, capped at 4,096 characters per request,
+and never sent to a hosted service. Disable it with
+`qwen3_asr.use_vocabulary = false`.
 
 | Setting | Default | Notes |
 |---------|---------|-------|
-| `model` | `mlx-community/Qwen3-ASR-1.7B-bf16` | Downloaded by `setup.sh` |
+| `model` | `mlx-community/Qwen3-ASR-1.7B-bf16` | Higher-quality default. Select `mlx-community/Qwen3-ASR-0.6B-bf16` for lower memory and latency. |
+| `use_vocabulary` | `true` | Use enabled Vocabulary rules as local Qwen context/hotwords, up to 4,096 characters. |
 | `timeout` | `0` | No limit |
 | `repetition_penalty` | `1.2` | Higher suppresses repetition loops |
 | `repetition_context_size` | `100` | Tokens considered for repetition penalty |

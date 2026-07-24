@@ -78,7 +78,14 @@ Loading a model is not enough. The local server must be running.
 
 Fresh setup downloads and warms the active engine. Later runs load cached models from disk.
 
-Qwen3-ASR downloads when you switch to it. macOS manages Apple SpeechTranscriber assets per locale, and Local Whisper shows Apple's real supported, downloading, or installed state. WhisperKit manages its own model folder. Kokoro downloads only after text-to-speech is enabled. Settings marks a managed MLX model as downloaded only after a complete Hugging Face snapshot is present. Partial caches show as partial and can be resumed from the Transcription panel.
+Qwen3-ASR downloads the selected 1.7B or 0.6B model when you switch to it. The 1.7B default requires more memory and has higher latency; choose 0.6B in Settings or `wh config` on a tighter-memory Mac. macOS manages Apple SpeechTranscriber assets per locale, and Local Whisper shows Apple's real supported, downloading, or installed state. WhisperKit manages its own model folder. Kokoro downloads only after text-to-speech is enabled. Settings marks a managed MLX model as downloaded only after a complete Hugging Face snapshot is present. Partial caches show as partial and can be resumed from the Transcription panel.
+
+If Qwen starts inserting Vocabulary terms that were not spoken, shorten the
+word list or turn off **Use Vocabulary as context** in Qwen3-ASR Settings.
+Context can bias recognition but cannot guarantee a spelling. Local Whisper
+caps the prompt at 4,096 characters, logs how many eligible rules were included
+when the list is truncated, and still applies enabled replacement rules after
+transcription.
 
 If idle model unload is enabled, Local Whisper may release the active model from RAM while the background service stays ready. The next transcription reloads the model on demand. `wh setup`, `wh update`, and `wh restart` treat the service as ready once the command socket is accepting commands, even if the model is currently unloaded.
 

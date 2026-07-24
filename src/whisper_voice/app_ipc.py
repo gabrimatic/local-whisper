@@ -169,6 +169,7 @@ class IPCMixin:
             },
             "qwen3_asr": {
                 "model": cfg.qwen3_asr.model,
+                "use_vocabulary": cfg.qwen3_asr.use_vocabulary,
                 "timeout": cfg.qwen3_asr.timeout,
                 "temperature": cfg.qwen3_asr.temperature,
                 "top_p": cfg.qwen3_asr.top_p,

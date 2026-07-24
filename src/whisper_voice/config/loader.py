@@ -218,6 +218,7 @@ def _validate_config(config: Config):
         ("replacements", config.replacements, "enabled"),
         ("dictation", config.dictation, "enabled"),
         ("dictation", config.dictation, "strip_fillers"),
+        ("qwen3_asr", config.qwen3_asr, "use_vocabulary"),
     ):
         value = getattr(obj, flag)
         if not isinstance(value, bool):
@@ -346,6 +347,7 @@ def load_config() -> Config:
     if 'qwen3_asr' in data:
         config.qwen3_asr = Qwen3ASRConfig(
             model=data['qwen3_asr'].get('model', config.qwen3_asr.model),
+            use_vocabulary=data['qwen3_asr'].get('use_vocabulary', config.qwen3_asr.use_vocabulary),
             timeout=data['qwen3_asr'].get('timeout', config.qwen3_asr.timeout),
             temperature=data['qwen3_asr'].get('temperature', config.qwen3_asr.temperature),
             top_p=data['qwen3_asr'].get('top_p', config.qwen3_asr.top_p),

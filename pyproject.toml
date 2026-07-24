@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "local-whisper"
-version = "1.9.0"
+version = "1.10.0"
 description = "Local macOS dictation with local transcription and grammar cleanup"
 readme = "README.md"
 license = "PolyForm-Noncommercial-1.0.0"
@@ -34,7 +34,7 @@ dependencies = [
     "pyobjc-framework-Cocoa>=12.2",
     "pyobjc-framework-Quartz>=12.2",
     "parakeet-mlx>=0.5.2",
-    "qwen3-asr-mlx>=0.1.1",
+    "qwen3-asr-mlx==0.2.0",
     "kokoro-mlx>=0.1.2",
     "soundfile>=0.14.0",
     "misaki[en]>=0.9.4",
@@ -77,6 +77,12 @@ include = [
     "/install.sh",
     "/setup.sh",
     "/src/whisper_voice/assets/*.png",
+]
+exclude = [
+    "/src/flutter/**/.dart_tool",
+    "/src/flutter/**/build",
+    "/src/flutter/**/.gradle",
+    "/src/flutter/**/Pods",
 ]
 
 [tool.pytest.ini_options]

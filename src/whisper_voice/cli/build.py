@@ -55,9 +55,9 @@ _LOCAL_WHISPER_UI_INFO_PLIST = """\
     <key>CFBundleName</key>
     <string>Local Whisper</string>
     <key>CFBundleVersion</key>
-    <string>1.9.0</string>
+    <string>1.10.0</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.9.0</string>
+    <string>1.10.0</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>LSUIElement</key>

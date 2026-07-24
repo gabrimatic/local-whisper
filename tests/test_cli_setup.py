@@ -33,3 +33,11 @@ def test_source_setup_model_preparation_is_bounded():
 
     assert "MODEL_PREP_TIMEOUT_SECONDS=180" in setup
     assert "run_with_timeout \"$MODEL_PREP_TIMEOUT_SECONDS\"" in setup
+
+
+def test_source_setup_uses_configured_qwen_model_for_download_and_warmup():
+    setup = (ROOT / "setup.sh").read_text(encoding="utf-8")
+
+    assert "QWEN_MODEL=" in setup
+    assert "print(load_config().qwen3_asr.model)" in setup
+    assert setup.count("Qwen3ASR.from_pretrained(os.environ['QWEN_MODEL'])") == 2

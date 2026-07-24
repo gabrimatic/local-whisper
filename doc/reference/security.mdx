@@ -21,6 +21,16 @@ Privacy is a core constraint. Local Whisper does not send audio or transcript te
 
 Setup, model downloads, `wh update`, and `wh doctor --fix` can use the network to install packages, fetch models, or update the checkout.
 
+Qwen3-ASR uses community-maintained MLX conversions and a community-maintained runtime rather than Qwen's official PyTorch stack. After the selected 1.7B or 0.6B snapshot is downloaded, inference remains in process on the Mac.
+
+When Qwen Vocabulary context is enabled, Local Whisper reads the same local
+replacement rules already used by its post-transcription Vocabulary pass,
+builds a bounded prompt of at most 4,096 characters, and passes it directly to
+the in-process Qwen runtime. The capability gate allows only the validated
+Qwen3-ASR 1.7B and 0.6B models to receive that context. No unsupported engine,
+hosted endpoint, telemetry service, or model download request receives the
+Vocabulary data.
+
 ## Permissions
 
 | Permission | Why | Scope |

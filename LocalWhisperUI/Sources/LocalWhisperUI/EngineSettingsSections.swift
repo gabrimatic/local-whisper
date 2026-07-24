@@ -217,25 +217,62 @@ struct ParakeetSection: View {
 struct Qwen3Section: View {
     @Environment(AppState.self) private var appState
 
+    private let modelPresets: [(id: String, label: String)] = [
+        ("mlx-community/Qwen3-ASR-1.7B-bf16", "1.7B · Higher quality"),
+        ("mlx-community/Qwen3-ASR-0.6B-bf16", "0.6B · Lower memory and latency"),
+    ]
+
     var body: some View {
         SettingsCard(
             icon: "sparkle",
             title: "Qwen3-ASR settings",
-            description: "Tuning knobs for the active engine."
+            description: "Multilingual local transcription through a community-maintained MLX runtime."
         ) {
             SettingRow(
-                title: "Model",
-                subtitle: "Hugging Face model ID. Must be an MLX-quantized variant."
+                title: "Variant",
+                subtitle: "1.7B is the higher-quality default. 0.6B uses less memory and responds faster."
             ) {
-                DeferredTextField(
-                    label: "Model",
-                    initialValue: appState.config.qwen3Asr.model
-                ) { value in
-                    appState.config.qwen3Asr.model = value
-                    appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "model", value: value)
+                Picker("Variant", selection: modelPresetBinding) {
+                    ForEach(modelPresets, id: \.id) { preset in
+                        Text(preset.label).tag(preset.id)
+                    }
+                    Text("Custom MLX model").tag("custom")
                 }
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 280)
+                .pickerStyle(.menu)
+                .fixedSize()
+            }
+
+            if modelPresetBinding.wrappedValue == "custom" {
+                SettingRow(
+                    title: "Model ID",
+                    subtitle: "Advanced: enter a qwen3-asr-mlx-compatible Hugging Face model ID."
+                ) {
+                    DeferredTextField(
+                        label: "Model ID",
+                        initialValue: appState.config.qwen3Asr.model
+                    ) { value in
+                        appState.config.qwen3Asr.model = value
+                        appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "model", value: value)
+                    }
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 280)
+                }
+            }
+
+            WideRow {
+                InlineNotice(
+                    kind: .info,
+                    text: "The MLX conversion and runtime are community maintained, not Qwen's official PyTorch stack. The 1.7B model needs more memory and has higher latency than 0.6B."
+                )
+            }
+
+            ToggleRow(
+                title: "Use Vocabulary as context",
+                subtitle: "Pass enabled Vocabulary rules to supported Qwen models as local context and hotwords. Up to 4,096 characters per request.",
+                isOn: appState.config.qwen3Asr.useVocabulary
+            ) { value in
+                appState.config.qwen3Asr.useVocabulary = value
+                appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "use_vocabulary", value: value)
             }
 
             WideRow {
@@ -387,6 +424,21 @@ struct Qwen3Section: View {
                 .font(Theme.Typography.bodyEmphasized)
             }
         }
+    }
+
+    private var modelPresetBinding: Binding<String> {
+        Binding(
+            get: {
+                modelPresets.contains(where: { $0.id == appState.config.qwen3Asr.model })
+                    ? appState.config.qwen3Asr.model
+                    : "custom"
+            },
+            set: { value in
+                guard value != "custom" else { return }
+                appState.config.qwen3Asr.model = value
+                appState.ipcClient?.sendConfigUpdate(section: "qwen3_asr", key: "model", value: value)
+            }
+        )
     }
 }
 

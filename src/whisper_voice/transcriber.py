@@ -7,7 +7,9 @@ This module provides a unified interface to transcription engines.
 The engine is selected based on the [transcription] configuration.
 
 Supported engines:
-- qwen3_asr: On-device MLX transcription via Qwen3-ASR (default)
+- parakeet_v3: On-device multilingual MLX transcription (default)
+- qwen3_asr: On-device MLX transcription via Qwen3-ASR 1.7B or 0.6B
+- apple_speech: Apple-managed on-device SpeechTranscriber
 - whisperkit: Local WhisperKit server
 
 Usage:
@@ -23,7 +25,15 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from .config import get_config
-from .engines import TranscriptionEngine, create_engine
+from .engines import (
+    EngineCapability,
+    TranscriptionEngine,
+    create_engine,
+    supports_engine_capability,
+)
+from .engines.base import ContextualPromptingEngine
+from .engines.context import build_vocabulary_context
+from .engines.qwen3_models import qwen3_model_supports_contextual_prompting
 from .engines.status import ensure_engine_model_cached
 from .utils import log
 
@@ -71,7 +81,44 @@ class Transcriber:
             On success, error_message is None.
             On error, text is None and error_message describes the failure.
         """
-        return self._engine.transcribe(Path(path))
+        normalized_path = Path(path)
+        if (
+            supports_engine_capability(
+                self._engine_id,
+                EngineCapability.CONTEXTUAL_PROMPTING,
+            )
+            and isinstance(self._engine, ContextualPromptingEngine)
+        ):
+            config = get_config()
+            qwen_config = getattr(config, "qwen3_asr", None)
+            model_id = str(getattr(qwen_config, "model", ""))
+            use_vocabulary = bool(
+                getattr(qwen_config, "use_vocabulary", True)
+            )
+            replacements = getattr(config, "replacements", None)
+            vocabulary_enabled = bool(
+                getattr(replacements, "enabled", False)
+            )
+            if (
+                use_vocabulary
+                and vocabulary_enabled
+                and qwen3_model_supports_contextual_prompting(model_id)
+            ):
+                vocabulary_context = build_vocabulary_context(
+                    getattr(replacements, "rules", {})
+                )
+                if vocabulary_context.truncated:
+                    log(
+                        "Qwen3-ASR vocabulary context limited to "
+                        f"{vocabulary_context.included_rules}/"
+                        f"{vocabulary_context.eligible_rules} rules",
+                        "WARN",
+                    )
+                return self._engine.transcribe_with_context(
+                    normalized_path,
+                    vocabulary_context.text,
+                )
+        return self._engine.transcribe(normalized_path)
 
     def unload(self) -> None:
         """Release engine model from RAM. Call start() to reload."""

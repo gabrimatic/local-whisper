@@ -7,6 +7,15 @@ Local Whisper stores macOS service settings in `~/.whisper/config.toml`.
 
 Change most settings from the app or with `wh config`. Edit the TOML directly when you need exact control.
 
+Qwen3-ASR defaults to the higher-quality `mlx-community/Qwen3-ASR-1.7B-bf16` checkpoint. Set `qwen3_asr.model` to `mlx-community/Qwen3-ASR-0.6B-bf16` for lower memory use and latency at lower quality. These are community-maintained MLX conversions used through a community-maintained runtime, not Qwen's official PyTorch stack.
+
+With `qwen3_asr.use_vocabulary = true`, enabled Vocabulary replacement rules
+become local Qwen context and hotwords. Both catalog models support the
+capability. Empty/deletion replacements are omitted, the full spoken and
+preferred forms are retained, and the generated prompt is capped at 4,096
+characters. Unsupported engines and unvalidated custom model IDs receive no
+Vocabulary context.
+
 ## Full reference
 
 ```toml
@@ -34,7 +43,10 @@ local_attention = false
 local_attention_context_size = 256
 
 [qwen3_asr]
+# Higher-quality default. Use mlx-community/Qwen3-ASR-0.6B-bf16 for
+# lower memory use and latency.
 model = "mlx-community/Qwen3-ASR-1.7B-bf16"
+use_vocabulary = true
 timeout = 0
 temperature = 0.0
 top_p = 1.0

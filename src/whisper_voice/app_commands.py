@@ -60,6 +60,19 @@ class CommandsMixin:
         old_backend = old.grammar.backend if old.grammar.enabled else "none"
         old_tts_enabled = old.tts.enabled
 
+        def _engine_runtime_config(config, engine_id):
+            if engine_id == "parakeet_v3":
+                return config.parakeet.model
+            if engine_id == "qwen3_asr":
+                return config.qwen3_asr.model
+            if engine_id == "whisperkit":
+                return config.whisper.model
+            if engine_id == "apple_speech":
+                return config.apple_speech.locale
+            return None
+
+        old_engine_runtime = _engine_runtime_config(old, old_engine)
+
         try:
             self.config = reload_config()
         except Exception as e:
@@ -74,6 +87,11 @@ class CommandsMixin:
         backend_changed = new_backend != old_backend
         tts_changed = new.tts.enabled != old_tts_enabled
         engine_changed = new.transcription.engine != old_engine
+        active_engine_config_changed = (
+            not engine_changed
+            and _engine_runtime_config(new, new.transcription.engine) != old_engine_runtime
+        )
+        engine_needs_switch = engine_changed or active_engine_config_changed
 
         def _apply_switches():
             # Sequential, and waits out a busy pipeline first: the switch
@@ -93,17 +111,17 @@ class CommandsMixin:
                     self._switch_backend(new_backend)
             if tts_changed:
                 (self._enable_tts if new.tts.enabled else self._disable_tts)()
-            if engine_changed:
+            if engine_needs_switch:
                 self._switch_engine(new.transcription.engine)
 
-        if backend_changed or tts_changed or engine_changed:
+        if backend_changed or tts_changed or engine_needs_switch:
             _threading.Thread(target=_apply_switches, daemon=True).start()
 
         self._send_config_snapshot()
         send({
             "type": "done",
             "success": True,
-            "engine_switching": engine_changed,
+            "engine_switching": engine_needs_switch,
         })
 
     def _cmd_status(self, send: callable):

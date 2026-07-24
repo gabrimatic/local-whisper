@@ -235,6 +235,7 @@ class TestConfigSnapshot:
         payload = sent[-1]["config"]
         assert payload["service"]["idle_unload_minutes"] == 20
         assert payload["qwen3_asr"]["max_tokens"] == 0
+        assert payload["qwen3_asr"]["use_vocabulary"] is True
         assert payload["apple_speech"] == {"locale": "en-US", "timeout": 0}
 
 

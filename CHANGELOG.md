@@ -6,9 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-07-24
+
+### Added
+
+- Added first-class Qwen3-ASR 1.7B and 0.6B MLX model choices across configuration, macOS Settings, CLI configuration, setup, model download/status handling, and documentation. The higher-quality 1.7B variant remains the default; 0.6B offers lower memory use and latency.
+- Added Qwen3-ASR context and hotwords through the owned `qwen3-asr-mlx` 0.2.0 runtime. When Vocabulary is enabled, Local Whisper passes its spoken-to-preferred word list to both supported Qwen variants through an explicit engine and model capability, capped at 4,096 characters per request.
+- Added capability-matrix coverage proving that Parakeet-TDT, WhisperKit, and Apple SpeechTranscriber never receive Qwen vocabulary context.
+
 ### Fixed
 
 - Fixed the WhisperKit engine card missing the size readout and Remove button that every other engine has: WhisperKit's on-disk Core ML model is now managed like the rest, so its card shows how much disk it uses and can free it, instead of being treated as an unmanaged external model.
+- Fixed active transcription model changes made through `wh config` being reported as applied live without actually reloading the engine.
+- Fixed source distributions accidentally including local Flutter build and tool caches.
 
 ## [1.9.0] - 2026-07-16
 

@@ -62,11 +62,13 @@ engine = "whisperkit"
 
 [qwen3_asr]
 model = "mlx-community/Qwen3-ASR-1.7B-8bit"
+use_vocabulary = false
 repetition_context_size = 50
 """
         config, _ = _load_config_from(tmp_path, toml)
         assert config.transcription.engine == "whisperkit"
         assert config.qwen3_asr.model == "mlx-community/Qwen3-ASR-1.7B-8bit"
+        assert config.qwen3_asr.use_vocabulary is False
         assert config.qwen3_asr.repetition_context_size == 50
 
     def test_invalid_toml_returns_defaults(self, tmp_path):
@@ -139,6 +141,10 @@ class TestDefaultValues:
     def test_repetition_context_size_default(self, tmp_path):
         config, _ = _load_config_from(tmp_path, toml_content="")
         assert config.qwen3_asr.repetition_context_size == 100
+
+    def test_qwen_vocabulary_context_enabled_by_default(self, tmp_path):
+        config, _ = _load_config_from(tmp_path, toml_content="")
+        assert config.qwen3_asr.use_vocabulary is True
 
     def test_max_tokens_default(self, tmp_path):
         config, _ = _load_config_from(tmp_path, toml_content="")

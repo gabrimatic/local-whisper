@@ -16,9 +16,9 @@ Usage:
 """
 
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, FrozenSet, List, Optional, Tuple
 
-from .base import TranscriptionEngine
+from .base import EngineCapability, TranscriptionEngine
 
 
 @dataclass
@@ -28,6 +28,7 @@ class EngineInfo:
     name: str                            # Display name (e.g., "WhisperKit")
     description: str                     # Short description for menu
     factory: Callable[[], TranscriptionEngine]  # Function to create instance
+    capabilities: FrozenSet[EngineCapability] = frozenset()
 
 
 def _create_parakeet() -> TranscriptionEngine:
@@ -63,8 +64,9 @@ ENGINE_REGISTRY: Dict[str, EngineInfo] = {
     "qwen3_asr": EngineInfo(
         id="qwen3_asr",
         name="Qwen3-ASR",
-        description="On-device MLX transcription, strong multilingual accuracy",
+        description="On-device MLX transcription, 1.7B quality or 0.6B efficiency",
         factory=_create_qwen3_asr,
+        capabilities=frozenset({EngineCapability.CONTEXTUAL_PROMPTING}),
     ),
     "whisperkit": EngineInfo(
         id="whisperkit",
@@ -111,11 +113,19 @@ def get_engine_choices() -> List[Tuple[str, str]]:
     return [(info.id, info.name) for info in ENGINE_REGISTRY.values()]
 
 
+def supports_engine_capability(engine_id: str, capability: EngineCapability) -> bool:
+    """Whether a registered engine explicitly declares an optional capability."""
+    info = get_engine_info(engine_id)
+    return bool(info and capability in info.capabilities)
+
+
 __all__ = [
     "TranscriptionEngine",
+    "EngineCapability",
     "EngineInfo",
     "ENGINE_REGISTRY",
     "create_engine",
     "get_engine_info",
     "get_engine_choices",
+    "supports_engine_capability",
 ]

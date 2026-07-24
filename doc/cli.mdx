@@ -25,6 +25,8 @@ wh uninstall        # Remove Local Whisper
 wh engine                 # Show current engine and list available engines
 wh engine parakeet_v3     # Switch to Parakeet-TDT v3
 wh engine qwen3_asr       # Switch to Qwen3-ASR
+wh engine qwen3_asr 1.7b  # Higher-quality default
+wh engine qwen3_asr 0.6b  # Lower memory and latency
 wh engine apple_speech    # Switch to Apple SpeechTranscriber
 wh engine whisperkit      # Switch to WhisperKit
 
@@ -35,6 +37,13 @@ wh backend lm_studio
 ```
 
 The CLI switch restarts the service. The macOS menu bar can switch engines and grammar backends in place.
+
+Choose Qwen3-ASR `1.7B` (higher-quality default) or `0.6B` (lower memory and latency) directly with `wh engine qwen3_asr <size>`, or use `wh config`. The selected MLX snapshot is downloaded before activation.
+
+`wh config` also controls **Qwen vocabulary**. When enabled together with
+Vocabulary replacements, the validated Qwen models receive those rules as
+local context/hotwords (up to 4,096 characters). Add and manage the underlying
+word list with `wh replace`; unsupported engines receive none of this data.
 
 ## Recording and transcription
 

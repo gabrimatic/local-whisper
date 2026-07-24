@@ -71,6 +71,65 @@ def test_project_does_not_use_mlx_audio_runtime():
         assert "mlx_audio" not in content, path
 
 
+def test_qwen3_product_surfaces_offer_both_supported_mlx_models():
+    """The two maintained bf16 variants should be explicit in app and CLI configuration."""
+    swift_settings = _read("LocalWhisperUI/Sources/LocalWhisperUI/EngineSettingsSections.swift")
+    cli_editor = _read("src/whisper_voice/cli/editor.py")
+    cli_help = _read("src/whisper_voice/cli/main.py")
+
+    for content in (swift_settings, cli_editor):
+        assert "mlx-community/Qwen3-ASR-1.7B-bf16" in content
+        assert "mlx-community/Qwen3-ASR-0.6B-bf16" in content
+
+    assert "Higher quality" in swift_settings
+    assert "Lower memory" in swift_settings
+    assert "wh engine qwen3_asr [1.7b|0.6b]" in cli_help
+
+
+def test_qwen3_docs_state_runtime_boundary_and_variant_tradeoff():
+    """Public docs must distinguish the community MLX path from Qwen's official runtime."""
+    paths = [
+        "README.md",
+        "doc/product/engines.mdx",
+        "doc/reference/configuration.mdx",
+    ]
+
+    for path in paths:
+        content = _read(path)
+        assert "mlx-community/Qwen3-ASR-1.7B-bf16" in content, path
+        assert "mlx-community/Qwen3-ASR-0.6B-bf16" in content, path
+        assert "community-maintained" in content, path
+        assert "official PyTorch" in content, path
+        assert "memory" in content.lower(), path
+        assert "latency" in content.lower(), path
+
+
+def test_qwen3_vocabulary_context_is_visible_and_capability_gated():
+    """Product surfaces must explain the bounded local Vocabulary integration."""
+    swift_settings = _read("LocalWhisperUI/Sources/LocalWhisperUI/EngineSettingsSections.swift")
+    vocabulary_panel = _read("LocalWhisperUI/Sources/LocalWhisperUI/VocabularyPanel.swift")
+    cli_editor = _read("src/whisper_voice/cli/editor.py")
+    pyproject = tomllib.loads(_read("pyproject.toml"))
+
+    assert "Use Vocabulary as context" in swift_settings
+    assert "4,096 characters" in swift_settings
+    assert "local context before transcription" in vocabulary_panel
+    assert "Qwen vocabulary" in cli_editor
+    assert "qwen3-asr-mlx==0.2.0" in pyproject["project"]["dependencies"]
+
+    for path in (
+        "README.md",
+        "doc/product/engines.mdx",
+        "doc/reference/configuration.mdx",
+        "doc/reference/security.mdx",
+    ):
+        content = _read(path)
+        assert "Vocabulary" in content, path
+        assert "context" in content.lower(), path
+        assert "4,096" in content, path
+        assert "local" in content.lower(), path
+
+
 def test_recommended_install_path_uses_homebrew_and_guided_setup():
     """Recommended install copy should lead with one command and finish with wh setup."""
     readme = _read("README.md")

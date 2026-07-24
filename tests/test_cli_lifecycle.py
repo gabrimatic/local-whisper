@@ -72,6 +72,22 @@ class TestConfigSummary:
         assert "never" in out
         assert "off" in out
 
+    def test_qwen_summary_shows_selected_model_variant(self, monkeypatch, tmp_path, capsys):
+        from whisper_voice.cli.editor import cmd_config
+
+        config_dir = tmp_path / ".whisper"
+        config_dir.mkdir(parents=True)
+        (config_dir / "config.toml").write_text(
+            '[transcription]\nengine = "qwen3_asr"\n'
+            '[qwen3_asr]\nmodel = "mlx-community/Qwen3-ASR-0.6B-bf16"\n',
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("HOME", str(tmp_path))
+
+        cmd_config(["show"])
+
+        assert "Qwen3-ASR-0.6B-bf16" in capsys.readouterr().out
+
 
 class TestUptimeParsing:
     def test_parse_etime_mm_ss(self):
@@ -179,6 +195,54 @@ class TestEngineSwitchModelPreparation:
         settings.cmd_engine(["qwen3_asr"])
 
         assert calls == [("ensure", "qwen3_asr"), ("write", "qwen3_asr")]
+
+    def test_cmd_engine_selects_and_prefetches_qwen_variant_before_config_write(self, monkeypatch):
+        from whisper_voice.cli import settings
+
+        calls = []
+        monkeypatch.setattr(
+            settings,
+            "_list_engines",
+            lambda: {
+                "qwen3_asr": SimpleNamespace(
+                    description="On-device MLX transcription",
+                )
+            },
+        )
+        monkeypatch.setattr(settings, "_is_running", lambda: (False, None))
+        monkeypatch.setattr(settings, "_read_config_engine", lambda: "parakeet_v3")
+        monkeypatch.setattr(
+            settings,
+            "_read_qwen_model",
+            lambda: "mlx-community/Qwen3-ASR-1.7B-bf16",
+            raising=False,
+        )
+        monkeypatch.setattr(
+            settings,
+            "_ensure_engine_ready_for_cli",
+            lambda engine, model: calls.append(("ensure", engine, model)),
+            raising=False,
+        )
+        monkeypatch.setattr(
+            settings,
+            "_write_qwen_model",
+            lambda model: calls.append(("model", model)) or True,
+            raising=False,
+        )
+        monkeypatch.setattr(
+            settings,
+            "_write_config_engine",
+            lambda engine: calls.append(("engine", engine)) or True,
+        )
+
+        settings.cmd_engine(["qwen3_asr", "0.6b"])
+
+        expected_model = "mlx-community/Qwen3-ASR-0.6B-bf16"
+        assert calls == [
+            ("ensure", "qwen3_asr", expected_model),
+            ("model", expected_model),
+            ("engine", "qwen3_asr"),
+        ]
 
     def test_cmd_engine_does_not_write_config_when_prefetch_fails(self, monkeypatch):
         from whisper_voice.cli import settings

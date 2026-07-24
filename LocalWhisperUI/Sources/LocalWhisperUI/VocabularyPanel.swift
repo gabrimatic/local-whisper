@@ -59,6 +59,16 @@ struct VocabularyPanel: View {
                 appState.config.replacements.enabled = v
                 appState.ipcClient?.sendConfigUpdate(section: "replacements", key: "enabled", value: v)
             }
+
+            if appState.config.transcription.engine == "qwen3_asr"
+                && appState.config.qwen3Asr.useVocabulary {
+                WideRow {
+                    InlineNotice(
+                        kind: .info,
+                        text: "Qwen3-ASR also uses non-empty rules as local context before transcription (up to 4,096 characters), then applies replacements normally."
+                    )
+                }
+            }
         }
     }
 

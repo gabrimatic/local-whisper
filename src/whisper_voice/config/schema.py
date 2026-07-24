@@ -77,8 +77,13 @@ local_attention = false
 local_attention_context_size = 256
 
 [qwen3_asr]
-# Model identifier from Hugging Face
+# Higher-quality default. Use mlx-community/Qwen3-ASR-0.6B-bf16 for
+# lower memory use and latency.
 model = "mlx-community/Qwen3-ASR-1.7B-bf16"
+
+# Use enabled Vocabulary replacement rules as model-native context/hotwords.
+# Context is built locally and capped at 4096 characters per request.
+use_vocabulary = true
 
 # Transcription timeout in seconds (0 = no limit)
 timeout = 0
@@ -352,6 +357,7 @@ class ParakeetConfig:
 @dataclass
 class Qwen3ASRConfig:
     model: str = "mlx-community/Qwen3-ASR-1.7B-bf16"
+    use_vocabulary: bool = True
     timeout: int = 0
     temperature: float = 0.0
     top_p: float = 1.0

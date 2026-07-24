@@ -16,8 +16,10 @@ from typing import Optional, Tuple
 from ..config import get_config
 from ..utils import log
 from .base import TranscriptionEngine
+from .qwen3_models import DEFAULT_QWEN3_ASR_MODEL
+from .status import mark_engine_model_warmed
 
-_DEFAULT_MODEL = "mlx-community/Qwen3-ASR-1.7B-bf16"
+_DEFAULT_MODEL = DEFAULT_QWEN3_ASR_MODEL
 
 
 def _quick_duration(path: str) -> Optional[float]:
@@ -77,6 +79,7 @@ class Qwen3ASREngine(TranscriptionEngine):
         warm_start = time.monotonic()
         try:
             self._model.warm_up()
+            mark_engine_model_warmed("qwen3_asr", hf_repo=model_name)
             log(f"Qwen3-ASR warm-up complete in {time.monotonic() - warm_start:.1f}s", "OK")
         except Exception as e:
             log(
@@ -91,6 +94,20 @@ class Qwen3ASREngine(TranscriptionEngine):
         return self._model is not None
 
     def transcribe(self, path: Path) -> Tuple[Optional[str], Optional[str]]:
+        return self._transcribe(path, context=None)
+
+    def transcribe_with_context(
+        self,
+        path: Path,
+        context: Optional[str],
+    ) -> Tuple[Optional[str], Optional[str]]:
+        return self._transcribe(path, context=context)
+
+    def _transcribe(
+        self,
+        path: Path,
+        context: Optional[str],
+    ) -> Tuple[Optional[str], Optional[str]]:
         if self._model is None:
             return None, "Model not loaded"
 
@@ -112,6 +129,8 @@ class Qwen3ASREngine(TranscriptionEngine):
             max_tokens = getattr(qwen3_cfg, "max_tokens", 0) if qwen3_cfg else 0
             if max_tokens and max_tokens > 0:
                 kwargs["max_tokens"] = int(max_tokens)
+            if context:
+                kwargs["context"] = context
 
             text, err = self._invoke(str(path), kwargs, timeout)
             if err:

@@ -17,7 +17,29 @@ from .lifecycle import (
 )
 
 
-def _ensure_engine_ready_for_cli(engine_id: str) -> None:
+def _read_qwen_model() -> str:
+    """Read the configured Qwen3-ASR model without initializing the runtime."""
+    try:
+        import tomllib
+
+        with _get_config_path().open("rb") as config_file:
+            data = tomllib.load(config_file)
+        return str(
+            data.get("qwen3_asr", {}).get(
+                "model", "mlx-community/Qwen3-ASR-1.7B-bf16"
+            )
+        )
+    except Exception:
+        return "mlx-community/Qwen3-ASR-1.7B-bf16"
+
+
+def _write_qwen_model(model: str) -> bool:
+    from whisper_voice.config import update_config_field
+
+    return update_config_field("qwen3_asr", "model", model)
+
+
+def _ensure_engine_ready_for_cli(engine_id: str, model_id: str | None = None) -> None:
     """Prepare managed engine weights before writing config/restarting."""
     if engine_id == "apple_speech":
         from whisper_voice.engines.apple_speech import AppleSpeechEngine
@@ -38,7 +60,7 @@ def _ensure_engine_ready_for_cli(engine_id: str) -> None:
 
     from whisper_voice.engines.status import engine_model_status, ensure_engine_model_cached
 
-    status = engine_model_status(engine_id)
+    status = engine_model_status(engine_id, hf_repo=model_id)
     if status.get("cache_dir") is None:
         return
     if status.get("downloaded", False):
@@ -47,7 +69,7 @@ def _ensure_engine_ready_for_cli(engine_id: str) -> None:
     download_status = status.get("download_status") or "missing"
     verb = "Resuming" if download_status == "partial" else "Downloading"
     print(f"{C_DIM}{verb} model:{C_RESET} {repo}")
-    ensure_engine_model_cached(engine_id)
+    ensure_engine_model_cached(engine_id, hf_repo=model_id)
 
 
 def cmd_backend(args: list):
@@ -117,18 +139,48 @@ def cmd_engine(args: list):
         print(f"{C_DIM}Available: {available}{C_RESET}", file=sys.stderr)
         sys.exit(1)
 
+    requested_qwen_model = None
+    if len(args) > 1:
+        if len(args) != 2 or new_engine != "qwen3_asr":
+            print(
+                f"{C_RED}Usage: wh engine qwen3_asr [1.7b|0.6b]{C_RESET}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        from whisper_voice.engines.qwen3_models import resolve_qwen3_asr_model
+
+        try:
+            requested_qwen_model = resolve_qwen3_asr_model(args[1])
+        except ValueError as exc:
+            print(f"{C_RED}{exc}{C_RESET}", file=sys.stderr)
+            sys.exit(1)
+
     previous_engine = _read_config_engine()
+    previous_qwen_model = _read_qwen_model()
 
     try:
-        _ensure_engine_ready_for_cli(new_engine)
+        if requested_qwen_model is None:
+            _ensure_engine_ready_for_cli(new_engine)
+        else:
+            _ensure_engine_ready_for_cli(new_engine, requested_qwen_model)
     except Exception as exc:
         print(f"{C_RED}Could not prepare engine model:{C_RESET} {exc}", file=sys.stderr)
         sys.exit(1)
 
+    qwen_model_changed = bool(
+        requested_qwen_model and requested_qwen_model != previous_qwen_model
+    )
+    if qwen_model_changed and not _write_qwen_model(requested_qwen_model):
+        sys.exit(1)
+
     if not _write_config_engine(new_engine):
+        if qwen_model_changed:
+            _write_qwen_model(previous_qwen_model)
         sys.exit(1)
 
     print(f"{C_GREEN}Engine set to:{C_RESET} {new_engine}")
+    if requested_qwen_model:
+        print(f"{C_GREEN}Qwen3-ASR model:{C_RESET} {requested_qwen_model}")
 
     running, _ = _is_running()
     if running:
@@ -144,6 +196,16 @@ def cmd_engine(args: list):
                     file=sys.stderr,
                 )
                 if _write_config_engine(previous_engine):
+                    if qwen_model_changed:
+                        _write_qwen_model(previous_qwen_model)
+                    cmd_restart()
+                    _wait_for_service_ready(timeout=60.0)
+            elif qwen_model_changed:
+                print(
+                    f"{C_YELLOW}Service did not become ready; rolling back Qwen3-ASR model...{C_RESET}",
+                    file=sys.stderr,
+                )
+                if _write_qwen_model(previous_qwen_model):
                     cmd_restart()
                     _wait_for_service_ready(timeout=60.0)
             sys.exit(1)

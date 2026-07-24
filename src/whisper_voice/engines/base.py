@@ -8,8 +8,15 @@ and implement the required methods.
 """
 
 from abc import ABC, abstractmethod
+from enum import Enum
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Protocol, Tuple, runtime_checkable
+
+
+class EngineCapability(str, Enum):
+    """Optional features an engine may explicitly implement."""
+
+    CONTEXTUAL_PROMPTING = "contextual_prompting"
 
 
 class TranscriptionEngine(ABC):
@@ -63,3 +70,16 @@ class TranscriptionEngine(ABC):
     def supports_long_audio(self) -> bool:
         """Whether this engine handles audio >28s natively without chunking."""
         return False
+
+
+@runtime_checkable
+class ContextualPromptingEngine(Protocol):
+    """Engine contract for model-native context or hotword prompting."""
+
+    def transcribe_with_context(
+        self,
+        path: Path,
+        context: Optional[str],
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Transcribe with a locally constructed contextual prompt."""
+        ...

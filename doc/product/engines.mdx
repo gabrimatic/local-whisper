@@ -23,11 +23,21 @@ Parakeet-TDT v3 is the default. It runs in-process through MLX, uses the `mlx-co
 
 ## Qwen3-ASR
 
-Qwen3-ASR runs in-process through MLX. It uses model-side language detection and supports long audio through a large internal chunk duration.
+Qwen3-ASR runs in-process through a community-maintained MLX conversion and runtime, not Qwen's official PyTorch stack. It uses model-side language detection and supports long audio through a large internal chunk duration.
+
+The `mlx-community/Qwen3-ASR-1.7B-bf16` variant is the higher-quality default. Choose `mlx-community/Qwen3-ASR-0.6B-bf16` when lower memory use and latency matter more than maximum recognition quality. Settings and `wh config` expose both variants; the selected snapshot downloads before the engine switches and then runs locally.
+
+Both catalog models declare contextual-prompting support. When Vocabulary and
+`qwen3_asr.use_vocabulary` are enabled, Local Whisper builds a prompt from each
+non-empty spoken-to-preferred replacement rule and passes it to Qwen as context
+and hotwords. The prompt stays in process and is capped at 4,096 characters per
+request. Custom Qwen model IDs do not receive Vocabulary context unless they
+are added to the validated model catalog.
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| `model` | `mlx-community/Qwen3-ASR-1.7B-bf16` | Downloaded when selected. |
+| `model` | `mlx-community/Qwen3-ASR-1.7B-bf16` | Higher-quality default; `mlx-community/Qwen3-ASR-0.6B-bf16` is the lower-memory, lower-latency option. |
+| `use_vocabulary` | `true` | Pass enabled Vocabulary rules as local context/hotwords. |
 | `timeout` | `0` | No limit. |
 | `temperature` | `0.0` | Deterministic decode. |
 | `repetition_penalty` | `1.2` | Suppresses repetition loops. |
@@ -71,5 +81,7 @@ Apple manages language assets through `AssetInventory`. Local Whisper reports wh
 
 1. Implement `TranscriptionEngine` in `src/whisper_voice/engines/`.
 2. Add an `ENGINE_REGISTRY` entry in `src/whisper_voice/engines/__init__.py`.
-3. Add config schema/defaults if needed.
-4. Verify menu bar, CLI, Settings, startup, and lazy loading.
+3. Declare optional capabilities in the registry and implement their explicit
+   engine protocol. Never pass feature-specific data to an undeclared engine.
+4. Add config schema/defaults if needed.
+5. Verify menu bar, CLI, Settings, startup, capability isolation, and lazy loading.

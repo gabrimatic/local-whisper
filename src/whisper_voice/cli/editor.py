@@ -48,6 +48,8 @@ def _interactive_config() -> None:
         {"type": "float",   "label": "Hold threshold",   "section": "hotkey",        "key": "hold_threshold",         "value": _get("hotkey", "hold_threshold", 0.0),                  "hint": "sec  0=double-tap"},
         {"type": "header",  "label": "Transcription"},
         {"type": "choice",  "label": "Engine",           "section": "transcription", "key": "engine",                 "value": _get("transcription", "engine", "parakeet_v3"),        "options": ["parakeet_v3", "qwen3_asr", "whisperkit", "apple_speech"]},
+        {"type": "choice",  "label": "Qwen model",       "section": "qwen3_asr",     "key": "model",                  "value": _get("qwen3_asr", "model", "mlx-community/Qwen3-ASR-1.7B-bf16"), "options": ["mlx-community/Qwen3-ASR-1.7B-bf16", "mlx-community/Qwen3-ASR-0.6B-bf16"]},
+        {"type": "bool",    "label": "Qwen vocabulary",  "section": "qwen3_asr",     "key": "use_vocabulary",         "value": _get("qwen3_asr", "use_vocabulary", True),              "hint": "context/hotwords"},
         {"type": "header",  "label": "Grammar"},
         {"type": "bool",    "label": "Enabled",          "section": "grammar",       "key": "enabled",                "value": _get("grammar", "enabled", False)},
         {"type": "choice",  "label": "Backend",          "section": "grammar",       "key": "backend",                "value": _get("grammar", "backend", "apple_intelligence"),       "options": ["apple_intelligence", "ollama", "lm_studio"]},
@@ -317,6 +319,11 @@ def cmd_config(args: list):
             if engine == "whisperkit":
                 language = data.get("whisper", {}).get("language", "auto")
                 engine_label = f"{C_GREEN}{engine}{C_RESET}  {C_DIM}({language}){C_RESET}"
+            elif engine == "qwen3_asr":
+                model = data.get("qwen3_asr", {}).get(
+                    "model", "mlx-community/Qwen3-ASR-1.7B-bf16"
+                )
+                engine_label = f"{C_GREEN}{engine}{C_RESET}  {C_DIM}({model}){C_RESET}"
             else:
                 engine_label = f"{C_GREEN}{engine}{C_RESET}"
             def _on_off(v): return f"{C_GREEN}on{C_RESET}" if v else f"{C_DIM}off{C_RESET}"

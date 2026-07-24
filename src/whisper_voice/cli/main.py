@@ -59,6 +59,7 @@ def _print_help():
         ]),
         ("Settings", [
             ("wh engine [name]",   "Show or switch transcription engine"),
+            ("wh engine qwen3_asr [1.7b|0.6b]", "Switch Qwen3-ASR and choose model size"),
             ("wh backend [name]",  "Show or switch grammar backend"),
             ("wh replace [add|remove|on|off|import FILE]", "Manage replacement rules"),
             ("wh config [show|edit|path]", "Interactive config editor, open in $EDITOR, or print path"),
