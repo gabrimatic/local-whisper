@@ -30,7 +30,7 @@ import UIKit
     }
   }
 
-  private func registerSetupBridge(with messenger: FlutterBinaryMessenger) {
+  func registerSetupBridge(with messenger: FlutterBinaryMessenger) {
     let method = FlutterMethodChannel(name: "local_whisper/setup", binaryMessenger: messenger)
     method.setMethodCallHandler { [weak self] call, result in
       guard let self else {
