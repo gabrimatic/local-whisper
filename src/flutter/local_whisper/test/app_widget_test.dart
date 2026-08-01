@@ -139,13 +139,13 @@ void main() {
     expect(find.text('Private by default'), findsOneWidget);
 
     await tester.tap(find.text('History'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.text('History'), findsWidgets);
     expect(find.byType(TextField), findsOneWidget);
     expect(find.text('No recordings yet'), findsOneWidget);
 
     await tester.tap(find.text('Modes'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.byTooltip('Add mode'), findsOneWidget);
     expect(find.text('Clean Dictation'), findsOneWidget);
     expect(find.text('Message'), findsOneWidget);
@@ -154,7 +154,7 @@ void main() {
     expect(find.text('Prompt'), findsOneWidget);
 
     await tester.tap(find.text('Models'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.text('Installed'), findsOneWidget);
     expect(find.text('Storage'), findsOneWidget);
     expect(find.text('Recorder'), findsOneWidget);
@@ -177,7 +177,7 @@ void main() {
     expect(find.text('Local Cleanup Engine'), findsOneWidget);
 
     await tester.tap(find.text('Settings'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.text('Setup guide'), findsOneWidget);
     expect(find.text('Privacy'), findsOneWidget);
     expect(find.byTooltip('Refresh status'), findsOneWidget);
@@ -202,15 +202,15 @@ void main() {
     expect(find.text('Private voice, ready everywhere.'), findsOneWidget);
 
     await tester.tap(find.text('Start setup'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await tester.tap(find.text('Continue'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await tester.tap(find.text('Continue'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await tester.tap(find.text('Continue'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await tester.tap(find.text('Use without keyboard'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.text('Start talking'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
@@ -233,21 +233,21 @@ void main() {
     );
 
     await tester.tap(find.text('Settings'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await tester.tap(find.text('Run setup again'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
 
     expect(find.text('Set up Local Whisper'), findsOneWidget);
     await tester.tap(find.text('Start setup'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await tester.tap(find.text('Continue'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await tester.tap(find.text('Continue'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.text('Enable Local Whisper Keyboard'), findsOneWidget);
 
     await tester.tap(find.text('Open Settings'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(openedSettings, isTrue);
     expect(
       find.textContaining('Keyboard has not been verified yet.'),
@@ -259,11 +259,11 @@ void main() {
     await _pumpApp(tester, installedModelPath: null);
 
     await tester.tap(find.text('Start setup'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.text('Install a model pack'), findsOneWidget);
 
     await tester.tap(find.text('More choices'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
 
     expect(find.text('Model packs'), findsOneWidget);
     expect(find.text('Qwen3-ASR'), findsOneWidget);
@@ -276,17 +276,17 @@ void main() {
     await _pumpApp(tester, installedModelPath: installedModelPath);
 
     await tester.tap(find.text('Start setup'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await tester.tap(find.text('Continue'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await tester.tap(find.text('Continue'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await tester.tap(find.text('Continue'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.text('Waiting for keyboard'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), keyboardVerificationToken);
-    await tester.pumpAndSettle();
+    await _settle(tester);
 
     expect(find.text('Keyboard verified'), findsOneWidget);
     expect(
@@ -322,7 +322,7 @@ void main() {
     expect(find.byTooltip('Copy'), findsOneWidget);
 
     await tester.tap(find.text('History'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.text('Clean Dictation'), findsWidgets);
     expect(find.text('Hello, this is local whisper.'), findsOneWidget);
     expect(find.byTooltip('Re-polish'), findsOneWidget);
@@ -341,7 +341,7 @@ void main() {
     await tester.tap(find.widgetWithIcon(FilledButton, Icons.mic_rounded));
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.widgetWithIcon(FilledButton, Icons.stop_rounded));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.text('Needs attention'), findsOneWidget);
     expect(find.textContaining('Recording was too short'), findsOneWidget);
 
@@ -350,7 +350,7 @@ void main() {
     await tester.tap(find.widgetWithIcon(FilledButton, Icons.mic_rounded));
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.widgetWithIcon(FilledButton, Icons.stop_rounded));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.text('No speech was detected.'), findsOneWidget);
   });
 
@@ -370,10 +370,10 @@ void main() {
     );
 
     await tester.tap(find.text('Modes'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await tester.scrollUntilVisible(find.text('Ship Note'), 200);
     await tester.drag(find.byType(ListView), const Offset(0, -160));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.text('Ship Note'), findsOneWidget);
 
     await tester.tap(
@@ -382,9 +382,9 @@ void main() {
         matching: find.byType(ListTile),
       ),
     );
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await tester.tap(find.text('Record'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.textContaining('using Ship Note'), findsOneWidget);
   });
 
@@ -400,7 +400,7 @@ void main() {
     await tester.tap(
       find.widgetWithIcon(FilledButton, Icons.download_for_offline_rounded),
     );
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.text('Models'), findsWidgets);
     await tester.scrollUntilVisible(find.text('WhisperKit Large v3'), 240);
     expect(find.text('WhisperKit Large v3'), findsWidgets);
@@ -439,7 +439,7 @@ void main() {
     );
 
     await tester.tap(find.text('History'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
 
     expect(find.text('2 entries'), findsOneWidget);
     expect(find.text('First final.'), findsOneWidget);
@@ -450,10 +450,10 @@ void main() {
     expect(find.text('History exported to clipboard'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Clear history'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.text('Clear history?'), findsOneWidget);
     await tester.tap(find.text('Clear'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
 
     expect(find.text('No recordings yet'), findsOneWidget);
     expect(find.text('First final.'), findsNothing);
@@ -492,12 +492,12 @@ void main() {
     );
 
     await tester.tap(find.text('History'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await tester.tap(find.byTooltip('Delete transcript').first);
-    await tester.pumpAndSettle();
+    await _settle(tester);
     expect(find.text('Delete transcript?'), findsOneWidget);
     await tester.tap(find.text('Delete'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
 
     expect(find.text('First final.'), findsNothing);
     expect(find.text('Second final.'), findsOneWidget);
@@ -525,13 +525,26 @@ void main() {
     );
 
     await tester.tap(find.text('History'));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     await tester.enterText(find.byType(TextField), 'absent');
-    await tester.pumpAndSettle();
+    await _settle(tester);
 
     expect(find.text('No matching recordings'), findsOneWidget);
     expect(find.text('No recordings yet'), findsNothing);
   });
+}
+
+/// A bounded stand-in for `tester.pumpAndSettle()`. The Record tab's idle
+/// mic button plays a continuously-looping breathing-halo animation (fixed
+/// to actually loop instead of freezing after one cycle), and that tab
+/// stays mounted at all times via the app's IndexedStack — so once the app
+/// reaches its main shell, an animation is *always* pending and vanilla
+/// `pumpAndSettle()` never settles. Pumping a fixed number of frames still
+/// lets every bounded transition/animation in the app finish.
+Future<void> _settle(WidgetTester tester) async {
+  for (var i = 0; i < 12; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
 }
 
 Future<void> _pumpApp(
@@ -589,7 +602,7 @@ Future<void> _pumpApp(
   await tester.runAsync(() async {
     await Future<void>.delayed(const Duration(milliseconds: 500));
   });
-  await tester.pumpAndSettle();
+  await _settle(tester);
 }
 
 Future<String> _createInstalledWhisperKitModel(Directory tempDir) async {

@@ -10,6 +10,7 @@ class SceneDelegate: FlutterSceneDelegate {
     super.scene(scene, willConnectTo: session, options: connectionOptions)
     if let controller = window?.rootViewController as? FlutterViewController {
       LocalSpeechBridge.shared.register(with: controller.binaryMessenger)
+      LocalSetupBridge.shared.register(with: controller.binaryMessenger)
     }
   }
 }

@@ -20,6 +20,7 @@ final class LocalSpeechBridge: NSObject, FlutterStreamHandler {
   private var loadedModel: String?
   private var loadedModelPath: String?
   private var whisperKit: WhisperKit?
+  private var transcriptionBackgroundTask: UIBackgroundTaskIdentifier = .invalid
 
   func register(with messenger: FlutterBinaryMessenger) {
     guard !didRegister else { return }
@@ -143,6 +144,20 @@ final class LocalSpeechBridge: NSObject, FlutterStreamHandler {
 
       let input = audioEngine.inputNode
       let format = input.outputFormat(forBus: 0)
+      // AVAudioEngine reports a degenerate 0 Hz / 0-channel format when no
+      // real input route is available (observed on the iOS Simulator, which
+      // has no microphone hardware, but the same condition can occur on a
+      // real device mid audio-route negotiation). installTap(format:) raises
+      // an *Objective-C NSException* for an invalid format — not a Swift
+      // Error — so it is never caught by this do/catch and previously took
+      // the whole app down. Fail gracefully instead of reaching that call.
+      guard format.sampleRate > 0, format.channelCount > 0 else {
+        throw NSError(
+          domain: "LocalWhisper",
+          code: 6,
+          userInfo: [NSLocalizedDescriptionKey: "Microphone input is not available right now."]
+        )
+      }
       let url = FileManager.default.temporaryDirectory
         .appendingPathComponent("local-whisper-\(UUID().uuidString).wav")
       let file = try AVAudioFile(forWriting: url, settings: format.settings)
@@ -192,11 +207,18 @@ final class LocalSpeechBridge: NSObject, FlutterStreamHandler {
     let model = selectedModel
     let modelPath = selectedModelPath
     let locale = selectedLocale
+    // WhisperKit inference for a long recording can easily outlast the
+    // few seconds iOS gives a backgrounded app before suspending it, which
+    // would silently drop a transcription the user is waiting on if they
+    // switch apps right after tapping stop. Request extra run time for the
+    // duration of this Task.
+    beginTranscriptionBackgroundTask()
     Task {
       do {
         let text = try await transcribe(audioURL: audioURL, model: model, modelPath: modelPath, locale: locale)
         try? FileManager.default.removeItem(at: audioURL)
         await MainActor.run {
+          endTranscriptionBackgroundTask()
           result([
             "transcript": text,
             "rawTranscript": text,
@@ -210,6 +232,7 @@ final class LocalSpeechBridge: NSObject, FlutterStreamHandler {
       } catch {
         try? FileManager.default.removeItem(at: audioURL)
         await MainActor.run {
+          endTranscriptionBackgroundTask()
           result(FlutterError(code: "transcriptionFailed", message: error.localizedDescription, details: nil))
         }
       }
@@ -217,9 +240,35 @@ final class LocalSpeechBridge: NSObject, FlutterStreamHandler {
   }
 
   @MainActor
+  private func beginTranscriptionBackgroundTask() {
+    endTranscriptionBackgroundTask()
+    // The expiration handler isn't guaranteed to run on the main thread, so
+    // hop back onto MainActor before touching MainActor-isolated state.
+    transcriptionBackgroundTask = UIApplication.shared.beginBackgroundTask(
+      withName: "LocalWhisperTranscription"
+    ) { [weak self] in
+      Task { @MainActor in
+        self?.endTranscriptionBackgroundTask()
+      }
+    }
+  }
+
+  @MainActor
+  private func endTranscriptionBackgroundTask() {
+    guard transcriptionBackgroundTask != .invalid else { return }
+    UIApplication.shared.endBackgroundTask(transcriptionBackgroundTask)
+    transcriptionBackgroundTask = .invalid
+  }
+
+  @MainActor
   private func cancel() {
+    // removeTap is a no-op when nothing is installed, so call it
+    // unconditionally rather than gating on isRunning: start() installs the
+    // tap before calling audioEngine.start(), so if start() throws, the
+    // engine never reaches isRunning and the earlier `if isRunning` guard
+    // skipped removeTap entirely, leaking the input tap on a stopped engine.
+    audioEngine.inputNode.removeTap(onBus: 0)
     if audioEngine.isRunning {
-      audioEngine.inputNode.removeTap(onBus: 0)
       audioEngine.stop()
     }
     outputFile = nil
@@ -266,6 +315,12 @@ final class LocalSpeechBridge: NSObject, FlutterStreamHandler {
     }
   }
 
+  // @MainActor isolates whisperKit/loadedModel/loadedModelPath so the
+  // compiler serializes every call: stop()'s and debugTranscribeFile()'s
+  // Tasks both call this, and neither is itself actor-isolated, so without
+  // this a real recording's transcription and a debug-only test call could
+  // run concurrently and race on these instance properties.
+  @MainActor
   private func transcribe(audioURL: URL, model: String, modelPath: String?, locale: String) async throws -> String {
     if model == "apple_speech" {
       guard #available(iOS 26.0, *) else {

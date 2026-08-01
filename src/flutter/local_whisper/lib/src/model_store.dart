@@ -25,6 +25,7 @@ class ModelStore {
   final Uri _huggingFaceBaseUri;
   final int _maxDownloadAttempts;
   final Duration _downloadRetryDelay;
+  bool _didCleanOrphanedDownloads = false;
 
   static const catalog = [
     LocalModel(
@@ -140,6 +141,7 @@ class ModelStore {
   Future<List<LocalModel>> loadModels() async {
     final saved = await _historyStore.loadModelState();
     final modelRoot = await _modelDirectory();
+    await _cleanOrphanedDownloadsOnce(modelRoot);
     final models = <LocalModel>[];
     var changed = false;
     for (final catalogModel in catalog) {
@@ -222,7 +224,8 @@ class ModelStore {
               : item,
         )
         .toList(growable: false);
-    await _historyStore.saveModelState(models);
+    final removed = models.firstWhere((item) => item.id == model.id);
+    await _historyStore.updateModelState(removed);
     return models;
   }
 
@@ -291,7 +294,8 @@ class ModelStore {
                 : item,
           )
           .toList(growable: false);
-      await _historyStore.saveModelState(models);
+      final installed = models.firstWhere((item) => item.id == model.id);
+      await _historyStore.updateModelState(installed);
       return models;
     } on ModelDownloadCanceledException {
       if (await partial.exists()) {
@@ -423,7 +427,8 @@ class ModelStore {
                 : item,
           )
           .toList(growable: false);
-      await _historyStore.saveModelState(models);
+      final installed = models.firstWhere((item) => item.id == model.id);
+      await _historyStore.updateModelState(installed);
       return models;
     } catch (_) {
       if (await partial.exists()) {
@@ -732,6 +737,29 @@ class ModelStore {
       }
     }
     return total;
+  }
+
+  /// A `*.download` staging folder only exists while a download is
+  /// actively writing it; force-quitting or crashing mid-download is the
+  /// only way one survives past that. A running process would have that
+  /// download tracked in memory and never re-enter this cleanup for it, so
+  /// gating on `_didCleanOrphanedDownloads` (once per ModelStore instance,
+  /// i.e. once per app launch, before any download in this session could
+  /// possibly be in flight) makes it safe to sweep unconditionally rather
+  /// than leaving orphaned partial downloads to grow forever.
+  Future<void> _cleanOrphanedDownloadsOnce(Directory modelRoot) async {
+    if (_didCleanOrphanedDownloads) return;
+    _didCleanOrphanedDownloads = true;
+    if (!await modelRoot.exists()) return;
+    await for (final entity in modelRoot.list()) {
+      if (entity.path.endsWith('.download')) {
+        try {
+          await entity.delete(recursive: true);
+        } catch (_) {
+          // Best-effort cleanup; leave it for next launch if it fails.
+        }
+      }
+    }
   }
 
   Future<Directory> _modelDirectory() async {

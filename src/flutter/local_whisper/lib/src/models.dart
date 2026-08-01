@@ -229,20 +229,74 @@ class AppSettings {
   final bool keyboardHaptics;
   final bool keyboardQuickInsert;
 
-  factory AppSettings.fromJson(Map<String, Object?> json) => AppSettings(
-    localeId: json['localeId'] as String? ?? 'en-US',
-    selectedModeId: json['selectedModeId'] as String? ?? 'clean',
-    selectedModelId:
-        json['selectedModelId'] as String? ?? 'whisperkit_large_v3_turbo',
-    autoCopy: json['autoCopy'] as bool? ?? true,
-    smartPunctuation: json['smartPunctuation'] as bool? ?? true,
-    removeFillers: json['removeFillers'] as bool? ?? true,
-    minRecordingSeconds:
-        (json['minRecordingSeconds'] as num?)?.toDouble() ?? 0.5,
-    maxRecordingSeconds: (json['maxRecordingSeconds'] as num?)?.toInt() ?? 300,
-    keyboardHaptics: json['keyboardHaptics'] as bool? ?? true,
-    keyboardQuickInsert: json['keyboardQuickInsert'] as bool? ?? true,
-  );
+  // Recording-limit bounds mirroring the Settings sliders (_NumberSetting in
+  // app.dart). Persisted values are clamped into these ranges on load so a
+  // corrupted/legacy/manually-edited preferences value can never violate the
+  // Slider's min<=value<=max invariant (which crashes in debug builds) or
+  // silently defeat the min/max-duration guards in _AppControllerState.
+  static const double _minRecordingSecondsFloor = 0.3;
+  static const double _minRecordingSecondsCeil = 5;
+  static const int _maxRecordingSecondsFloor = 10;
+  static const int _maxRecordingSecondsCeil = 1200;
+
+  static String _strField(
+    Map<String, Object?> json,
+    String key,
+    String fallback,
+  ) {
+    final value = json[key];
+    return value is String ? value : fallback;
+  }
+
+  static bool _boolField(
+    Map<String, Object?> json,
+    String key,
+    bool fallback,
+  ) {
+    final value = json[key];
+    return value is bool ? value : fallback;
+  }
+
+  static double _doubleField(
+    Map<String, Object?> json,
+    String key,
+    double fallback,
+  ) {
+    final value = json[key];
+    return value is num ? value.toDouble() : fallback;
+  }
+
+  static int _intField(Map<String, Object?> json, String key, int fallback) {
+    final value = json[key];
+    return value is num ? value.toInt() : fallback;
+  }
+
+  factory AppSettings.fromJson(Map<String, Object?> json) {
+    final minSeconds = _doubleField(json, 'minRecordingSeconds', 0.5).clamp(
+      _minRecordingSecondsFloor,
+      _minRecordingSecondsCeil,
+    );
+    final maxSeconds = _intField(json, 'maxRecordingSeconds', 300).clamp(
+      _maxRecordingSecondsFloor,
+      _maxRecordingSecondsCeil,
+    );
+    return AppSettings(
+      localeId: _strField(json, 'localeId', 'en-US'),
+      selectedModeId: _strField(json, 'selectedModeId', 'clean'),
+      selectedModelId: _strField(
+        json,
+        'selectedModelId',
+        'whisperkit_large_v3_turbo',
+      ),
+      autoCopy: _boolField(json, 'autoCopy', true),
+      smartPunctuation: _boolField(json, 'smartPunctuation', true),
+      removeFillers: _boolField(json, 'removeFillers', true),
+      minRecordingSeconds: minSeconds,
+      maxRecordingSeconds: maxSeconds,
+      keyboardHaptics: _boolField(json, 'keyboardHaptics', true),
+      keyboardQuickInsert: _boolField(json, 'keyboardQuickInsert', true),
+    );
+  }
 
   AppSettings copyWith({
     String? localeId,

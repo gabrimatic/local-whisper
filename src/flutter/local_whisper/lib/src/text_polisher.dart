@@ -86,11 +86,46 @@ class TextPolisher {
 
   String _applyMode(String text, DictationMode mode) {
     return switch (mode.id) {
-      'message' => text.replaceAll(RegExp(r'\s*\n+\s*'), ' '),
+      'message' => _messageStyle(text),
       'notes' => _notes(text),
-      'prompt' => 'Task: $text',
-      _ => text,
+      'prompt' => _promptStyle(text),
+      _ => _applyCustomInstruction(text, mode.instruction),
     };
+  }
+
+  String _messageStyle(String text) =>
+      text.replaceAll(RegExp(r'\s*\n+\s*'), ' ');
+
+  String _promptStyle(String text) => 'Task: $text';
+
+  static final _bulletInstructionPattern = RegExp(
+    r'\bbullet(s|ed|ing|\s*point)?\b|\bnotes?\b|\blist\b',
+    caseSensitive: false,
+  );
+  static final _conciseInstructionPattern = RegExp(
+    r'\bconcise\b|\bmessage\b|\bchat\b|\bshort\b|\b(one|single)[\s-]line\b|\bno\s+(line\s*breaks|paragraphs)\b',
+    caseSensitive: false,
+  );
+  static final _taskInstructionPattern = RegExp(
+    r'\btask\b|\bprompt\b|\binstruction\b',
+    caseSensitive: false,
+  );
+
+  /// Custom dictation modes have no built-in id to switch on, but their
+  /// "Offline formatting instruction" text promises to shape the output —
+  /// this app is fully local/offline with no LLM to interpret free-form
+  /// instructions, so this matches the same deterministic keyword families
+  /// covered by the built-in modes rather than leaving custom instructions
+  /// with no effect at all.
+  String _applyCustomInstruction(String text, String instruction) {
+    if (_bulletInstructionPattern.hasMatch(instruction)) return _notes(text);
+    if (_conciseInstructionPattern.hasMatch(instruction)) {
+      return _messageStyle(text);
+    }
+    if (_taskInstructionPattern.hasMatch(instruction)) {
+      return _promptStyle(text);
+    }
+    return text;
   }
 
   String _notes(String text) {

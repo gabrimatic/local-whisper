@@ -20,6 +20,27 @@ bool get _androidQaRuntimeEnabled =>
 
 String get _deviceLabel => Platform.isAndroid ? 'Android device' : 'iPhone';
 
+/// Applies a change against whatever the current settings are, rather than
+/// a snapshot captured when the callback was built. Every settings control
+/// receives this instead of a full `AppSettings`, so two controls changed in
+/// quick succession each apply their own delta on top of the latest state
+/// instead of one silently overwriting the other's already-saved change.
+typedef AppSettingsMutator =
+    void Function(AppSettings Function(AppSettings current) mutate);
+
+/// Serializes async operations so overlapping calls apply in order instead
+/// of racing (mirrors the same-shaped queue in history_store.dart, which
+/// lives in a different library and so can't be shared directly).
+class _AsyncQueue {
+  Future<void> _tail = Future<void>.value();
+
+  Future<T> run<T>(Future<T> Function() task) {
+    final result = _tail.then((_) => task());
+    _tail = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+}
+
 bool _canRecordWithModelOnCurrentPlatform(LocalModel model, int iosMajor) {
   if (Platform.isAndroid) {
     return model.kind == ModelKind.transcription &&
@@ -84,6 +105,7 @@ class _AppControllerState extends State<AppController>
   final _setup = NativeSetupService();
   final _historyStore = HistoryStore();
   late final _modelStore = ModelStore(_historyStore);
+  final _settingsQueue = _AsyncQueue();
   final _polisher = TextPolisher();
   final _searchController = TextEditingController();
 
@@ -111,7 +133,9 @@ class _AppControllerState extends State<AppController>
   Duration _recordingElapsed = Duration.zero;
 
   bool get _isBusy =>
-      _phase == RecorderPhase.recording || _phase == RecorderPhase.processing;
+      _phase == RecorderPhase.checking ||
+      _phase == RecorderPhase.recording ||
+      _phase == RecorderPhase.processing;
 
   LocalModel get _selectedModel => _models.firstWhere(
     (model) => model.id == _settings.selectedModelId,
@@ -181,8 +205,13 @@ class _AppControllerState extends State<AppController>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused ||
+    // `inactive` fires for transient system overlays too (Control Center,
+    // notification/call banners, the App Switcher preview) while the app is
+    // still effectively in the foreground and the user typically returns
+    // within a second or two. Only `paused`/`detached` mean the app has
+    // actually left the foreground, so only those should discard an
+    // in-progress recording.
+    if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       if (_phase == RecorderPhase.recording) {
         _cancelRecording(
@@ -277,12 +306,18 @@ class _AppControllerState extends State<AppController>
   }
 
   List<LocalModel> _modelsForCurrentPlatform(List<LocalModel> models) {
-    if (!Platform.isAndroid) return models;
+    // Sherpa ONNX transcription packs are Android-only (see
+    // _hasNativeRuntime); the reverse used to be unfiltered, so iOS users
+    // could download the Android Parakeet-TDT/Qwen3-ASR sherpa packs
+    // (~640-940MB) from the Models tab only to find they can never be
+    // selected for recording ("its native iOS runtime is not wired yet").
     return models
         .where(
           (model) =>
               model.kind != ModelKind.transcription ||
-              model.runtime == ModelRuntime.sherpaOnnx,
+              (Platform.isAndroid
+                  ? model.runtime == ModelRuntime.sherpaOnnx
+                  : model.runtime != ModelRuntime.sherpaOnnx),
         )
         .toList(growable: false);
   }
@@ -485,7 +520,12 @@ class _AppControllerState extends State<AppController>
         rawText: raw,
         finalText: polished,
         modeName: _selectedMode.name,
-        localeId: _settings.localeId,
+        // The locale the native engine actually used for this recording
+        // (captured at start time), not `_settings.localeId`, which can
+        // have changed since — Record and Settings share one IndexedStack
+        // so both stay mounted and nothing blocks changing the language
+        // mid-recording.
+        localeId: result.localeId,
         duration: result.duration,
       );
       final history = [entry, ..._history].take(200).toList(growable: false);
@@ -500,7 +540,12 @@ class _AppControllerState extends State<AppController>
         _history = history;
         _lastResult = result.copyWith(transcript: polished, rawTranscript: raw);
         _partialText = '';
-        _tabIndex = 0;
+        // A manual stop happens from the Record tab's own button, so
+        // jumping to tab 0 is a no-op there. An auto-stop can land after
+        // the user has already navigated elsewhere while dictating in the
+        // background — don't yank them back; the max-duration toast below
+        // still tells them the text is ready.
+        if (!autoStopped) _tabIndex = 0;
       });
       if (autoStopped) {
         _toast('Max duration reached. Text is ready.');
@@ -521,14 +566,27 @@ class _AppControllerState extends State<AppController>
       _level = 0;
       _recordingStartedAt = null;
       _recordingElapsed = Duration.zero;
-      _error = message;
     });
+    // `phase` goes to idle, not error, on a cancel — the error panel only
+    // renders for RecorderPhase.error, so a message stashed in `_error`
+    // here would never be shown (and a stale prior result panel would keep
+    // displaying, making the interruption invisible). Surface it as a toast
+    // instead, which works regardless of phase.
+    if (message != null) _toast(message);
   }
 
   Future<void> _retryPolish(TranscriptEntry entry) async {
+    // Use the mode the entry was actually recorded with, not whichever
+    // mode happens to be active in the app right now — history entries
+    // only persist the mode's name (not a stable id), so match on that,
+    // falling back to the current mode if it was since renamed/deleted.
+    final entryMode = _modes.firstWhere(
+      (mode) => mode.name == entry.modeName,
+      orElse: () => _selectedMode,
+    );
     final polished = _polisher.polish(
       entry.rawText,
-      mode: _selectedMode,
+      mode: entryMode,
       removeFillers: _settings.removeFillers,
       smartPunctuation: _settings.smartPunctuation,
     );
@@ -603,39 +661,53 @@ class _AppControllerState extends State<AppController>
     _toast('Transcript deleted');
   }
 
-  Future<void> _saveSettings(AppSettings settings) async {
-    await _historyStore.saveSettings(settings);
-    await _syncKeyboardSettings(settings);
-    final status = await _speech.status(locale: settings.localeId);
-    var models = _models;
-    if (Platform.isIOS && settings.localeId != _settings.localeId) {
-      try {
-        final appleStatus = await _speech.appleSpeechModelStatus(
-          locale: settings.localeId,
-        );
-        models = _withAppleSpeechStatus(models, appleStatus);
-      } catch (_) {
-        models = _withAppleSpeechStatus(
-          models,
-          NativeAppleSpeechModelStatus(
-            availability: 'unavailable',
-            installed: false,
-            localeId: settings.localeId,
-            message:
-                'Apple SpeechTranscriber is unavailable for this language.',
-          ),
-        );
+  Future<void> _saveSettings(
+    AppSettings Function(AppSettings current) mutate,
+  ) {
+    // The whole read-mutate-persist-refresh sequence runs as one queued
+    // unit: `mutate(_settings)` reads the CURRENT settings only once it's
+    // this call's turn, not when the callback was constructed, and no two
+    // calls' async chains (each doing real await work below) can interleave
+    // and race on the final `setState`. Without this, two settings changes
+    // fired close together (a fast double-tap, or a slider's onChanged
+    // firing many times per drag) would both build their new AppSettings
+    // from the same stale `_settings`, and whichever finished last would
+    // silently discard the other's change.
+    return _settingsQueue.run(() async {
+      final settings = mutate(_settings);
+      await _historyStore.saveSettings(settings);
+      await _syncKeyboardSettings(settings);
+      final status = await _speech.status(locale: settings.localeId);
+      var models = _models;
+      if (Platform.isIOS && settings.localeId != _settings.localeId) {
+        try {
+          final appleStatus = await _speech.appleSpeechModelStatus(
+            locale: settings.localeId,
+          );
+          models = _withAppleSpeechStatus(models, appleStatus);
+        } catch (_) {
+          models = _withAppleSpeechStatus(
+            models,
+            NativeAppleSpeechModelStatus(
+              availability: 'unavailable',
+              installed: false,
+              localeId: settings.localeId,
+              message:
+                  'Apple SpeechTranscriber is unavailable for this language.',
+            ),
+          );
+        }
       }
-    }
-    if (!mounted) return;
-    setState(() {
-      _settings = settings;
-      _nativeStatus = status;
-      _models = models;
-      _selectedMode = _modes.firstWhere(
-        (mode) => mode.id == settings.selectedModeId,
-        orElse: () => _modes.first,
-      );
+      if (!mounted) return;
+      setState(() {
+        _settings = settings;
+        _nativeStatus = status;
+        _models = models;
+        _selectedMode = _modes.firstWhere(
+          (mode) => mode.id == settings.selectedModeId,
+          orElse: () => _modes.first,
+        );
+      });
     });
   }
 
@@ -657,6 +729,16 @@ class _AppControllerState extends State<AppController>
   }
 
   Future<void> _replayOnboarding() async {
+    // OnboardingFlow replaces the whole visible tree and has no Stop/Cancel
+    // controls, so entering it mid-recording would strand an active native
+    // recording running invisibly in the background with no way to reach it
+    // short of clicking through the entire onboarding flow again. Cancel it
+    // first so nothing is orphaned.
+    if (_phase == RecorderPhase.recording) {
+      await _cancelRecording(
+        message: 'Recording stopped to run setup again.',
+      );
+    }
     final keyboardStatus = await _refreshKeyboardStatus();
     if (!mounted) return;
     setState(() {
@@ -729,8 +811,16 @@ class _AppControllerState extends State<AppController>
     if (!mounted) return;
     setState(() {
       _modes = modes;
-      if (!modes.any((mode) => mode.id == _selectedMode.id)) {
-        _selectedMode = modes.first;
+      // Re-resolve `_selectedMode` by id from the new list unconditionally,
+      // not only when the id disappeared: editing the *currently selected*
+      // mode's name/instruction keeps its id, so the old branch (which only
+      // fired when the id was gone) left `_selectedMode` pointing at the
+      // stale pre-edit object until the user reselected it or relaunched.
+      final stillExists = modes.any((mode) => mode.id == _selectedMode.id);
+      _selectedMode = stillExists
+          ? modes.firstWhere((mode) => mode.id == _selectedMode.id)
+          : modes.first;
+      if (!stillExists) {
         _settings = _settings.copyWith(selectedModeId: _selectedMode.id);
         _historyStore.saveSettings(_settings);
       }
@@ -738,7 +828,11 @@ class _AppControllerState extends State<AppController>
   }
 
   Future<void> _downloadModel(LocalModel model) async {
-    if (!model.canDownload || _downloadingModels.contains(model.id)) return;
+    if (!model.canDownload ||
+        !model.supportsIosMajor(_iosMajorVersion) ||
+        _downloadingModels.contains(model.id)) {
+      return;
+    }
     final cancelToken = ModelDownloadCancelToken();
     setState(() {
       _downloadingModels.add(model.id);
@@ -793,6 +887,13 @@ class _AppControllerState extends State<AppController>
       setState(() => _models = models);
       _toast('${model.name} download canceled');
     } on Object catch (error) {
+      // Reload authoritative disk state so a failed download doesn't leave
+      // the model card frozen showing ModelInstallState.downloading with no
+      // way to retry (the Cancel button's token was already removed below).
+      final models = await _modelStore.loadModels();
+      if (mounted) {
+        setState(() => _models = _modelsForCurrentPlatform(models));
+      }
       _showError(_friendlyError(error));
     } finally {
       if (mounted) {
@@ -815,7 +916,10 @@ class _AppControllerState extends State<AppController>
           locale: _settings.localeId,
         );
         if (!mounted) return;
-        setState(() => _models = _withAppleSpeechStatus(_models, status));
+        setState(() {
+          _models = _withAppleSpeechStatus(_models, status);
+          _reassignSelectionAwayFrom(model.id);
+        });
         _toast('${model.name} reservation released');
       } on Object catch (error) {
         _showError(_friendlyError(error));
@@ -826,26 +930,35 @@ class _AppControllerState extends State<AppController>
     if (!mounted) return;
     setState(() {
       _models = _modelsForCurrentPlatform(models);
-      if (_settings.selectedModelId == model.id) {
-        final fallback = _models.firstWhere(
-          _canRecordWithModel,
-          orElse: () => _models.firstWhere(
-            (item) =>
-                item.kind == ModelKind.transcription &&
-                item.runtime ==
-                    (Platform.isAndroid
-                        ? ModelRuntime.sherpaOnnx
-                        : ModelRuntime.whisperKit),
-            orElse: () => _models.firstWhere(
-              (item) => item.kind == ModelKind.transcription,
-            ),
-          ),
-        );
-        _settings = _settings.copyWith(selectedModelId: fallback.id);
-        _historyStore.saveSettings(_settings);
-      }
+      _reassignSelectionAwayFrom(model.id);
     });
     _toast('${model.name} removed');
+  }
+
+  /// If the currently-selected model is [modelId], picks a usable fallback
+  /// from `_models` and persists it. Must run inside a `setState` after
+  /// `_models` has already been updated to reflect the removal, so the
+  /// removed model isn't the one it falls back to. Applies uniformly to
+  /// every removal path (Apple Speech's own branch previously skipped this,
+  /// leaving `_settings.selectedModelId` pointing at a model that no longer
+  /// exists and never self-healing on relaunch).
+  void _reassignSelectionAwayFrom(String modelId) {
+    if (_settings.selectedModelId != modelId) return;
+    final fallback = _models.firstWhere(
+      _canRecordWithModel,
+      orElse: () => _models.firstWhere(
+        (item) =>
+            item.kind == ModelKind.transcription &&
+            item.runtime ==
+                (Platform.isAndroid
+                    ? ModelRuntime.sherpaOnnx
+                    : ModelRuntime.whisperKit),
+        orElse: () =>
+            _models.firstWhere((item) => item.kind == ModelKind.transcription),
+      ),
+    );
+    _settings = _settings.copyWith(selectedModelId: fallback.id);
+    _historyStore.saveSettings(_settings);
   }
 
   void _showError(String message) {
@@ -915,8 +1028,9 @@ class _AppControllerState extends State<AppController>
       ModesPage(
         modes: _modes,
         selectedMode: _selectedMode,
-        onSelect: (mode) =>
-            _saveSettings(_settings.copyWith(selectedModeId: mode.id)),
+        onSelect: (mode) => _saveSettings(
+          (current) => current.copyWith(selectedModeId: mode.id),
+        ),
         onSaveModes: _saveModes,
       ),
       ModelsPage(
@@ -926,8 +1040,9 @@ class _AppControllerState extends State<AppController>
         onDownload: _downloadModel,
         onCancelDownload: _cancelModelDownload,
         onRemove: _removeModel,
-        onSelect: (model) =>
-            _saveSettings(_settings.copyWith(selectedModelId: model.id)),
+        onSelect: (model) => _saveSettings(
+          (current) => current.copyWith(selectedModelId: model.id),
+        ),
       ),
       SettingsPage(
         settings: _settings,
@@ -2057,7 +2172,7 @@ class _BreathingHaloState extends State<_BreathingHalo>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
-    )..forward();
+    )..repeat(reverse: true);
   }
 
   @override
@@ -2558,6 +2673,31 @@ class _ModesPageState extends State<ModesPage> {
     widget.onSaveModes(modes);
   }
 
+  Future<void> _confirmAndDeleteMode(DictationMode mode) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete mode?'),
+        content: Text('Remove the "${mode.name}" custom mode.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final modes = widget.modes
+        .where((candidate) => candidate.id != mode.id)
+        .toList(growable: false);
+    widget.onSaveModes(modes.isEmpty ? DictationMode.defaults : modes);
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -2610,12 +2750,18 @@ class _ModesPageState extends State<ModesPage> {
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (!mode.builtIn)
+                  if (!mode.builtIn) ...[
                     IconButton(
                       tooltip: 'Edit ${mode.name}',
                       onPressed: () => _editMode(mode),
                       icon: const Icon(Icons.edit_rounded),
                     ),
+                    IconButton(
+                      tooltip: 'Delete ${mode.name}',
+                      onPressed: () => _confirmAndDeleteMode(mode),
+                      icon: const Icon(Icons.delete_outline_rounded),
+                    ),
+                  ],
                   IconButton(
                     tooltip: mode.id == widget.selectedMode.id
                         ? '${mode.name} selected'
@@ -2912,6 +3058,7 @@ class _ModelCard extends StatelessWidget {
         : null;
     final actions = _modelActionButtons(
       model: model,
+      iosMajorVersion: iosMajorVersion,
       isSelected: isSelected,
       isDownloading: isDownloading,
       canSelect: canSelect,
@@ -3008,6 +3155,7 @@ class _MetaChip extends StatelessWidget {
 
 List<Widget> _modelActionButtons({
   required LocalModel model,
+  required int iosMajorVersion,
   required bool isSelected,
   required bool isDownloading,
   required bool canSelect,
@@ -3029,7 +3177,7 @@ List<Widget> _modelActionButtons({
     ];
   }
 
-  if (model.canDownload) {
+  if (model.canDownload && model.supportsIosMajor(iosMajorVersion)) {
     return [
       _ActionSemantics(
         label: 'Download ${model.name}',
@@ -3108,7 +3256,7 @@ class SettingsPage extends StatelessWidget {
   final AppSettings settings;
   final NativeSpeechStatus status;
   final KeyboardSetupStatus keyboardStatus;
-  final ValueChanged<AppSettings> onChanged;
+  final AppSettingsMutator onChanged;
   final VoidCallback onRefreshStatus;
   final VoidCallback onRunSetup;
 
@@ -3185,7 +3333,7 @@ class SettingsPage extends StatelessWidget {
                 ],
                 onChanged: (value) {
                   if (value != null) {
-                    onChanged(settings.copyWith(localeId: value));
+                    onChanged((current) => current.copyWith(localeId: value));
                   }
                 },
               ),
@@ -3205,7 +3353,7 @@ class SettingsPage extends StatelessWidget {
                 subtitle: const Text('Copy finished text after every run.'),
                 value: settings.autoCopy,
                 onChanged: (value) =>
-                    onChanged(settings.copyWith(autoCopy: value)),
+                    onChanged((current) => current.copyWith(autoCopy: value)),
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -3213,8 +3361,9 @@ class SettingsPage extends StatelessWidget {
                 title: const Text('Smart punctuation cleanup'),
                 subtitle: const Text('Turn spoken punctuation into symbols.'),
                 value: settings.smartPunctuation,
-                onChanged: (value) =>
-                    onChanged(settings.copyWith(smartPunctuation: value)),
+                onChanged: (value) => onChanged(
+                  (current) => current.copyWith(smartPunctuation: value),
+                ),
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -3222,8 +3371,9 @@ class SettingsPage extends StatelessWidget {
                 title: const Text('Remove filler words'),
                 subtitle: const Text('Drop ums and uhs during local cleanup.'),
                 value: settings.removeFillers,
-                onChanged: (value) =>
-                    onChanged(settings.copyWith(removeFillers: value)),
+                onChanged: (value) => onChanged(
+                  (current) => current.copyWith(removeFillers: value),
+                ),
               ),
             ],
           ),
@@ -3242,8 +3392,9 @@ class SettingsPage extends StatelessWidget {
                 title: const Text('Keyboard haptics'),
                 subtitle: const Text('Used by the Local Whisper keyboard.'),
                 value: settings.keyboardHaptics,
-                onChanged: (value) =>
-                    onChanged(settings.copyWith(keyboardHaptics: value)),
+                onChanged: (value) => onChanged(
+                  (current) => current.copyWith(keyboardHaptics: value),
+                ),
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -3251,8 +3402,9 @@ class SettingsPage extends StatelessWidget {
                 title: const Text('Keyboard quick insert'),
                 subtitle: const Text('Show punctuation and mode shortcuts.'),
                 value: settings.keyboardQuickInsert,
-                onChanged: (value) =>
-                    onChanged(settings.copyWith(keyboardQuickInsert: value)),
+                onChanged: (value) => onChanged(
+                  (current) => current.copyWith(keyboardQuickInsert: value),
+                ),
               ),
             ],
           ),
@@ -3273,14 +3425,16 @@ class SettingsPage extends StatelessWidget {
               _NumberSetting(
                 label: 'Min seconds',
                 value: settings.minRecordingSeconds,
-                onChanged: (value) =>
-                    onChanged(settings.copyWith(minRecordingSeconds: value)),
+                onChanged: (value) => onChanged(
+                  (current) => current.copyWith(minRecordingSeconds: value),
+                ),
               ),
               _NumberSetting(
                 label: 'Max seconds',
                 value: settings.maxRecordingSeconds.toDouble(),
                 onChanged: (value) => onChanged(
-                  settings.copyWith(maxRecordingSeconds: value.round()),
+                  (current) =>
+                      current.copyWith(maxRecordingSeconds: value.round()),
                 ),
               ),
             ],
@@ -3308,7 +3462,7 @@ class _PresetSelector extends StatelessWidget {
   const _PresetSelector({required this.settings, required this.onChanged});
 
   final AppSettings settings;
-  final ValueChanged<AppSettings> onChanged;
+  final AppSettingsMutator onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -3346,7 +3500,7 @@ class _PresetSelector extends StatelessWidget {
         final value = selection.single;
         if (value == 'Balanced') {
           onChanged(
-            settings.copyWith(
+            (current) => current.copyWith(
               autoCopy: true,
               smartPunctuation: true,
               removeFillers: true,
@@ -3354,7 +3508,7 @@ class _PresetSelector extends StatelessWidget {
           );
         } else if (value == 'Manual') {
           onChanged(
-            settings.copyWith(
+            (current) => current.copyWith(
               autoCopy: false,
               smartPunctuation: true,
               removeFillers: false,
