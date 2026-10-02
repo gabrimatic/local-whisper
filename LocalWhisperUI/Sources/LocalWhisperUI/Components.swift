@@ -147,7 +147,7 @@ struct ToggleRow: View {
 
     var body: some View {
         SettingRow(title: title, subtitle: subtitle) {
-            Toggle(title, isOn: Binding(get: { isOn }, set: onChange))
+            Toggle(title, isOn: Binding(get: { isOn }, set: { onChange($0) }))
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .labelsHidden()

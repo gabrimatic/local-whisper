@@ -5,6 +5,7 @@
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -47,6 +48,19 @@ def _local_whisper_ui_sources_newer_than_binary() -> bool:
         if src.stat().st_mtime > binary_mtime:
             return True
     return False
+
+
+def _install_executable(source: Path, destination: Path) -> None:
+    # Replacing the inode keeps running processes and macOS's code-signature
+    # cache attached to the old executable until their next launch.
+    with tempfile.NamedTemporaryFile(dir=destination.parent, prefix=f".{destination.name}-", delete=False) as file:
+        temporary = Path(file.name)
+    try:
+        shutil.copy2(source, temporary)
+        temporary.chmod(0o755)
+        temporary.replace(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 _LOCAL_WHISPER_UI_INFO_PLIST = """\
@@ -116,11 +130,9 @@ def _build_local_whisper_ui(swift: str) -> bool:
     resources_dir.mkdir(parents=True, exist_ok=True)
 
     dest_binary = macos_dir / "LocalWhisperUI"
-    shutil.copy2(str(built_binary), str(dest_binary))
-    dest_binary.chmod(0o755)
+    _install_executable(built_binary, dest_binary)
     dest_speech = macos_dir / "LocalWhisperSpeech"
-    shutil.copy2(str(built_speech), str(dest_speech))
-    dest_speech.chmod(0o755)
+    _install_executable(built_speech, dest_speech)
 
     info_plist_path = macos_dir.parent / "Info.plist"
     info_plist_path.write_text(_LOCAL_WHISPER_UI_INFO_PLIST)

@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Mobile settings, mode edits, model removal, failed downloads, and setup replay recover without stale selections or orphaned recordings.
 - Swift settings callbacks explicitly run on the main actor, resolving concurrency warnings with current Swift toolchains.
 - The macOS About panel reports the repository's PolyForm Noncommercial license.
+- Rebuilding the macOS app replaces executables atomically, preserving running processes and avoiding stale code-signature cache failures on the next launch.
 - Dependency checks validate the installed Pydantic/core pairing instead of requiring an obsolete version.
 - Source distributions include the native macOS sources and current documentation while excluding generated build caches.
 - The release script requires a test environment and waits for branch CI before publishing a tag; future releases also update mobile and keyboard metadata.

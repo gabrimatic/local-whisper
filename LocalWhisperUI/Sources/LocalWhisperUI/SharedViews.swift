@@ -188,7 +188,7 @@ struct StepperRowControl: View {
         HStack(spacing: Theme.Spacing.s) {
             Text(display)
                 .monoStat(width: displayWidth)
-            Stepper("", value: Binding(get: { value }, set: onChange), in: range, step: step)
+            Stepper("", value: Binding(get: { value }, set: { onChange($0) }), in: range, step: step)
                 .labelsHidden()
         }
     }
