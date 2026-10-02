@@ -25,7 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Mobile preference writes and model-state updates preserve concurrent changes; malformed saved entries no longer discard other valid entries, and recording limits remain within the settings controls' supported ranges.
 - iOS setup and speech channels register with the scene's Flutter controller. Invalid microphone formats return an error instead of crashing, and transcription requests background execution time while completing.
 - Mobile settings, mode edits, model removal, failed downloads, and setup replay recover without stale selections or orphaned recordings.
-- Swift settings callbacks explicitly run on the main actor, resolving concurrency warnings with current Swift toolchains.
+- Swift settings callbacks explicitly run on the main actor through bindings that also compile on Swift 6.2. Native CI tests run on macOS 26 to match the speech runtime requirement.
 - The macOS About panel reports the repository's PolyForm Noncommercial license.
 - Rebuilding the macOS app replaces executables atomically, preserving running processes and avoiding stale code-signature cache failures on the next launch.
 - Dependency checks validate the installed Pydantic/core pairing instead of requiring an obsolete version.
