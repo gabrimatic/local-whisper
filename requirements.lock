@@ -1,20 +1,371 @@
-certifi==2026.1.4
-cffi==2.0.0
-charset-normalizer==3.4.4
-filelock==3.24.3
-idna==3.11
--e git+https://github.com/gabrimatic/local-whisper@99d96575566e9cf27c688ea8a56ddb91a6902477#egg=local_whisper
-numpy==2.4.2
-pillow==12.1.1
+addict==2.4.0
+    # via misaki
+annotated-doc==0.0.5
+    # via typer
+annotated-types==0.8.0
+    # via pydantic
+anyio==4.15.1
+    # via httpx
+attrs==26.1.0
+    # via
+    #   jsonschema
+    #   phonemizer-fork
+    #   referencing
+audioread==3.1.0
+    # via librosa
+babel==2.18.0
+    # via csvw
+blis==1.3.3
+    # via thinc
+catalogue==2.0.10
+    # via
+    #   spacy
+    #   srsly
+    #   thinc
+certifi==2026.7.22
+    # via
+    #   httpcore
+    #   httpx
+    #   requests
+cffi==2.1.1
+    # via
+    #   sounddevice
+    #   soundfile
+charset-normalizer==3.5.2
+    # via requests
+click==8.5.0
+    # via
+    #   huggingface-hub
+    #   spacy
+cloudpathlib==0.25.0
+    # via weasel
+cloudpickle==3.1.2
+    # via joblib
+confection==1.3.3
+    # via
+    #   spacy
+    #   thinc
+    #   weasel
+csvw==4.1.0
+    # via segments
+curated-tokenizers==0.0.10
+    # via spacy-curated-transformers
+curated-transformers==0.1.1
+    # via spacy-curated-transformers
+cymem==2.0.13
+    # via
+    #   preshed
+    #   spacy
+    #   thinc
+dacite==1.9.2
+    # via parakeet-mlx
+decorator==5.3.1
+    # via librosa
+dlinfo==2.0.0
+    # via phonemizer-fork
+docopt==0.6.2
+    # via num2words
+espeakng-loader==0.2.4
+    # via misaki
+filelock==4.0.9
+    # via
+    #   huggingface-hub
+    #   torch
+fsspec==2026.9.0
+    # via
+    #   huggingface-hub
+    #   torch
+h11==0.16.0
+    # via httpcore
+hf-xet==1.6.0
+    # via huggingface-hub
+httpcore==1.0.9
+    # via httpx
+httpx==0.28.1
+    # via
+    #   huggingface-hub
+    #   weasel
+huggingface-hub==1.33.0
+    # via
+    #   kokoro-mlx
+    #   parakeet-mlx
+    #   qwen3-asr-mlx
+    #   tokenizers
+idna==3.20
+    # via
+    #   anyio
+    #   httpx
+    #   requests
+isodate==0.7.2
+    # via csvw
+jinja2==3.1.6
+    # via
+    #   spacy
+    #   torch
+joblib==1.6.0
+    # via
+    #   librosa
+    #   phonemizer-fork
+    #   scikit-learn
+jsonschema==4.26.0
+    # via csvw
+jsonschema-specifications==2025.9.1
+    # via jsonschema
+kokoro-mlx==0.1.2
+    # via local-whisper (pyproject.toml)
+language-tags==1.3.1
+    # via csvw
+lazy-loader==0.6
+    # via librosa
+librosa==0.11.0
+    # via parakeet-mlx
+llvmlite==0.50.0
+    # via numba
+markdown-it-py==4.2.0
+    # via rich
+markupsafe==3.0.3
+    # via jinja2
+mdurl==0.1.2
+    # via markdown-it-py
+misaki==0.9.4
+    # via
+    #   local-whisper (pyproject.toml)
+    #   kokoro-mlx
+mlx==0.32.3
+    # via
+    #   kokoro-mlx
+    #   parakeet-mlx
+    #   qwen3-asr-mlx
+mlx-metal==0.32.3
+    # via mlx
+mpmath==1.3.0
+    # via sympy
+msgpack==1.2.3
+    # via librosa
+murmurhash==1.0.15
+    # via
+    #   preshed
+    #   spacy
+    #   thinc
+narwhals==2.26.0
+    # via scikit-learn
+networkx==3.6.1
+    # via torch
+num2words==0.5.14
+    # via misaki
+numba==0.68.0
+    # via librosa
+numpy==2.4.6
+    # via
+    #   local-whisper (pyproject.toml)
+    #   blis
+    #   kokoro-mlx
+    #   librosa
+    #   numba
+    #   parakeet-mlx
+    #   qwen3-asr-mlx
+    #   scikit-learn
+    #   scipy
+    #   soundfile
+    #   soxr
+    #   spacy
+    #   thinc
+packaging==26.3
+    # via
+    #   huggingface-hub
+    #   lazy-loader
+    #   pooch
+    #   spacy
+    #   thinc
+    #   weasel
+parakeet-mlx==0.5.3
+    # via local-whisper (pyproject.toml)
+phonemizer-fork==3.3.2
+    # via misaki
+platformdirs==4.12.2
+    # via pooch
+pooch==1.9.0
+    # via librosa
+preshed==3.0.13
+    # via
+    #   spacy
+    #   thinc
 pycparser==3.0
-pynput==1.8.1
-pyobjc-core==12.1
-pyobjc-framework-ApplicationServices==12.1
-pyobjc-framework-Cocoa==12.1
-pyobjc-framework-CoreText==12.1
-pyobjc-framework-Quartz==12.1
-requests==2.32.5
-rumps==0.4.0
+    # via cffi
+pydantic==2.13.5
+    # via
+    #   local-whisper (pyproject.toml)
+    #   spacy
+    #   thinc
+    #   weasel
+pydantic-core==2.46.5
+    # via pydantic
+pygments==2.21.0
+    # via rich
+pynput==1.8.2
+    # via local-whisper (pyproject.toml)
+pyobjc-core==12.2.2
+    # via
+    #   pyobjc-framework-applicationservices
+    #   pyobjc-framework-avfoundation
+    #   pyobjc-framework-cocoa
+    #   pyobjc-framework-coreaudio
+    #   pyobjc-framework-coremedia
+    #   pyobjc-framework-coretext
+    #   pyobjc-framework-quartz
+pyobjc-framework-applicationservices==12.2.2
+    # via
+    #   local-whisper (pyproject.toml)
+    #   pynput
+pyobjc-framework-avfoundation==12.2.2
+    # via local-whisper (pyproject.toml)
+pyobjc-framework-cocoa==12.2.2
+    # via
+    #   local-whisper (pyproject.toml)
+    #   pyobjc-framework-applicationservices
+    #   pyobjc-framework-avfoundation
+    #   pyobjc-framework-coreaudio
+    #   pyobjc-framework-coremedia
+    #   pyobjc-framework-coretext
+    #   pyobjc-framework-quartz
+pyobjc-framework-coreaudio==12.2.2
+    # via pyobjc-framework-avfoundation
+pyobjc-framework-coremedia==12.2.2
+    # via pyobjc-framework-avfoundation
+pyobjc-framework-coretext==12.2.2
+    # via pyobjc-framework-applicationservices
+pyobjc-framework-quartz==12.2.2
+    # via
+    #   local-whisper (pyproject.toml)
+    #   pynput
+    #   pyobjc-framework-applicationservices
+    #   pyobjc-framework-avfoundation
+    #   pyobjc-framework-coretext
+pyparsing==3.3.3
+    # via rdflib
+python-dateutil==2.9.0.post0
+    # via csvw
+pyyaml==6.0.3
+    # via huggingface-hub
+qwen3-asr-mlx==0.2.0
+    # via local-whisper (pyproject.toml)
+rdflib==7.6.0
+    # via csvw
+referencing==0.37.0
+    # via
+    #   jsonschema
+    #   jsonschema-specifications
+regex==2026.9.29
+    # via
+    #   curated-tokenizers
+    #   misaki
+    #   segments
+requests==2.34.2
+    # via
+    #   local-whisper (pyproject.toml)
+    #   pooch
+    #   spacy
+rfc3986==1.5.0
+    # via csvw
+rich==15.0.0
+    # via typer
+rpds-py==2026.6.3
+    # via
+    #   jsonschema
+    #   referencing
+safetensors==0.8.0
+    # via kokoro-mlx
+scikit-learn==1.9.1
+    # via librosa
+scipy==1.17.1
+    # via
+    #   librosa
+    #   scikit-learn
+segments==2.4.0
+    # via phonemizer-fork
+setuptools==84.0.0
+    # via
+    #   spacy
+    #   thinc
+    #   torch
+shellingham==1.5.4
+    # via typer
 six==1.17.0
-sounddevice==0.5.5
-urllib3==2.6.3
+    # via
+    #   pynput
+    #   python-dateutil
+smart-open==8.0.2
+    # via weasel
+sounddevice==0.5.6
+    # via local-whisper (pyproject.toml)
+soundfile==0.14.0
+    # via
+    #   local-whisper (pyproject.toml)
+    #   kokoro-mlx
+    #   librosa
+    #   qwen3-asr-mlx
+soxr==1.1.0
+    # via librosa
+spacy==3.8.16
+    # via misaki
+spacy-curated-transformers==0.3.1
+    # via misaki
+spacy-legacy==3.0.12
+    # via spacy
+spacy-loggers==1.0.5
+    # via spacy
+srsly==2.5.4
+    # via
+    #   spacy
+    #   thinc
+    #   weasel
+sympy==1.14.0
+    # via torch
+termcolor==3.3.0
+    # via csvw
+thinc==8.3.13
+    # via spacy
+threadpoolctl==3.7.0
+    # via scikit-learn
+tokenizers==0.23.2
+    # via qwen3-asr-mlx
+torch==2.14.1
+    # via
+    #   curated-transformers
+    #   spacy-curated-transformers
+tqdm==4.70.1
+    # via
+    #   huggingface-hub
+    #   spacy
+typer==0.27.2
+    # via
+    #   parakeet-mlx
+    #   spacy
+    #   weasel
+typing-extensions==4.16.0
+    # via
+    #   anyio
+    #   huggingface-hub
+    #   librosa
+    #   phonemizer-fork
+    #   pydantic
+    #   pydantic-core
+    #   referencing
+    #   soundfile
+    #   torch
+    #   typing-inspection
+typing-inspection==0.4.4
+    # via pydantic
+uritemplate==4.2.0
+    # via csvw
+urllib3==2.8.0
+    # via requests
+wasabi==1.1.3
+    # via
+    #   spacy
+    #   thinc
+    #   weasel
+weasel==1.0.0
+    # via spacy
+wrapt==2.5.0
+    # via smart-open

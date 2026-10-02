@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:local_whisper_flutter/main.dart' as app;
+import 'package:local_whisper_flutter/src/history_store.dart';
+import 'package:local_whisper_flutter/src/model_store.dart';
 import 'package:local_whisper_flutter/src/native_speech_service.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -16,10 +18,12 @@ void main() {
     app.main();
     await tester.pumpAndSettle();
 
-    const model = String.fromEnvironment(
-      'LOCAL_WHISPER_E2E_MODEL',
-      defaultValue: 'whisperkit_large_v3_turbo',
-    );
+    const explicitModel = String.fromEnvironment('LOCAL_WHISPER_E2E_MODEL');
+    final model = explicitModel.isNotEmpty
+        ? explicitModel
+        : Platform.isAndroid
+        ? 'parakeet_tdt_v3_sherpa'
+        : 'whisperkit_large_v3_turbo';
     final service = NativeSpeechService();
     var modelPath = '';
     if (model == 'apple_speech') {
@@ -31,7 +35,22 @@ void main() {
       final installed = await service.installAppleSpeechModel(locale: 'en-US');
       expect(installed.installed, isTrue);
     } else {
-      modelPath = await _resolveModelPath();
+      modelPath = await _resolveModelPath(model);
+      if (const bool.fromEnvironment('LOCAL_WHISPER_E2E_DOWNLOAD_MODEL') &&
+          !Directory(modelPath).existsSync()) {
+        final store = ModelStore(
+          HistoryStore(),
+          modelDirectory: Directory(modelPath).parent,
+        );
+        final selected = (await store.loadModels()).firstWhere(
+          (item) => item.id == model,
+        );
+        await store.downloadModel(
+          selected,
+          onProgress: (_) {},
+          cancelToken: ModelDownloadCancelToken(),
+        );
+      }
       await _waitForModelFolder(modelPath);
     }
 
@@ -53,12 +72,12 @@ void main() {
   });
 }
 
-Future<String> _resolveModelPath() async {
+Future<String> _resolveModelPath(String model) async {
   const explicitPath = String.fromEnvironment('LOCAL_WHISPER_MODEL_PATH');
   if (explicitPath.isNotEmpty) return explicitPath;
 
   final documents = await getApplicationDocumentsDirectory();
-  return '${documents.path}/models/whisperkit_large_v3_turbo';
+  return '${documents.path}/models/$model';
 }
 
 Future<void> _waitForModelFolder(String modelPath) async {
@@ -67,7 +86,7 @@ Future<void> _waitForModelFolder(String modelPath) async {
     if (Directory(modelPath).existsSync()) return;
     await Future<void>.delayed(const Duration(seconds: 1));
   }
-  fail('WhisperKit model folder must exist before native E2E runs: $modelPath');
+  fail('Install the selected model before native E2E runs: $modelPath');
 }
 
 Future<String> _copyFixtureToTemporaryFile() async {

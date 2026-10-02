@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-10-02
+
+### Added
+
+- Custom mobile modes apply supported offline formatting instructions and can be deleted from the Modes tab.
+- Native speech integration tests select the correct iOS or Android engine and can download a verified model pack into the current app container.
+
+### Changed
+
+- Updated Python and Flutter dependencies, including Pydantic 2.13.5 and sherpa-onnx 1.13.8. Refreshed the Python 3.11-compatible dependency snapshot without the obsolete Git install pin.
+- Updated GitHub setup actions, Android Gradle Plugin to 9.4.1, Gradle to 9.8.0, and Kotlin to 2.4.20. The iOS app now requires iOS 15 or later.
+- Aligned desktop, mobile, and keyboard bundle versions for this release.
+
+### Fixed
+
+- CLI transcription and microphone jobs return the macOS overlay to Ready after completion or failure instead of leaving it stuck on Polishing.
+- Mobile preference writes and model-state updates preserve concurrent changes; malformed saved entries no longer discard other valid entries, and recording limits remain within the settings controls' supported ranges.
+- iOS setup and speech channels register with the scene's Flutter controller. Invalid microphone formats return an error instead of crashing, and transcription requests background execution time while completing.
+- Mobile settings, mode edits, model removal, failed downloads, and setup replay recover without stale selections or orphaned recordings.
+- Swift settings callbacks explicitly run on the main actor, resolving concurrency warnings with current Swift toolchains.
+- The macOS About panel reports the repository's PolyForm Noncommercial license.
+- Dependency checks validate the installed Pydantic/core pairing instead of requiring an obsolete version.
+- Source distributions include the native macOS sources and current documentation while excluding generated build caches.
+- The release script requires a test environment and waits for branch CI before publishing a tag; future releases also update mobile and keyboard metadata.
+
 ## [1.10.1] - 2026-07-24
 
 ### Fixed

@@ -9,7 +9,7 @@
 #   3. Rewrites CHANGELOG.md [Unreleased] → [X.Y.Z] - TODAY
 #   4. Runs the full test suite
 #   5. Shows the diff and waits for confirmation
-#   6. Commits, tags vX.Y.Z, pushes main + tag
+#   6. Commits, pushes main, waits for CI, then tags and pushes vX.Y.Z
 #   7. Creates the GitHub release with the X.Y.Z CHANGELOG section as notes
 #   8. Bumps the homebrew-local-whisper formula tarball url + sha256 and pushes
 #
@@ -81,9 +81,14 @@ if [ ! -d "$TAP_DIR/.git" ]; then
   exit 1
 fi
 
+if [ ! -x ".venv/bin/python" ]; then
+  echo "error: .venv/bin/python is required to run release tests" >&2
+  exit 1
+fi
+
 # 2. Bump version strings
 python3 - "$VERSION" <<'PY'
-import re, sys, pathlib
+import re, sys, pathlib, plistlib
 version = sys.argv[1]
 
 pyproject = pathlib.Path("pyproject.toml")
@@ -104,6 +109,22 @@ for path in [pathlib.Path("setup.sh"), pathlib.Path("src/whisper_voice/cli/build
     if n < 2:
         raise SystemExit(f"failed to rewrite bundle versions in {path} (replaced {n})")
     path.write_text(t)
+
+mobile = pathlib.Path("src/flutter/local_whisper")
+pubspec = mobile / "pubspec.yaml"
+text = pubspec.read_text()
+match = re.search(r'^version:\s*\d+\.\d+\.\d+\+(\d+)\s*$', text, re.M)
+if not match:
+    raise SystemExit("failed to find mobile version and build number")
+build_number = int(match.group(1)) + 1
+text = text[:match.start()] + f"version: {version}+{build_number}" + text[match.end():]
+pubspec.write_text(text)
+
+keyboard = mobile / "ios/LocalWhisperKeyboard/Info.plist"
+info = plistlib.loads(keyboard.read_bytes())
+info["CFBundleShortVersionString"] = version
+info["CFBundleVersion"] = str(build_number)
+keyboard.write_bytes(plistlib.dumps(info, sort_keys=False))
 PY
 
 # 3. Rewrite CHANGELOG [Unreleased] → [X.Y.Z] - TODAY
@@ -122,12 +143,8 @@ else:
 PY
 
 # 4. Full test suite
-if [ -x ".venv/bin/python" ]; then
-  echo "==> Running tests"
-  .venv/bin/python -m pytest tests/ -q
-else
-  echo "warning: .venv/bin/python not found, skipping test run" >&2
-fi
+echo "==> Running tests"
+.venv/bin/python -m pytest tests/ -q
 
 # 5. Confirm
 echo
@@ -140,11 +157,27 @@ if [[ ! "$reply" =~ ^[Yy]$ ]]; then
   exit 1
 fi
 
-# 6. Commit, tag, push
-git add pyproject.toml setup.sh src/whisper_voice/cli/build.py CHANGELOG.md
+# 6. Commit, push, verify CI, then publish the tag
+git add pyproject.toml setup.sh src/whisper_voice/cli/build.py CHANGELOG.md \
+  src/flutter/local_whisper/pubspec.yaml src/flutter/local_whisper/ios/LocalWhisperKeyboard/Info.plist
 git commit -m "chore: release $TAG"
-git tag -a "$TAG" -m "$TAG"
 git push origin main
+release_sha="$(git rev-parse HEAD)"
+ci_run=""
+for attempt in {1..30}; do
+  ci_run="$(gh run list --workflow ci.yml --event push --commit "$release_sha" \
+    --json databaseId --jq '.[0].databaseId // empty')"
+  if [ -n "$ci_run" ]; then
+    break
+  fi
+  sleep 2
+done
+if [ -z "$ci_run" ]; then
+  echo "error: CI did not start for $release_sha; no release tag was published" >&2
+  exit 1
+fi
+gh run watch "$ci_run" --exit-status
+git tag -a "$TAG" -m "$TAG"
 git push origin "$TAG"
 
 # 7. GitHub release

@@ -203,7 +203,7 @@ struct AboutView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Made by Soroush Yousefpour")
                     .font(Theme.Typography.bodyEmphasized)
-                Text("MIT-licensed. Sole author. No telemetry.")
+                Text("PolyForm Noncommercial 1.0.0. Sole author. No telemetry.")
                     .font(Theme.Typography.caption)
                     .foregroundStyle(.secondary)
             }

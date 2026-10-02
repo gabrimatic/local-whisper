@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "local-whisper"
-version = "1.10.1"
+version = "1.11.0"
 description = "Local macOS dictation with local transcription and grammar cleanup"
 readme = "README.md"
 license = "PolyForm-Noncommercial-1.0.0"
@@ -40,12 +40,12 @@ dependencies = [
     "misaki[en]>=0.9.4",
     # Kokoro/misaki pull pydantic through spaCy. Pydantic declares the
     # exact pydantic-core ABI wheel it can import safely.
-    "pydantic==2.13.4",
+    "pydantic==2.13.5",
 ]
 
 [project.optional-dependencies]
 apple-intelligence = [
-    "apple-fm-sdk>=0.2.0",
+    "apple-fm-sdk>=0.2.1",
 ]
 
 [project.scripts]
@@ -73,16 +73,30 @@ include = ["src/whisper_voice/assets/*.png"]
 include = [
     "/src",
     "/README.md",
-    "/docs",
+    "/doc",
+    "/LocalWhisperUI",
+    "/requirements.lock",
+    "/CHANGELOG.md",
     "/install.sh",
     "/setup.sh",
     "/src/whisper_voice/assets/*.png",
 ]
 exclude = [
+    "/LocalWhisperUI/.build",
+    "/LocalWhisperUI/.swiftpm",
+    "/doc/export.zip",
     "/src/flutter/**/.dart_tool",
     "/src/flutter/**/build",
     "/src/flutter/**/.gradle",
     "/src/flutter/**/Pods",
+    "/src/flutter/**/.symlinks",
+    "/src/flutter/**/ephemeral",
+    "/src/flutter/**/.flutter-plugins-dependencies",
+    "/src/flutter/**/*.iml",
+    "/src/flutter/**/local.properties",
+    "/src/flutter/**/Generated.xcconfig",
+    "/src/flutter/**/flutter_export_environment.sh",
+    "/src/flutter/**/GeneratedPluginRegistrant.*",
 ]
 
 [tool.pytest.ini_options]

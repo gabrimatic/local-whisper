@@ -282,6 +282,8 @@ class CommandsMixin:
             with self._state_lock:
                 self._busy = False
 
+            self._reset_to_idle()
+
     def _cmd_transcribe(self, request: dict, send: callable, stop_event: threading.Event):
         """Transcribe an audio file."""
         if self._touch_model_activity() is False:
@@ -340,3 +342,4 @@ class CommandsMixin:
         finally:
             with self._state_lock:
                 self._busy = False
+            self._reset_to_idle()

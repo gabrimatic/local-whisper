@@ -143,7 +143,7 @@ struct ToggleRow: View {
     let title: String
     var subtitle: String? = nil
     let isOn: Bool
-    let onChange: (Bool) -> Void
+    let onChange: @MainActor @Sendable (Bool) -> Void
 
     var body: some View {
         SettingRow(title: title, subtitle: subtitle) {

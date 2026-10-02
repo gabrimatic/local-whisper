@@ -11,7 +11,7 @@ Local Whisper's release path is direct to `main`.
 ./scripts/release.sh <version>
 ```
 
-The script bumps version metadata, updates release files, runs checks, commits and tags the release, pushes `main`, creates the GitHub release, and updates the Homebrew tap at `../homebrew-local-whisper`.
+The script updates desktop, mobile, and keyboard versions, runs the Python tests, commits and pushes `main`, then waits for CI on that commit before publishing the tag. It creates the GitHub release and updates the Homebrew tap at `../homebrew-local-whisper`. A missing test environment or failed CI stops the release before a tag is published.
 
 ## Before release
 

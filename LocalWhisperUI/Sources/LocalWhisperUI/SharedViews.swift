@@ -182,7 +182,7 @@ struct StepperRowControl: View {
     let step: Int
     let display: String
     var displayWidth: CGFloat = 70
-    let onChange: (Int) -> Void
+    let onChange: @MainActor @Sendable (Int) -> Void
 
     var body: some View {
         HStack(spacing: Theme.Spacing.s) {

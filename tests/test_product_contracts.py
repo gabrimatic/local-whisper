@@ -9,6 +9,8 @@ import tomllib
 from importlib import metadata
 from pathlib import Path
 
+from packaging.requirements import Requirement
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -246,7 +248,9 @@ def test_github_actions_use_current_node24_ready_actions():
     assert "uses: actions/checkout@v7" in workflow
     assert "uses: actions/checkout@v7" in pages_workflow
     assert "uses: actions/checkout@v6" not in combined_workflows
-    assert "uses: actions/setup-python@v6" in workflow
+    assert "uses: actions/setup-python@v7" in workflow
+    assert "uses: actions/setup-node@v7" in workflow
+    assert "uses: actions/setup-node@v7" in pages_workflow
     assert 'package-ecosystem: "github-actions"' in dependabot
 
 
@@ -278,10 +282,14 @@ def test_pydantic_core_pin_matches_pydantic_runtime_requirement():
     """The packaged Kokoro path must not ship mismatched pydantic-core wheels."""
     pyproject = tomllib.loads(_read("pyproject.toml"))
     dependencies = set(pyproject["project"]["dependencies"])
-    pydantic_requires = {requirement.split(";", maxsplit=1)[0].strip() for requirement in metadata.requires("pydantic") or []}
+    pydantic_requirement = next(Requirement(value) for value in dependencies if value.startswith("pydantic=="))
+    core_requirement = next(
+        Requirement(value) for value in metadata.requires("pydantic") or []
+        if Requirement(value).name == "pydantic-core"
+    )
 
     assert "pyobjc-framework-AVFoundation>=12.2" in dependencies
     assert "pyobjc-framework-ApplicationServices>=12.2" in dependencies
-    assert "pydantic==2.13.4" in dependencies
+    assert metadata.version("pydantic") in pydantic_requirement.specifier
     assert not any(dependency.startswith("pydantic-core==") for dependency in dependencies)
-    assert "pydantic-core==2.46.4" in pydantic_requires
+    assert metadata.version("pydantic-core") in core_requirement.specifier

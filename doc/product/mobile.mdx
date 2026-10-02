@@ -7,6 +7,8 @@ The Flutter app is Local Whisper's mobile speech-to-text surface. It gives iOS a
 
 Record in the app, keep data on the device, and use modes to shape the finished text. The iOS keyboard extension and Android input method bring Local Whisper actions into other apps.
 
+The iOS app requires iOS 15 or later. Apple SpeechTranscriber requires supported iOS 26 hardware.
+
 ## Status
 
 | Surface | Status | Notes |
@@ -49,6 +51,8 @@ History stays on the device. The History tab shows saved entry count, total reco
 
 The Models tab shows installed pack count and model storage. Installed packs can be removed from the device when you no longer need them.
 
+Custom modes use deterministic offline formatting. Instructions containing bullets, notes, or list select bullet formatting; concise, message, chat, or single-line instructions flatten line breaks; task, prompt, or instruction adds a task prefix. Other instructions keep the cleaned text unchanged. Edit or delete custom modes from the Modes tab.
+
 The iOS keyboard reads haptics and quick-insert settings from the shared app group. The Android keyboard reads the same settings from setup preferences. Turning off quick insert keeps Verify, Space, New line, and Delete available while hiding mode and punctuation shortcuts.
 
 ## Model packs
@@ -89,10 +93,18 @@ flutter build ios --simulator --debug
 flutter build apk --debug
 ```
 
-After a WhisperKit pack is installed in the simulator:
+Download and verify the selected pack as part of a native transcription test on an iOS simulator or Android emulator:
 
 ```bash
-flutter test integration_test/native_transcription_test.dart -d <simulator-id> --dart-define=LOCAL_WHISPER_MODEL_PATH=<installed-model-folder>
+flutter test integration_test/native_transcription_test.dart -d <device-id> --no-uninstall --dart-define=LOCAL_WHISPER_E2E_DOWNLOAD_MODEL=true
+```
+
+The test selects WhisperKit on iOS and Parakeet INT8 ONNX on Android. Model downloads need network access; speech inference uses the installed local pack. `--no-uninstall` keeps the pack after the test.
+
+To reuse an installed pack, pass its path inside the running app's current container:
+
+```bash
+flutter test integration_test/native_transcription_test.dart -d <device-id> --no-uninstall --dart-define=LOCAL_WHISPER_MODEL_PATH=<installed-model-folder>
 ```
 
 To exercise Apple SpeechTranscriber, use a supported physical iOS 26 device. Simulators can report the runtime unavailable, which the test treats as an explicit capability result:

@@ -607,7 +607,7 @@ Check `show_overlay = true` in `~/.whisper/config.toml`.
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e .
+pip install -r requirements.lock -e .
 
 wh build              # Build Swift UI (one-time)
 wh                    # Run the service

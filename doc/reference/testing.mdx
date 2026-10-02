@@ -10,7 +10,7 @@ Use targeted checks for small changes and broader checks before shipping cross-s
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -r requirements.lock -e .
 pytest tests/
 ```
 
@@ -29,6 +29,7 @@ pytest -m integration -v
 ```bash
 cd LocalWhisperUI
 swift build -c release
+swift test
 ```
 
 Run this after Swift UI edits and whenever IPC message contracts change.
@@ -44,10 +45,18 @@ flutter build ios --simulator --debug
 flutter build apk --debug
 ```
 
-After a WhisperKit pack is installed in a simulator:
+Run native transcription with a verified pack downloaded into the current iOS or Android app container:
 
 ```bash
-flutter test integration_test/native_transcription_test.dart -d <simulator-id> --dart-define=LOCAL_WHISPER_MODEL_PATH=<installed-model-folder>
+flutter test integration_test/native_transcription_test.dart -d <device-id> --no-uninstall --dart-define=LOCAL_WHISPER_E2E_DOWNLOAD_MODEL=true
+```
+
+This uses WhisperKit on iOS and Parakeet INT8 ONNX on Android. Network access is used for model setup; audio inference stays on-device. The pack remains installed after the test.
+
+To reuse an installed pack:
+
+```bash
+flutter test integration_test/native_transcription_test.dart -d <device-id> --no-uninstall --dart-define=LOCAL_WHISPER_MODEL_PATH=<installed-model-folder>
 ```
 
 Apple SpeechTranscriber uses the same integration test on supported physical iOS 26 hardware:

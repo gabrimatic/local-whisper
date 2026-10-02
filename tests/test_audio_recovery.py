@@ -67,6 +67,9 @@ def test_cli_listen_resets_audio_host_after_all_zero_capture():
         def _touch_model_activity(self):
             pass
 
+        def _reset_to_idle(self):
+            pass
+
     app = DummyApp()
     app._state_lock = threading.Lock()
     app._busy = False

@@ -1,22 +1,16 @@
 PODS:
   - Flutter (1.0.0)
-  - sherpa_onnx_ios (1.13.3):
-    - Flutter
 
 DEPENDENCIES:
   - Flutter (from `Flutter`)
-  - sherpa_onnx_ios (from `.symlinks/plugins/sherpa_onnx_ios/ios`)
 
 EXTERNAL SOURCES:
   Flutter:
     :path: Flutter
-  sherpa_onnx_ios:
-    :path: ".symlinks/plugins/sherpa_onnx_ios/ios"
 
 SPEC CHECKSUMS:
-  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
-  sherpa_onnx_ios: 0f9313326cfea79185f98aeb25dbcf647c9210c8
+  Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
 
-PODFILE CHECKSUM: e30f02f9d1c72c47bb6344a0a748c9d268180865
+PODFILE CHECKSUM: 53a6aebc29ccee84c41f92f409fc20cd4ca011f1
 
 COCOAPODS: 1.17.0
