@@ -33,7 +33,8 @@ class ModelStore {
       name: 'Qwen3-ASR',
       kind: ModelKind.transcription,
       description:
-          'English ASR model family from the desktop Local Whisper MLX engine.',
+          'Multilingual ASR model family from the desktop Local Whisper MLX '
+          'engine, with language detection handled by the model.',
       sizeLabel: '~3.8 GB MLX pack',
       state: ModelInstallState.notInstalled,
       runtime: ModelRuntime.mlx,
