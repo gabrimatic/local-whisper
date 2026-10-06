@@ -56,7 +56,7 @@ Local Whisper is speech-to-text for the places you already type. Start recording
 
 ## macOS Quick Start
 
-Requirements: **Apple Silicon**, Microphone permission, and Accessibility permission.
+Requirements: **Apple Silicon**, Microphone permission, and Accessibility permission. The Swift menu bar app requires macOS 26 or later; on earlier macOS the background service runs headless.
 
 Recommended setup:
 
@@ -317,12 +317,14 @@ wh replace add "gonna" "going to"
 wh replace remove "gonna"
 wh replace on|off   # Enable or disable replacements
 wh replace import rules.csv   # Bulk-import rules (CSV, TSV, "a"="b", or a -> b)
+wh replace export rules.csv   # Write current rules to a file
+wh replace test "gonna say this"  # Preview what the current rules produce
 
 wh whisper "text"   # Speak text aloud via Kokoro TTS
 wh whisper --voice af_bella "text"
 echo "hello" | wh whisper
 
-wh listen           # Record until silence, output transcription
+wh listen           # Record until Ctrl+C (10 minute cap), output transcription
 wh listen 30        # Record up to 30 seconds
 wh listen --raw     # Raw transcription, no grammar
 
@@ -363,7 +365,12 @@ Speak these phrases anywhere in a dictation and Local Whisper replaces them with
 | "semicolon" | ; |
 | "dash" | ` - ` (space, hyphen, space) |
 | "open paren" / "close paren" | ( / ) |
+| "open quote" / "close quote" | " |
+| "hyphen" | - |
+| "ellipsis" | ... |
 | "scratch that" | deletes the current sentence fragment |
+
+The default set also accepts "full stop" for a period, "exclamation point" for an exclamation mark, "new section" for a blank line, and "strike that" for "scratch that".
 
 Custom commands go under `[dictation.commands]` in `~/.whisper/config.toml`. The pass runs before grammar correction, so grammar sees well-punctuated sentences.
 
@@ -375,16 +382,13 @@ The menu bar does not drive normal dictation. The global hotkey does. Use the me
 
 | Item | What it does |
 |------|-------------|
-| Status | Current state with active engine and backend subtitle |
-| Engine | Switch transcription engine in-place |
-| Grammar | Switch grammar backend in-place |
-| Replacements | Toggle, shows rule count |
-| Retry Last / Copy Last | Re-transcribe or re-copy |
-| Transcriptions | Recent entries, click to copy |
-| Recordings | Audio files, click to reveal in Finder |
-| Settings… | Full sidebar settings window |
-| Service | Restart, Check for Updates, Open Service Log |
-| Quit Local Whisper | Exit |
+| Status | Live state with waveform and timer while recording, transcription progress, latched errors, and a Start button when the service is down |
+| Quick toggles | Paste at cursor, replacements, read aloud, and sounds |
+| Engine | Switch transcription engine in place |
+| Grammar | Switch grammar backend in place, including Off |
+| Recent | Latest transcriptions, click to copy, hover to reveal the audio in Finder |
+| Footer | Settings, retry last transcription, a More menu, and quit |
+| More | Copy last transcription, transcripts / audio / log folders, check for updates, restart the service, and replay the tutorial |
 
 ### Settings
 
@@ -399,15 +403,15 @@ Sidebar layout with focused panels:
 | Recording | Trigger key, double-tap window, audio cleanup, duration limits |
 | Transcription | Engine picker plus per-engine sampling and decoding parameters |
 | Grammar | Master toggle, backend picker, per-backend connection and limits |
-| Voice | Text-to-speech voice and shortcut, dictation command help |
 | Vocabulary | Searchable replacement editor with import / export |
-| Output | Overlay, sounds, notifications, paste-at-cursor, history limit |
+| Voice | Text-to-speech voice and shortcut, dictation command editor |
 | Shortcuts | Proofread / rewrite / prompt-engineer keybindings, full cheatsheet |
+| Output | Overlay, sounds, notifications, paste-at-cursor, history limit |
 | Activity | Sessions, words, 30-day chart, top words, top replacement triggers |
-| Advanced | Permissions, storage paths, model idle unload, service log, doctor, restart, update |
+| Advanced | Live status, permissions, storage paths, model idle unload, service log, doctor, service restart |
 | About | Version, credits, replay tutorial |
 
-Settings save to `~/.whisper/config.toml`. Restart-required fields warn and offer immediate restart.
+Settings save to `~/.whisper/config.toml` and apply immediately, including the trigger key and the transform and speak shortcuts. Engine model fields show a restart note with a Restart Service button.
 
 ---
 
@@ -524,14 +528,14 @@ Recordings longer than five minutes use the chunked pipeline. Each VAD segment i
 <details>
 <summary><strong>"This process is not trusted"</strong></summary>
 
-Grant Accessibility to the `wh` process, **not** your terminal app. System Settings opens automatically on first run.
+Grant Accessibility to the Local Whisper service runtime, **not** your terminal app. System Settings opens automatically on first run.
 
 If it didn't:
 ```bash
 open x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility
 ```
 
-Enable `wh`, then `wh restart`.
+Source installs appear as `local-whisper`; Homebrew installs can appear as `Python`. Enable the entry, then `wh restart`.
 
 </details>
 
@@ -606,7 +610,7 @@ Check `show_overlay = true` in `~/.whisper/config.toml`.
 ## Development
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate   # needs Python 3.11 or 3.12
 pip install -r requirements.lock -e .
 
 wh build              # Build Swift UI (one-time)
@@ -642,8 +646,10 @@ local-whisper/
 ├── tests/
 │   ├── test_flow.py
 │   └── fixtures/
-├── LocalWhisperUI/                  # Swift UI app
+├── LocalWhisperUI/                  # Swift UI app + Apple Speech helper
 │   ├── Package.swift
+│   ├── Sources/AppleSpeechCore/     # Shared macOS/iOS SpeechAnalyzer core
+│   ├── Sources/LocalWhisperSpeech/  # Apple SpeechTranscriber helper executable
 │   └── Sources/LocalWhisperUI/
 │       ├── AppMain.swift            # @main entry point
 │       ├── AppState.swift           # Observable state, IPC handler, ConnectionState
@@ -657,6 +663,7 @@ local-whisper/
 │       ├── SettingsView.swift       # Sidebar root + section enum
 │       ├── RecordingPanel.swift     # Trigger key + audio cleanup
 │       ├── TranscriptionPanel.swift # Engine picker + per-engine params
+│       ├── EngineSettingsSections.swift # Per-engine settings sections
 │       ├── GrammarPanel.swift       # Backend picker + Ollama / LM Studio / AI
 │       ├── VoicePanel.swift         # TTS + dictation commands
 │       ├── VocabularyPanel.swift    # Replacements editor (search, import / export)
@@ -704,6 +711,8 @@ local-whisper/
     │   ├── editor.py       # Interactive config TUI
     │   ├── client.py       # whisper/listen/transcribe socket client
     │   ├── doctor.py       # wh doctor + wh update
+    │   ├── doctor_report.py # Redacted diagnostic report writer
+    │   ├── history.py      # wh stats + wh export
     │   └── main.py         # help, version, cli_main dispatcher
     ├── config/             # Config package
     │   ├── schema.py       # Dataclasses + DEFAULT_CONFIG
@@ -719,16 +728,27 @@ local-whisper/
     ├── transcriber.py      # Engine routing
     ├── utils.py            # Helpers
     ├── shortcuts.py        # Text transformation shortcuts
+    ├── replacements.py     # Replacement rule engine
+    ├── dictation_commands.py # Spoken punctuation and filler stripping
+    ├── stats.py            # Usage statistics
+    ├── history_export.py   # History export formats
+    ├── recovery.py         # Crash recovery markers
+    ├── long_session.py     # Chunked long-session pipeline
+    ├── watchdog.py         # Per-stage pipeline timeouts
     ├── key_interceptor.py  # CGEvent tap
     ├── tts_processor.py    # TTS shortcut handler
     ├── tts/
     │   ├── base.py         # TTSProvider base
     │   └── kokoro_tts.py   # Kokoro provider (MLX)
     ├── engines/
-    │   ├── base.py             # TranscriptionEngine base
+    │   ├── base.py             # TranscriptionEngine base + capabilities
     │   ├── parakeet.py         # Parakeet-TDT v3 (MLX, default)
     │   ├── qwen3_asr.py        # Qwen3-ASR (MLX)
+    │   ├── qwen3_models.py     # Validated Qwen3-ASR model catalog
+    │   ├── apple_speech.py     # Apple SpeechTranscriber (on-device, macOS 26+)
     │   ├── whisperkit.py       # WhisperKit (localhost)
+    │   ├── whisperkit_runtime.py # Local WhisperKit server lifecycle
+    │   ├── context.py          # Bounded local vocabulary context builder
     │   ├── status.py           # Cache status + on-disk size reporting
     │   └── download_progress.py # HF preflight + inline progress bar IPC
     └── backends/

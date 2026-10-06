@@ -9,6 +9,7 @@ Requirements:
 
 * Apple Silicon Mac
 * macOS with Microphone and Accessibility permission
+* macOS 26 or later for the Swift menu bar app. On earlier macOS the background service runs headless.
 * Enough free disk space for the app plus local models
 
 ## Recommended setup
@@ -60,7 +61,7 @@ Local Whisper needs two permissions:
 | Microphone | Records your voice locally. |
 | Accessibility | Lets the global hotkey work from any app and paste text back where you were typing. |
 
-macOS may list the app as **Python** in permission screens. That is expected because the background service runs through Local Whisper's packaged Python runtime.
+The permission entry is named after the runtime that the background service actually launches. Source installs run a frozen interpreter copy and appear as **local-whisper**; Homebrew installs can appear as **Python** because the service runs through the packaged Python runtime.
 
 The onboarding window and Settings -> Advanced -> Permissions both send the macOS permission request. If a permission was previously denied and macOS will not show the dialog again, Local Whisper opens the matching System Settings page.
 
@@ -70,7 +71,7 @@ If setup finishes with permissions pending, open:
 open x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility
 ```
 
-Then enable **Python** under Accessibility. For Microphone, go to System Settings -> Privacy & Security -> Microphone and enable **Python** there too.
+Then enable the Local Whisper entry under Accessibility. For Microphone, go to System Settings -> Privacy & Security -> Microphone and enable the same entry there too.
 
 Restart after changing permissions:
 
@@ -87,6 +88,8 @@ git clone https://github.com/gabrimatic/local-whisper.git
 cd local-whisper
 ./setup.sh
 ```
+
+Source setup needs Python 3.11 or 3.12; `setup.sh` recreates `.venv` when the interpreter is outside that range.
 
 The source setup path installs an editable Python package in `.venv`, builds the Swift menu bar app, configures a LaunchAgent, and adds the `wh` alias to your shell profile.
 

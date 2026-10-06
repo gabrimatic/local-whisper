@@ -59,13 +59,16 @@ The iOS keyboard reads haptics and quick-insert settings from the shared app gro
 
 | Pack | Approx size | Notes |
 | --- | ---: | --- |
-| Parakeet-TDT v3 INT8 ONNX | 640 MB | Default Android local ASR pack through sherpa-onnx. |
-| Qwen3-ASR 0.6B INT8 ONNX | 940 MB | Android multilingual ASR pack through sherpa-onnx. |
-| Qwen3-ASR MLX | 3.8 GB | Desktop and iOS-family local ASR pack. |
-| Parakeet-TDT v3 MLX | 2.3 GB | Desktop and iOS-family local ASR pack. |
-| Kokoro-82M TTS | 371 MB | Local text-to-speech model. |
-| WhisperKit Large v3 | 626 MB | Wired iOS Core ML folder. |
+| Parakeet-TDT v3 INT8 ONNX | 640 MB | Default Android local ASR pack through sherpa-onnx. Wired for transcription. |
+| Qwen3-ASR 0.6B INT8 ONNX | 940 MB | Android multilingual ASR pack through sherpa-onnx. Wired for transcription. |
+| WhisperKit Large v3 | 626 MB | Wired iOS Core ML pack used by the native iOS recorder. |
 | Apple SpeechTranscriber | Apple managed | Wired iOS 26 on-device language asset; device and locale availability are checked at runtime. |
+| Qwen3-ASR MLX | 3.8 GB | Catalog and download entry only. Same model family as the desktop MLX engine; it needs a native iOS MLX/Core ML adapter before it can transcribe. |
+| Parakeet-TDT v3 MLX | 2.3 GB | Catalog and download entry only. Same model family as the desktop default engine; it needs a native iOS MLX/Core ML adapter before it can transcribe. |
+| Kokoro-82M TTS | 371 MB | Catalog and download entry only. It needs native iOS playback synthesis before it can speak. |
+| Local Cleanup Engine | Bundled | Rule-based text cleanup shipped with the app, not a downloaded model. |
+
+Only the wired packs produce transcripts on the device today. The catalog entries install and verify, and the app labels them as needing a native adapter.
 
 Large model-pack installs retry transient manifest and file-download failures. Downloaded files are verified before a pack is marked ready.
 

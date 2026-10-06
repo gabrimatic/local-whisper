@@ -10,7 +10,7 @@ Local Whisper is speech-to-text for the places you already type. On macOS, you s
 | Workflow | What happens |
 | --- | --- |
 | macOS dictation | The Python service records microphone audio, processes it, transcribes it with the selected engine, optionally cleans it with the selected grammar backend, applies replacements, and writes the result to clipboard or cursor. |
-| Selected-text transforms | Keyboard shortcuts copy selected text, send it through the grammar backend as proofread, rewrite, or prompt-engineer mode, then return the result to the clipboard. |
+| Selected-text transforms | Keyboard shortcuts copy selected text, send it through the grammar backend as proofread, rewrite, or prompt-engineer mode, then paste the result over the selection by default and always copy it to the clipboard. |
 | Text-to-speech | `Option+T` or `wh whisper` sends text to Kokoro MLX, streams audio playback, and lets you cancel with `Option+T`, Esc, or a new recording. |
 | Mobile recording | Flutter records and manages history, modes, model packs, and settings. Native iOS and Android code owns microphone, keyboard, and platform-specific speech bridges. |
 

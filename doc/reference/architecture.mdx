@@ -28,13 +28,13 @@ Swift menu bar app
 | Area | Modules |
 | --- | --- |
 | Assembly | `app.py` |
-| Recording | `app_recording.py`, `audio.py`, `key_interceptor.py` |
+| Recording | `app_recording.py`, `audio.py`, `key_interceptor.py`, `app_audio_health.py` |
 | Pipeline | `app_pipeline.py`, `transcriber.py`, `grammar.py`, `audio_processor.py` |
 | Commands | `app_commands.py`, `cmd_server.py`, `cli/` |
 | UI IPC | `app_ipc.py`, `ipc_server.py` |
 | Recovery | `app_recovery.py`, `recovery.py`, `long_session.py`, `watchdog.py` |
 | Persistence | `backup.py`, `history_export.py`, `stats.py` |
-| Text tools | `dictation_commands.py`, `shortcuts.py`, `tts_processor.py` |
+| Text tools | `dictation_commands.py`, `replacements.py`, `shortcuts.py`, `tts_processor.py` |
 | Configuration | `config/schema.py`, `config/loader.py`, `config/mutations.py` |
 
 ## Swift modules
@@ -44,7 +44,8 @@ Swift menu bar app
 | Entry and state | `AppMain.swift`, `AppState.swift`, `IPCClient.swift`, `IPCMessages.swift` |
 | Menu and overlay | `MenuBarView.swift`, `OverlayWindowController.swift`, `OverlayView.swift` |
 | Settings | `SettingsView.swift`, `RecordingPanel.swift`, `TranscriptionPanel.swift`, `GrammarPanel.swift`, `VoicePanel.swift`, `VocabularyPanel.swift`, `OutputPanel.swift`, `ShortcutsPanel.swift`, `ActivityPanel.swift`, `AdvancedPanel.swift`, `AboutView.swift` |
-| Shared UI | `Theme.swift`, `SharedViews.swift`, `Constants.swift`, `EngineSettingsSections.swift` |
+| Shared UI | `Theme.swift`, `SharedViews.swift`, `Components.swift`, `Constants.swift`, `EngineSettingsSections.swift`, `ShortcutRecorder.swift`, `WindowSupport.swift` |
+| Apple Speech | `Sources/AppleSpeechCore/AppleSpeechCore.swift` (shared macOS and iOS core), `Sources/LocalWhisperSpeech/main.swift` (helper executable) |
 
 ## Mobile architecture
 

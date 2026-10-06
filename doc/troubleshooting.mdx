@@ -5,7 +5,7 @@ description: "Fix common setup, permission, engine, overlay, and local backend i
 
 ## This process is not trusted
 
-Grant Accessibility permission to the `wh` process, not only to your terminal app. System Settings opens automatically on first run.
+Grant Accessibility permission to the Local Whisper service runtime, not only to your terminal app. System Settings opens automatically on first run.
 
 If it does not open:
 
@@ -13,7 +13,7 @@ If it does not open:
 open x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility
 ```
 
-Enable `wh`, then restart:
+Source installs appear as `local-whisper`; Homebrew installs can appear as `Python`. Enable that entry, then restart:
 
 ```bash
 wh restart
