@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Refreshed the Python dependency lock and Flutter packages to their latest compatible releases.
+- The Android app now compiles Kotlin through the Android Gradle Plugin's built-in Kotlin support, ahead of Flutter dropping the separate Kotlin Gradle Plugin.
+- The mobile Qwen3-ASR catalog entry now describes the model family as multilingual with model-side language detection.
+
+### Fixed
+
+- Documentation now matches current behavior: `wh listen` records until Ctrl+C with a 10 minute cap, the menu bar and settings tables reflect the current panels, Accessibility setup names the real runtime entry, mobile MLX and Kokoro packs are marked as catalog-only, and the macOS 26 requirement for the menu bar app and the Python 3.11/3.12 requirement are stated.
+
 ## [1.11.0] - 2026-10-02
 
 ### Added
