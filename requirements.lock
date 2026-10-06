@@ -37,7 +37,7 @@ click==8.5.0
     # via
     #   huggingface-hub
     #   spacy
-cloudpathlib==0.25.0
+cloudpathlib==0.26.0
     # via weasel
 cloudpickle==3.1.2
     # via joblib
@@ -67,7 +67,7 @@ docopt==0.6.2
     # via num2words
 espeakng-loader==0.2.4
     # via misaki
-filelock==4.0.9
+filelock==4.0.12
     # via
     #   huggingface-hub
     #   torch
@@ -123,7 +123,7 @@ llvmlite==0.50.0
     # via numba
 markdown-it-py==4.2.0
     # via rich
-markupsafe==3.0.3
+markupsafe==3.0.4
     # via jinja2
 mdurl==0.1.2
     # via markdown-it-py
@@ -182,7 +182,7 @@ parakeet-mlx==0.5.3
     # via local-whisper (pyproject.toml)
 phonemizer-fork==3.3.2
     # via misaki
-platformdirs==4.12.2
+platformdirs==4.12.3
     # via pooch
 pooch==1.9.0
     # via librosa
@@ -269,7 +269,7 @@ rfc3986==1.5.0
     # via csvw
 rich==15.0.0
     # via typer
-rpds-py==2026.6.3
+rpds-py==2026.9.1
     # via
     #   jsonschema
     #   referencing
