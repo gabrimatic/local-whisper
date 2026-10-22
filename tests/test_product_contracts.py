@@ -23,6 +23,7 @@ def _uses(workflow: str, action: str, version: str) -> bool:
     pattern = rf"uses: {re.escape(action)}@(?:{re.escape(version)}\b|[0-9a-f]{{40}} # {re.escape(version)}\b)"
     return re.search(pattern, workflow) is not None
 
+
 def test_apple_intelligence_requirement_is_consistent():
     """Apple Intelligence copy should match the public macOS 26+ requirement."""
     paths = [
