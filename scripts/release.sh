@@ -6,6 +6,7 @@
 # Flow:
 #   1. Sanity checks (clean tree, on main, up to date, tag doesn't exist)
 #   2. Bumps version in pyproject.toml, setup.sh, src/whisper_voice/cli/build.py
+#      and refreshes uv.lock
 #   3. Rewrites CHANGELOG.md [Unreleased] → [X.Y.Z] - TODAY
 #   4. Runs the full test suite
 #   5. Shows the diff and waits for confirmation
@@ -18,6 +19,7 @@
 #   - homebrew-local-whisper checked out at ../homebrew-local-whisper
 #     (override with HOMEBREW_TAP_DIR=/path/to/tap)
 #   - .venv with pytest installed for step 4
+#   - uv on PATH, to refresh uv.lock after the version bump
 #
 # For dependency-floor bumps (numpy, pynput, pyobjc-*, soundfile, ...), refresh
 # the matching `resource` wheel URL and sha256 in the formula before running this
@@ -127,6 +129,9 @@ info["CFBundleVersion"] = str(build_number)
 keyboard.write_bytes(plistlib.dumps(info, sort_keys=False))
 PY
 
+# uv.lock records the project version; keep it in step so `uv sync --locked` passes in CI.
+uv lock --quiet
+
 # 3. Rewrite CHANGELOG [Unreleased] → [X.Y.Z] - TODAY
 python3 - "$VERSION" "$TODAY" <<'PY'
 import re, sys, pathlib
@@ -158,7 +163,7 @@ if [[ ! "$reply" =~ ^[Yy]$ ]]; then
 fi
 
 # 6. Commit, push, verify CI, then publish the tag
-git add pyproject.toml setup.sh src/whisper_voice/cli/build.py CHANGELOG.md \
+git add pyproject.toml uv.lock setup.sh src/whisper_voice/cli/build.py CHANGELOG.md \
   src/flutter/local_whisper/pubspec.yaml src/flutter/local_whisper/ios/LocalWhisperKeyboard/Info.plist
 git commit -m "chore: release $TAG"
 git push origin main

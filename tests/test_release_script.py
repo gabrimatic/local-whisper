@@ -49,6 +49,11 @@ case "$1 $2" in
 esac
 """)
     gh.chmod(0o755)
+    uv = bin_dir / "uv"
+    uv.write_text("""#!/bin/sh
+printf '%s\n' "uv $*" >> "$RELEASE_TEST_TRACE"
+""")
+    uv.chmod(0o755)
     if with_tests:
         python = root / ".venv/bin/python"
         python.parent.mkdir(parents=True)
@@ -96,6 +101,8 @@ def test_failed_branch_ci_does_not_create_or_push_release_tag(tmp_path):
     assert result.returncode != 0
     commands = trace.read_text().splitlines()
     assert "git push origin main" in commands
+    assert commands.index("uv lock --quiet") < commands.index("git push origin main")
+    assert any(command.startswith("git add ") and " uv.lock " in command for command in commands)
     assert not any(command.startswith("git tag -a") for command in commands)
     assert not any(command.startswith("git push origin v") for command in commands)
     assert not any(command.startswith("gh release create") for command in commands)
