@@ -18,6 +18,11 @@ def _read(relative_path: str) -> str:
     return (ROOT / relative_path).read_text(encoding="utf-8")
 
 
+def _uses(workflow: str, action: str, version: str) -> bool:
+    """True when the workflow uses the action at this version, by tag or by commit SHA pinned to it."""
+    pattern = rf"uses: {re.escape(action)}@(?:{re.escape(version)}\b|[0-9a-f]{{40}} # {re.escape(version)}\b)"
+    return re.search(pattern, workflow) is not None
+
 def test_apple_intelligence_requirement_is_consistent():
     """Apple Intelligence copy should match the public macOS 26+ requirement."""
     paths = [
@@ -207,7 +212,7 @@ def test_github_pages_auto_deploys_mintlify_doc_updates():
     assert "cancel-in-progress: true" in workflow
     assert "cp ../install.sh ../_site/install.sh" in workflow
     assert "Deploy GitHub Pages" in workflow
-    assert "actions/deploy-pages@v5" in workflow
+    assert _uses(workflow, "actions/deploy-pages", "v5")
 
 
 def test_general_ci_does_not_run_expensive_jobs_for_docs_only_changes():
@@ -250,12 +255,12 @@ def test_github_actions_use_current_node24_ready_actions():
 
     combined_workflows = f"{workflow}\n{pages_workflow}"
 
-    assert "uses: actions/checkout@v7" in workflow
-    assert "uses: actions/checkout@v7" in pages_workflow
-    assert "uses: actions/checkout@v6" not in combined_workflows
-    assert "uses: actions/setup-python@v7" in workflow
-    assert "uses: actions/setup-node@v7" in pages_workflow
-    assert "uses: dorny/paths-filter@v4" in workflow
+    assert _uses(workflow, "actions/checkout", "v7")
+    assert _uses(pages_workflow, "actions/checkout", "v7")
+    assert not _uses(combined_workflows, "actions/checkout", "v6")
+    assert _uses(workflow, "actions/setup-python", "v7")
+    assert _uses(pages_workflow, "actions/setup-node", "v7")
+    assert _uses(workflow, "dorny/paths-filter", "v4")
     assert 'package-ecosystem: "github-actions"' in dependabot
     assert dependabot.count('interval: "monthly"') == dependabot.count("package-ecosystem:")
     assert dependabot.count("groups:") == dependabot.count("package-ecosystem:")
