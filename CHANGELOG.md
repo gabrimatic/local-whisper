@@ -4,7 +4,7 @@ This changelog tracks notable Local Whisper changes.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.11.2] - 2026-10-22
 
 ### Changed
 
