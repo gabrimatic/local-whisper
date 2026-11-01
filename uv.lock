@@ -485,7 +485,7 @@ wheels = [
 
 [[package]]
 name = "kokoro-mlx"
-version = "0.1.3"
+version = "0.1.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -494,9 +494,9 @@ dependencies = [
     { name = "numpy" },
     { name = "soundfile" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/30/ee/001b1dbc9e7567765484b8471c03cafe5b5d5a002d2659e3a7b1475e9d03/kokoro_mlx-0.1.3.tar.gz", hash = "sha256:7be7dd2bbc514a26a9dc297f6997da2e4941f2840d3ab074e1e244dfd91129a1", size = 42121, upload-time = "2026-10-15T05:36:26.367Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f4/9c/8cdb2eef563a16d6ed4906d608e777c863a6486d4d11d00d004b7270f30d/kokoro_mlx-0.1.4.tar.gz", hash = "sha256:95a939b41b949be8b5e9ecfceea0df79b1ab3ac18c9ac752334dc662345f95fb", size = 40242, upload-time = "2026-10-15T07:16:03.164Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/25/d4/c2fb5b9ba0eba611f24b975e0452d5c7113a7b8190c5770da01c245aeaa3/kokoro_mlx-0.1.3-py3-none-any.whl", hash = "sha256:86872d1c9423cfdedc125b86263cd1138da8499cae3351e526e80cb5aae01df1", size = 33101, upload-time = "2026-10-15T05:36:24.873Z" },
+    { url = "https://files.pythonhosted.org/packages/f5/b5/5d22867741687b0625fe97eddc0b92fb440f4ec180230d66eaffd6b13827/kokoro_mlx-0.1.4-py3-none-any.whl", hash = "sha256:6b4c58be88aa7204827dfa6b78330743c9100684cee91e82e588d8f65337823d", size = 33175, upload-time = "2026-10-15T07:16:01.837Z" },
 ]
 
 [[package]]
@@ -599,7 +599,7 @@ requires-dist = [
     { name = "pyobjc-framework-avfoundation", specifier = ">=12.2" },
     { name = "pyobjc-framework-cocoa", specifier = ">=12.2" },
     { name = "pyobjc-framework-quartz", specifier = ">=12.2" },
-    { name = "qwen3-asr-mlx", specifier = "==0.2.0" },
+    { name = "qwen3-asr-mlx", specifier = "==0.3.0" },
     { name = "requests", specifier = ">=2.25.0" },
     { name = "sounddevice", specifier = ">=0.4.0" },
     { name = "soundfile", specifier = ">=0.14.0" },
@@ -1064,7 +1064,7 @@ wheels = [
 
 [[package]]
 name = "pytest"
-version = "9.1.1"
+version = "9.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "iniconfig" },
@@ -1072,9 +1072,9 @@ dependencies = [
     { name = "pluggy" },
     { name = "pygments" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e4/47/b9efed96c114afcfa3c9d3fe98a76a1d14c74a9e266d397cf6eb64be5e01/pytest-9.1.1.tar.gz", hash = "sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313", size = 1636369, upload-time = "2026-06-19T10:58:32.857Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/79/42/bb4641652e58dedeac2ec51abc1f8cae4fee4ec63899a0999016229a0f2a/pytest-9.2.0.tar.gz", hash = "sha256:97c4f3b1f3c7414aa36465e09b8220f1d03627993bd51b1282e193753c80557b", size = 1797555, upload-time = "2026-10-27T21:30:20.728Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl", hash = "sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c", size = 386536, upload-time = "2026-06-19T10:58:31.347Z" },
+    { url = "https://files.pythonhosted.org/packages/51/39/1f5d8c8877a0fa327db959c19341d4be61660de1ab6b7391f9eb805bcd67/pytest-9.2.0-py3-none-any.whl", hash = "sha256:07acdcf88ec174f907dc01af70bf52d49b014bbab03faeeade31c96b18c2e588", size = 411776, upload-time = "2026-10-27T21:30:19.131Z" },
 ]
 
 [[package]]
@@ -1113,7 +1113,7 @@ wheels = [
 
 [[package]]
 name = "qwen3-asr-mlx"
-version = "0.2.0"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -1122,9 +1122,9 @@ dependencies = [
     { name = "soundfile" },
     { name = "tokenizers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/69/a7/8897549b31d210b67bab3a8ce07a0d6004f01c0b5131c430238050d834ea/qwen3_asr_mlx-0.2.0.tar.gz", hash = "sha256:ba816cdd407ea8902b1d989a9b32f07ab72a5d3f5d745c811e0446ee2e4008d5", size = 41815, upload-time = "2026-07-24T06:43:07.708Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4d/38/638c96e2e7c6824ea365db0d512d5049b2def7596a62c6f916b4b8e9c354/qwen3_asr_mlx-0.3.0.tar.gz", hash = "sha256:7ee33977a2dc2f46bc160c70b9937da83e01d86aec7ac2b242c7cc0170415ff1", size = 43491, upload-time = "2026-10-15T05:39:30.076Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5d/00/3e6f9bce7bada23390f753be71d79834cc695841a087a0211481161802b5/qwen3_asr_mlx-0.2.0-py3-none-any.whl", hash = "sha256:bfd9c08e01482780556d52782b6a25ebe4a921e2e817984c324e88dbe6fcc16b", size = 28439, upload-time = "2026-07-24T06:43:06.61Z" },
+    { url = "https://files.pythonhosted.org/packages/a2/01/446c61f0c4110e4c51296f961b0f1bc16e7231d772d65afa2739dd1625d8/qwen3_asr_mlx-0.3.0-py3-none-any.whl", hash = "sha256:cc85dd304e22cd2607f4a42854f03a17501ec8bfac446f8ff4a07301d620d485", size = 28659, upload-time = "2026-10-15T05:39:28.646Z" },
 ]
 
 [[package]]
@@ -1216,11 +1216,11 @@ wheels = [
 
 [[package]]
 name = "ruff"
-version = "0.17.0"
+version = "0.17.3"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e9/a7/70debb024dfacda67b8e560cc7511f52b34b9348a8cc8c1ec23036dcd51d/ruff-0.17.0.tar.gz", hash = "sha256:5cd03240d8208a557c2a9655a5cb07ebe36aa6bb35065f97d48c1f6adef5a322", size = 5320554, upload-time = "2026-10-09T19:47:29.248Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/59/73/81f140c4edd9cc323de5478e6bbd3bbcfae9a82692df1a258de8cec6a6d2/ruff-0.17.3.tar.gz", hash = "sha256:a57049c8addb3662073859bb55a7ad35aa54f8a7c9ed268911d1333c5aadaaa9", size = 5339444, upload-time = "2026-10-27T00:34:05.914Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a7/20/643f3c8f75594f937b2bf74801241c56a2e2b8e139d24dff8b66b28cdd7f/ruff-0.17.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:cbf7149e0927dc3295d5d64679a4765576eef71b00782b2ae969ef82274d6bb9", size = 9273324, upload-time = "2026-10-09T19:46:44.323Z" },
+    { url = "https://files.pythonhosted.org/packages/a2/7e/537aba4b7f54397a374d2f6a6fc93e9c8015e18553f31a4a7b7dbced48b5/ruff-0.17.3-py3-none-macosx_11_0_arm64.whl", hash = "sha256:b75cc113b3aca388933d8296b667b1ac401a80317ea3074c9b0a66541199da29", size = 9440362, upload-time = "2026-10-27T00:33:35.784Z" },
 ]
 
 [[package]]

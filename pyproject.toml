@@ -34,7 +34,7 @@ dependencies = [
     "pyobjc-framework-Cocoa>=12.2",
     "pyobjc-framework-Quartz>=12.2",
     "parakeet-mlx>=0.5.2",
-    "qwen3-asr-mlx==0.2.0",
+    "qwen3-asr-mlx==0.3.0",
     "kokoro-mlx>=0.1.2",
     "soundfile>=0.14.0",
     "misaki[en]>=0.9.4",
