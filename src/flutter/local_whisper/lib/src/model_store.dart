@@ -41,7 +41,8 @@ class ModelStore {
       runtime: ModelRuntime.mlx,
       minimumIosMajor: 18,
       repoId: 'mlx-community/Qwen3-ASR-1.7B-bf16',
-      installNote: 'Same Qwen3-ASR model family as the desktop engine. Requires a native MLX/Core ML iOS adapter before it can transcribe.',
+      installNote:
+          'Same Qwen3-ASR model family as the desktop engine. Requires a native MLX/Core ML iOS adapter before it can transcribe.',
     ),
     LocalModel(
       id: 'parakeet_tdt_v3',
@@ -53,25 +54,29 @@ class ModelStore {
       runtime: ModelRuntime.mlx,
       minimumIosMajor: 18,
       repoId: 'mlx-community/parakeet-tdt-0.6b-v3',
-      installNote: 'Same Parakeet-TDT v3 model family as the desktop default engine. Requires a native MLX/Core ML iOS adapter before it can transcribe.',
+      installNote:
+          'Same Parakeet-TDT v3 model family as the desktop default engine. Requires a native MLX/Core ML iOS adapter before it can transcribe.',
     ),
     LocalModel(
       id: 'kokoro_tts',
       name: 'Kokoro-82M TTS',
       kind: ModelKind.tts,
-      description: 'Offline text-to-speech voice model family used by Local Whisper voice output.',
+      description:
+          'Offline text-to-speech voice model family used by Local Whisper voice output.',
       sizeLabel: '~371 MB MLX voice pack',
       state: ModelInstallState.notInstalled,
       runtime: ModelRuntime.mlx,
       minimumIosMajor: 18,
       repoId: 'mlx-community/Kokoro-82M-bf16',
-      installNote: 'Same Kokoro model family as desktop Local Whisper TTS. Requires native iOS playback synthesis before it can speak.',
+      installNote:
+          'Same Kokoro model family as desktop Local Whisper TTS. Requires native iOS playback synthesis before it can speak.',
     ),
     LocalModel(
       id: 'whisperkit_large_v3_turbo',
       name: 'WhisperKit Large v3',
       kind: ModelKind.transcription,
-      description: 'WhisperKit/Core ML transcription pack for private offline recording on iPhone.',
+      description:
+          'WhisperKit/Core ML transcription pack for private offline recording on iPhone.',
       sizeLabel: '~626 MB Core ML pack',
       state: ModelInstallState.notInstalled,
       runtime: ModelRuntime.whisperKit,
@@ -85,42 +90,49 @@ class ModelStore {
       id: 'apple_speech',
       name: 'Apple SpeechTranscriber',
       kind: ModelKind.transcription,
-      description: 'Apple\'s on-device SpeechAnalyzer model for live and long-form transcription.',
+      description:
+          'Apple\'s on-device SpeechAnalyzer model for live and long-form transcription.',
       sizeLabel: 'Apple managed',
       state: ModelInstallState.notInstalled,
       runtime: ModelRuntime.appleSpeech,
       minimumIosMajor: 26,
-      installNote: 'iOS downloads, updates, and shares the selected language asset. Availability depends on the device and locale.',
+      installNote:
+          'iOS downloads, updates, and shares the selected language asset. Availability depends on the device and locale.',
     ),
     LocalModel(
       id: 'parakeet_tdt_v3_sherpa',
       name: 'Parakeet-TDT v3',
       kind: ModelKind.transcription,
-      description: 'Default Android offline ASR pack. Same model family as the macOS Parakeet engine, converted to INT8 ONNX for sherpa-onnx.',
+      description:
+          'Default Android offline ASR pack. Same model family as the macOS Parakeet engine, converted to INT8 ONNX for sherpa-onnx.',
       sizeLabel: '~640 MB ONNX pack',
       state: ModelInstallState.notInstalled,
       runtime: ModelRuntime.sherpaOnnx,
       minimumIosMajor: 14,
       repoId: 'csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8',
-      installNote: 'Best Android default: private on-device transcription for English, German, and 25 European languages through sherpa-onnx.',
+      installNote:
+          'Best Android default: private on-device transcription for English, German, and 25 European languages through sherpa-onnx.',
     ),
     LocalModel(
       id: 'qwen3_asr_sherpa',
       name: 'Qwen3-ASR 0.6B',
       kind: ModelKind.transcription,
-      description: 'Broader multilingual Android ASR pack for sherpa-onnx, including Persian, Arabic, CJK, and European languages.',
+      description:
+          'Broader multilingual Android ASR pack for sherpa-onnx, including Persian, Arabic, CJK, and European languages.',
       sizeLabel: '~940 MB ONNX pack',
       state: ModelInstallState.notInstalled,
       runtime: ModelRuntime.sherpaOnnx,
       minimumIosMajor: 14,
       repoId: 'pantinor/sherpa-onnx-qwen3-asr-0.6b-int8',
-      installNote: 'Use when broader language coverage matters. Transcript text is wired first; timestamp quality must be proven before exposing segments.',
+      installNote:
+          'Use when broader language coverage matters. Transcript text is wired first; timestamp quality must be proven before exposing segments.',
     ),
     LocalModel(
       id: 'oruk_fourier_2b_sherpa',
       name: 'Oruk Fourier 2B',
       kind: ModelKind.transcription,
-      description: 'English transcription on Android. The weights are licensed by Oruk for noncommercial use (CC BY-NC 4.0).',
+      description:
+          'English transcription on Android. The weights are licensed by Oruk for noncommercial use (CC BY-NC 4.0).',
       sizeLabel: '2.41 GB ONNX pack',
       state: ModelInstallState.notInstalled,
       runtime: ModelRuntime.sherpaOnnx,
@@ -133,7 +145,8 @@ class ModelStore {
       id: 'local_cleanup',
       name: 'Local Cleanup Engine',
       kind: ModelKind.cleanup,
-      description: 'Bundled rule-based post-processing. This is not a separate AI model.',
+      description:
+          'Bundled rule-based post-processing. This is not a separate AI model.',
       sizeLabel: 'Bundled',
       state: ModelInstallState.bundled,
       runtime: ModelRuntime.bundled,
@@ -436,11 +449,11 @@ class ModelStore {
         }),
       );
 
+      cancelToken.throwIfCanceled();
       if (await target.exists()) {
         await target.delete(recursive: true);
       }
       await partial.rename(target.path);
-      cancelToken.throwIfCanceled();
 
       final models = (await loadModels())
           .map(
@@ -570,7 +583,7 @@ class ModelStore {
           offset = 0;
         } else {
           await response.drain<void>();
-          if (response.statusCode == 416) {
+          if (response.statusCode == HttpStatus.requestedRangeNotSatisfiable) {
             await _deleteIfExists(part);
             throw _RetryableModelDownloadException(
               'Range expired for "$path".',
@@ -707,6 +720,9 @@ class ModelStore {
       final decoded =
           jsonDecode(await manifest.readAsString()) as Map<String, Object?>;
       if (decoded['id'] != model.id || decoded['repoId'] != model.repoId) {
+        return false;
+      }
+      if (_resumeDirectoryName(model) != null && decoded['revision'] != model.revision) {
         return false;
       }
       final expectedSnapshot = model.snapshotPath;
