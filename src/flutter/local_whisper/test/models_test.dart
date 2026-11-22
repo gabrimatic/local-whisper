@@ -1,3 +1,4 @@
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -474,4 +475,64 @@ void main() {
       );
     },
   );
+  for (final honorRange in [true, false]) {
+    test('pinned snapshot resumes after cancel (range supported: $honorRange)', () async {
+      SharedPreferences.setMockInitialValues({});
+      final root = await Directory.systemTemp.createTemp('fourier-range');
+      final http = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() async {
+        await http.close(force: true);
+        await root.delete(recursive: true);
+        SharedPreferences.resetStatic();
+      });
+      final payload = List<int>.generate(65536, (i) => i % 251);
+      final ranges = <String?>[];
+      final model = ModelStore.catalog.firstWhere((m) => m.id == 'oruk_fourier_2b_sherpa');
+      http.listen((req) async {
+        final res = req.response;
+        try {
+          if (req.uri.path.contains('/tree/')) {
+            res.write(jsonEncode([{
+              'type': 'file', 'path': '${model.snapshotPath}/model.onnx',
+              'size': payload.length, 'lfs': {'oid': sha256.convert(payload).toString()},
+            }]));
+          } else {
+            final range = req.headers.value(HttpHeaders.rangeHeader);
+            ranges.add(range);
+            if (ranges.length == 1) {
+              res.contentLength = payload.length;
+              res.add(payload.sublist(0, 8192));
+              await res.flush();
+              await Future<void>.delayed(const Duration(milliseconds: 250));
+              res.add(payload.sublist(8192));
+            } else if (range != null && honorRange) {
+              final start = int.parse(RegExp(r'bytes=(\d+)-').firstMatch(range)![1]!);
+              res.statusCode = 206;
+              res.headers.set('Content-Range','bytes $start-${payload.length - 1}/${payload.length}');
+              res.add(payload.sublist(start));
+            } else {
+              res.add(payload);
+            }
+          }
+          await res.close();
+        } on IOException {
+          // The first transfer is deliberately canceled by the client.
+        }
+      });
+      ModelStore store() => ModelStore(HistoryStore(), modelDirectory: root,
+          huggingFaceBaseUri: Uri.parse('http://127.0.0.1:${http.port}'),
+          downloadRetryDelay: Duration.zero);
+      final token = ModelDownloadCancelToken();
+      await expectLater(store().downloadModel(model, onProgress: (p) {
+        if (p.installedBytes >= 8192) token.cancel();
+      }, cancelToken: token), throwsA(isA<ModelDownloadCanceledException>()));
+      final retry = store();
+      await retry.loadModels(); // A fresh process must preserve this pinned partial.
+      final items = await retry.downloadModel(model, onProgress: (_) {},
+          cancelToken: ModelDownloadCancelToken());
+      final installed = items.firstWhere((m) => m.id == model.id);
+      expect(ranges, [null,'bytes=8192-']);
+      expect(await File('${installed.localPath}/model.onnx').readAsBytes(), payload);
+    });
+  }
 }
