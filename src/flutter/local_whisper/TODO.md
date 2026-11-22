@@ -45,7 +45,8 @@ This checklist tracks the mobile work needed for a publish-grade Local Whisper a
 - [x] Quick mode markers and punctuation keys.
 - [x] Open main app from keyboard.
 - [x] Shared settings read by the iOS keyboard from App Group and by the Android keyboard from setup preferences.
-- [ ] Insert latest transcript from shared history.
+- [x] Android keyboard inserts the latest transcript from local history.
+- [ ] iOS keyboard inserts the latest transcript from shared history.
 - [x] Keyboard onboarding and diagnostics.
 - [ ] Accessibility labels for every keyboard key.
 

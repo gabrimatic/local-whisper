@@ -13,6 +13,9 @@ import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
+import org.json.JSONArray
+import org.json.JSONException
 
 class LocalWhisperInputMethodService : InputMethodService() {
     private val verificationToken = "[[LOCAL_WHISPER_KEYBOARD_VERIFIED]]"
@@ -54,6 +57,14 @@ class LocalWhisperInputMethodService : InputMethodService() {
         )
         root.addView(
             row(
+                key("Insert latest transcript") {
+                    val transcript = latestTranscript()
+                    if (transcript != null) {
+                        commit(transcript)
+                    } else {
+                        Toast.makeText(this, "No saved transcript", Toast.LENGTH_SHORT).show()
+                    }
+                },
                 key("Verify") {
                     markKeyboardSeen()
                     commit(verificationToken)
@@ -118,6 +129,24 @@ class LocalWhisperInputMethodService : InputMethodService() {
 
     private fun commit(text: String) {
         currentInputConnection?.commitText(text, 1)
+    }
+
+    private fun latestTranscript(): String? {
+        // HistoryStore uses the legacy Flutter SharedPreferences backend and
+        // saves newest first. Read at tap time so deleting or clearing history
+        // takes effect immediately, without a separate keyboard copy.
+        val preferences = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val raw = preferences.getString("flutter.history.v1", null) ?: return null
+        val entries = try {
+            JSONArray(raw)
+        } catch (_: JSONException) {
+            return null
+        }
+        for (index in 0 until entries.length()) {
+            val text = entries.optJSONObject(index)?.opt("finalText") as? String
+            if (!text.isNullOrBlank()) return text
+        }
+        return null
     }
 
     private fun markKeyboardSeen() {
