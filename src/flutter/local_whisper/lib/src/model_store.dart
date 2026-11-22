@@ -41,8 +41,7 @@ class ModelStore {
       runtime: ModelRuntime.mlx,
       minimumIosMajor: 18,
       repoId: 'mlx-community/Qwen3-ASR-1.7B-bf16',
-      installNote:
-          'Same Qwen3-ASR model family as the desktop engine. Requires a native MLX/Core ML iOS adapter before it can transcribe.',
+      installNote: 'Same Qwen3-ASR model family as the desktop engine. Requires a native MLX/Core ML iOS adapter before it can transcribe.',
     ),
     LocalModel(
       id: 'parakeet_tdt_v3',
@@ -54,29 +53,25 @@ class ModelStore {
       runtime: ModelRuntime.mlx,
       minimumIosMajor: 18,
       repoId: 'mlx-community/parakeet-tdt-0.6b-v3',
-      installNote:
-          'Same Parakeet-TDT v3 model family as the desktop default engine. Requires a native MLX/Core ML iOS adapter before it can transcribe.',
+      installNote: 'Same Parakeet-TDT v3 model family as the desktop default engine. Requires a native MLX/Core ML iOS adapter before it can transcribe.',
     ),
     LocalModel(
       id: 'kokoro_tts',
       name: 'Kokoro-82M TTS',
       kind: ModelKind.tts,
-      description:
-          'Offline text-to-speech voice model family used by Local Whisper voice output.',
+      description: 'Offline text-to-speech voice model family used by Local Whisper voice output.',
       sizeLabel: '~371 MB MLX voice pack',
       state: ModelInstallState.notInstalled,
       runtime: ModelRuntime.mlx,
       minimumIosMajor: 18,
       repoId: 'mlx-community/Kokoro-82M-bf16',
-      installNote:
-          'Same Kokoro model family as desktop Local Whisper TTS. Requires native iOS playback synthesis before it can speak.',
+      installNote: 'Same Kokoro model family as desktop Local Whisper TTS. Requires native iOS playback synthesis before it can speak.',
     ),
     LocalModel(
       id: 'whisperkit_large_v3_turbo',
       name: 'WhisperKit Large v3',
       kind: ModelKind.transcription,
-      description:
-          'WhisperKit/Core ML transcription pack for private offline recording on iPhone.',
+      description: 'WhisperKit/Core ML transcription pack for private offline recording on iPhone.',
       sizeLabel: '~626 MB Core ML pack',
       state: ModelInstallState.notInstalled,
       runtime: ModelRuntime.whisperKit,
@@ -90,49 +85,42 @@ class ModelStore {
       id: 'apple_speech',
       name: 'Apple SpeechTranscriber',
       kind: ModelKind.transcription,
-      description:
-          'Apple\'s on-device SpeechAnalyzer model for live and long-form transcription.',
+      description: 'Apple\'s on-device SpeechAnalyzer model for live and long-form transcription.',
       sizeLabel: 'Apple managed',
       state: ModelInstallState.notInstalled,
       runtime: ModelRuntime.appleSpeech,
       minimumIosMajor: 26,
-      installNote:
-          'iOS downloads, updates, and shares the selected language asset. Availability depends on the device and locale.',
+      installNote: 'iOS downloads, updates, and shares the selected language asset. Availability depends on the device and locale.',
     ),
     LocalModel(
       id: 'parakeet_tdt_v3_sherpa',
       name: 'Parakeet-TDT v3',
       kind: ModelKind.transcription,
-      description:
-          'Default Android offline ASR pack. Same model family as the macOS Parakeet engine, converted to INT8 ONNX for sherpa-onnx.',
+      description: 'Default Android offline ASR pack. Same model family as the macOS Parakeet engine, converted to INT8 ONNX for sherpa-onnx.',
       sizeLabel: '~640 MB ONNX pack',
       state: ModelInstallState.notInstalled,
       runtime: ModelRuntime.sherpaOnnx,
       minimumIosMajor: 14,
       repoId: 'csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8',
-      installNote:
-          'Best Android default: private on-device transcription for English, German, and 25 European languages through sherpa-onnx.',
+      installNote: 'Best Android default: private on-device transcription for English, German, and 25 European languages through sherpa-onnx.',
     ),
     LocalModel(
       id: 'qwen3_asr_sherpa',
       name: 'Qwen3-ASR 0.6B',
       kind: ModelKind.transcription,
-      description:
-          'Broader multilingual Android ASR pack for sherpa-onnx, including Persian, Arabic, CJK, and European languages.',
+      description: 'Broader multilingual Android ASR pack for sherpa-onnx, including Persian, Arabic, CJK, and European languages.',
       sizeLabel: '~940 MB ONNX pack',
       state: ModelInstallState.notInstalled,
       runtime: ModelRuntime.sherpaOnnx,
       minimumIosMajor: 14,
       repoId: 'pantinor/sherpa-onnx-qwen3-asr-0.6b-int8',
-      installNote:
-          'Use when broader language coverage matters. Transcript text is wired first; timestamp quality must be proven before exposing segments.',
+      installNote: 'Use when broader language coverage matters. Transcript text is wired first; timestamp quality must be proven before exposing segments.',
     ),
     LocalModel(
       id: 'oruk_fourier_2b_sherpa',
       name: 'Oruk Fourier 2B',
       kind: ModelKind.transcription,
-      description:
-          'English transcription on Android. The weights are licensed by Oruk for noncommercial use (CC BY-NC 4.0).',
+      description: 'English transcription on Android. The weights are licensed by Oruk for noncommercial use (CC BY-NC 4.0).',
       sizeLabel: '2.41 GB ONNX pack',
       state: ModelInstallState.notInstalled,
       runtime: ModelRuntime.sherpaOnnx,
@@ -145,8 +133,7 @@ class ModelStore {
       id: 'local_cleanup',
       name: 'Local Cleanup Engine',
       kind: ModelKind.cleanup,
-      description:
-          'Bundled rule-based post-processing. This is not a separate AI model.',
+      description: 'Bundled rule-based post-processing. This is not a separate AI model.',
       sizeLabel: 'Bundled',
       state: ModelInstallState.bundled,
       runtime: ModelRuntime.bundled,
@@ -221,7 +208,11 @@ class ModelStore {
   // An immutable revision identifies exactly which bytes may safely be reused.
   static String? _resumeDirectoryName(LocalModel model) {
     if (!RegExp(r'^[0-9a-f]{40}$').hasMatch(model.revision)) return null;
-    final identity = jsonEncode([model.repoId, model.revision, model.snapshotPath]);
+    final identity = jsonEncode([
+      model.repoId,
+      model.revision,
+      model.snapshotPath,
+    ]);
     return '${model.id}.${sha256.convert(utf8.encode(identity))}.resume';
   }
 
@@ -349,9 +340,11 @@ class ModelStore {
     final target = Directory('${modelRoot.path}/${model.id}');
     final resumeName = _resumeDirectoryName(model);
     final resumable = resumeName != null;
-    final partial = Directory(resumeName == null
-        ? '${target.path}.download'
-        : '${modelRoot.path}/$resumeName');
+    final partial = Directory(
+      resumeName == null
+          ? '${target.path}.download'
+          : '${modelRoot.path}/$resumeName',
+    );
     if (!resumable && await partial.exists()) {
       await partial.delete(recursive: true);
     }
@@ -515,7 +508,9 @@ class ModelStore {
             (item) => _SnapshotFile(
               item['path'] as String? ?? '',
               (item['size'] as num?)?.toInt() ?? 0,
-              item['lfs'] is Map ? (item['lfs'] as Map)['oid'] as String? : null,
+              item['lfs'] is Map
+                  ? (item['lfs'] as Map)['oid'] as String?
+                  : null,
             ),
           )
           .where((file) => file.path.isNotEmpty)
@@ -537,7 +532,9 @@ class ModelStore {
   }) async {
     // Only completed, validated files have their final names in the staging
     // directory. A .part file remains safe to resume after process death.
-    if (resumable && declaredSize > 0 && await destination.exists() &&
+    if (resumable &&
+        declaredSize > 0 &&
+        await destination.exists() &&
         await destination.length() == declaredSize) {
       return declaredSize;
     }
@@ -545,22 +542,28 @@ class ModelStore {
     return _withDownloadRetries('Model file "$path"', () async {
       cancelToken.throwIfCanceled();
       var offset = resumable && declaredSize > 0 && await part.exists()
-          ? await part.length() : 0;
+          ? await part.length()
+          : 0;
       if (offset > declaredSize) offset = 0;
       if (offset == 0 || offset < declaredSize) {
         final request = await client.getUrl(
-            _huggingFaceUri('/$repoId/resolve/$revision/$path'));
+          _huggingFaceUri('/$repoId/resolve/$revision/$path'),
+        );
         // Validate byte ranges against the uncompressed bytes written to disk.
         request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
-        if (offset > 0) request.headers.set(HttpHeaders.rangeHeader, 'bytes=$offset-');
+        if (offset > 0)
+          request.headers.set(HttpHeaders.rangeHeader, 'bytes=$offset-');
         final response = await request.close();
         cancelToken.throwIfCanceled();
         if (response.statusCode == HttpStatus.partialContent) {
           final range = response.headers.value(HttpHeaders.contentRangeHeader);
-          if (offset == 0 || range != 'bytes $offset-${declaredSize - 1}/$declaredSize') {
+          if (offset == 0 ||
+              range != 'bytes $offset-${declaredSize - 1}/$declaredSize') {
             await response.drain<void>();
             await _deleteIfExists(part);
-            throw _RetryableModelDownloadException('Unexpected byte range for "$path".');
+            throw _RetryableModelDownloadException(
+              'Unexpected byte range for "$path".',
+            );
           }
         } else if (response.statusCode == HttpStatus.ok) {
           // A server is allowed to ignore Range and send the entire file.
@@ -569,15 +572,20 @@ class ModelStore {
           await response.drain<void>();
           if (response.statusCode == 416) {
             await _deleteIfExists(part);
-            throw _RetryableModelDownloadException('Range expired for "$path".');
+            throw _RetryableModelDownloadException(
+              'Range expired for "$path".',
+            );
           }
-          final message = 'Model file "$path" failed with HTTP ${response.statusCode}.';
+          final message =
+              'Model file "$path" failed with HTTP ${response.statusCode}.';
           if (_isRetryableStatus(response.statusCode)) {
             throw _RetryableModelDownloadException(message);
           }
           throw LocalWhisperException(message);
         }
-        final sink = part.openWrite(mode: offset > 0 ? FileMode.append : FileMode.write);
+        final sink = part.openWrite(
+          mode: offset > 0 ? FileMode.append : FileMode.write,
+        );
         try {
           await for (final chunk in response) {
             cancelToken.throwIfCanceled();
@@ -591,9 +599,12 @@ class ModelStore {
       }
       cancelToken.throwIfCanceled();
       if (offset <= 0 || (declaredSize > 0 && offset != declaredSize)) {
-        throw _RetryableModelDownloadException('Model file "$path" has $offset bytes, expected $declaredSize.');
+        throw _RetryableModelDownloadException(
+          'Model file "$path" has $offset bytes, expected $declaredSize.',
+        );
       }
-      if (resumable && digest != null &&
+      if (resumable &&
+          digest != null &&
           (await sha256.bind(part.openRead()).first).toString() != digest) {
         await _deleteIfExists(part);
         throw _RetryableModelDownloadException('SHA-256 mismatch for "$path".');
@@ -792,7 +803,8 @@ class ModelStore {
     if (!await modelRoot.exists()) return;
     await for (final entity in modelRoot.list()) {
       final name = entity.path.split(Platform.pathSeparator).last;
-      final obsoleteResume = name.endsWith('.resume') &&
+      final obsoleteResume =
+          name.endsWith('.resume') &&
           !catalog.any((model) => _resumeDirectoryName(model) == name);
       if (name.endsWith('.download') || obsoleteResume) {
         try {

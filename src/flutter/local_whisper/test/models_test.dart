@@ -1,7 +1,10 @@
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:local_whisper_flutter/src/history_store.dart';
 import 'package:local_whisper_flutter/src/model_store.dart';
 import 'package:local_whisper_flutter/src/models.dart';
@@ -319,220 +322,257 @@ void main() {
     },
   );
 
-  test(
-    'model state repairs installed prefs that point at an old container',
-    () async {
-      final tempDir = await Directory.systemTemp.createTemp(
-        'local-whisper-model-repair-',
-      );
-      addTearDown(() async {
-        if (await tempDir.exists()) {
-          await tempDir.delete(recursive: true);
-        }
-        SharedPreferences.resetStatic();
-      });
-
-      final modelDir = Directory('${tempDir.path}/whisperkit_large_v3_turbo');
-      await modelDir.create(recursive: true);
-      final modelFile = File('${modelDir.path}/config.json');
-      await modelFile.writeAsString('{"model":"test"}');
-      await File('${modelDir.path}/local-whisper-model.json').writeAsString(
-        jsonEncode({
-          'id': 'whisperkit_large_v3_turbo',
-          'repoId': 'argmaxinc/whisperkit-coreml',
-          'files': [
-            {
-              'sourcePath':
-                  'openai_whisper-large-v3-v20240930_626MB/config.json',
-              'path': 'config.json',
-              'size': await modelFile.length(),
-            },
-          ],
-        }),
-      );
-
+  test('model state repairs installed prefs that point at an old container', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'local-whisper-model-repair-',
+    );
+    addTearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
       SharedPreferences.resetStatic();
-      SharedPreferences.setMockInitialValues({
-        'models.v1': jsonEncode([
-          for (final model in ModelStore.catalog)
-            model.id == 'whisperkit_large_v3_turbo'
-                ? model
-                      .copyWith(
-                        state: ModelInstallState.installed,
-                        localPath:
-                            '${tempDir.path}/old-gone-container/whisperkit_large_v3_turbo',
-                        installedBytes: 999,
-                        installedFiles: 9,
-                        progress: 1,
-                      )
-                      .toJson()
-                : model.toJson(),
-        ]),
-      });
-
-      final models = await ModelStore(
-        HistoryStore(),
-        modelDirectory: tempDir,
-      ).loadModels();
-      final whisperKit = models.firstWhere(
-        (model) => model.id == 'whisperkit_large_v3_turbo',
-      );
-
-      expect(whisperKit.state, ModelInstallState.installed);
-      expect(whisperKit.localPath, modelDir.path);
-      expect(whisperKit.installedFiles, 1);
-      expect(whisperKit.installedBytes, greaterThan(await modelFile.length()));
-    },
-  );
-
-  test(
-    'snapshot downloads retry transient file failures and install verified packs',
-    () async {
-      final tempDir = await Directory.systemTemp.createTemp(
-        'local-whisper-model-retry-',
-      );
-      final payload = utf8.encode('{"model":"test"}');
-      var fileRequests = 0;
-      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      server.listen((request) async {
-        if (request.uri.path.contains('/tree/')) {
-          request.response.headers.contentType = ContentType.json;
-          request.response.write(
-            jsonEncode([
-              {
-                'type': 'file',
-                'path': 'openai_whisper-large-v3-v20240930_626MB/config.json',
-                'size': payload.length,
-              },
-            ]),
-          );
-        } else if (request.uri.path.contains('/resolve/')) {
-          fileRequests += 1;
-          if (fileRequests == 1) {
-            request.response.statusCode = HttpStatus.internalServerError;
-            request.response.write('temporary failure');
-          } else {
-            request.response.add(payload);
-          }
-        } else {
-          request.response.statusCode = HttpStatus.notFound;
-        }
-        await request.response.close();
-      });
-      addTearDown(() async {
-        await server.close(force: true);
-        if (await tempDir.exists()) {
-          await tempDir.delete(recursive: true);
-        }
-        SharedPreferences.resetStatic();
-      });
-
-      SharedPreferences.resetStatic();
-      SharedPreferences.setMockInitialValues({
-        'models.v1': jsonEncode([
-          for (final model in ModelStore.catalog) model.toJson(),
-        ]),
-      });
-
-      final store = ModelStore(
-        HistoryStore(),
-        modelDirectory: tempDir,
-        huggingFaceBaseUri: Uri(
-          scheme: 'http',
-          host: server.address.host,
-          port: server.port,
-        ),
-        downloadRetryDelay: Duration.zero,
-      );
-      final model = ModelStore.catalog.firstWhere(
-        (item) => item.id == 'whisperkit_large_v3_turbo',
-      );
-
-      final models = await store.downloadModel(
-        model,
-        onProgress: (_) {},
-        cancelToken: ModelDownloadCancelToken(),
-      );
-
-      expect(fileRequests, 2);
-      final whisperKit = models.firstWhere(
-        (item) => item.id == 'whisperkit_large_v3_turbo',
-      );
-      expect(whisperKit.state, ModelInstallState.installed);
-      expect(whisperKit.installedFiles, 1);
-      expect(whisperKit.installedBytes, payload.length);
-      expect(
-        await File('${whisperKit.localPath}/config.json').readAsString(),
-        '{"model":"test"}',
-      );
-
-      final loaded = await store.loadModels();
-      expect(
-        loaded
-            .firstWhere((item) => item.id == 'whisperkit_large_v3_turbo')
-            .state,
-        ModelInstallState.installed,
-      );
-    },
-  );
-  for (final honorRange in [true, false]) {
-    test('pinned snapshot resumes after cancel (range supported: $honorRange)', () async {
-      SharedPreferences.setMockInitialValues({});
-      final root = await Directory.systemTemp.createTemp('fourier-range');
-      final http = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      addTearDown(() async {
-        await http.close(force: true);
-        await root.delete(recursive: true);
-        SharedPreferences.resetStatic();
-      });
-      final payload = List<int>.generate(65536, (i) => i % 251);
-      final ranges = <String?>[];
-      final model = ModelStore.catalog.firstWhere((m) => m.id == 'oruk_fourier_2b_sherpa');
-      http.listen((req) async {
-        final res = req.response;
-        try {
-          if (req.uri.path.contains('/tree/')) {
-            res.write(jsonEncode([{
-              'type': 'file', 'path': '${model.snapshotPath}/model.onnx',
-              'size': payload.length, 'lfs': {'oid': sha256.convert(payload).toString()},
-            }]));
-          } else {
-            final range = req.headers.value(HttpHeaders.rangeHeader);
-            ranges.add(range);
-            if (ranges.length == 1) {
-              res.contentLength = payload.length;
-              res.add(payload.sublist(0, 8192));
-              await res.flush();
-              await Future<void>.delayed(const Duration(milliseconds: 250));
-              res.add(payload.sublist(8192));
-            } else if (range != null && honorRange) {
-              final start = int.parse(RegExp(r'bytes=(\d+)-').firstMatch(range)![1]!);
-              res.statusCode = 206;
-              res.headers.set('Content-Range','bytes $start-${payload.length - 1}/${payload.length}');
-              res.add(payload.sublist(start));
-            } else {
-              res.add(payload);
-            }
-          }
-          await res.close();
-        } on IOException {
-          // The first transfer is deliberately canceled by the client.
-        }
-      });
-      ModelStore store() => ModelStore(HistoryStore(), modelDirectory: root,
-          huggingFaceBaseUri: Uri.parse('http://127.0.0.1:${http.port}'),
-          downloadRetryDelay: Duration.zero);
-      final token = ModelDownloadCancelToken();
-      await expectLater(store().downloadModel(model, onProgress: (p) {
-        if (p.installedBytes >= 8192) token.cancel();
-      }, cancelToken: token), throwsA(isA<ModelDownloadCanceledException>()));
-      final retry = store();
-      await retry.loadModels(); // A fresh process must preserve this pinned partial.
-      final items = await retry.downloadModel(model, onProgress: (_) {},
-          cancelToken: ModelDownloadCancelToken());
-      final installed = items.firstWhere((m) => m.id == model.id);
-      expect(ranges, [null,'bytes=8192-']);
-      expect(await File('${installed.localPath}/model.onnx').readAsBytes(), payload);
     });
+
+    final modelDir = Directory('${tempDir.path}/whisperkit_large_v3_turbo');
+    await modelDir.create(recursive: true);
+    final modelFile = File('${modelDir.path}/config.json');
+    await modelFile.writeAsString('{"model":"test"}');
+    await File('${modelDir.path}/local-whisper-model.json').writeAsString(
+      jsonEncode({
+        'id': 'whisperkit_large_v3_turbo',
+        'repoId': 'argmaxinc/whisperkit-coreml',
+        'files': [
+          {
+            'sourcePath': 'openai_whisper-large-v3-v20240930_626MB/config.json',
+            'path': 'config.json',
+            'size': await modelFile.length(),
+          },
+        ],
+      }),
+    );
+
+    SharedPreferences.resetStatic();
+    SharedPreferences.setMockInitialValues({
+      'models.v1': jsonEncode([
+        for (final model in ModelStore.catalog)
+          model.id == 'whisperkit_large_v3_turbo'
+              ? model
+                    .copyWith(
+                      state: ModelInstallState.installed,
+                      localPath:
+                          '${tempDir.path}/old-gone-container/whisperkit_large_v3_turbo',
+                      installedBytes: 999,
+                      installedFiles: 9,
+                      progress: 1,
+                    )
+                    .toJson()
+              : model.toJson(),
+      ]),
+    });
+
+    final models = await ModelStore(
+      HistoryStore(),
+      modelDirectory: tempDir,
+    ).loadModels();
+    final whisperKit = models.firstWhere(
+      (model) => model.id == 'whisperkit_large_v3_turbo',
+    );
+
+    expect(whisperKit.state, ModelInstallState.installed);
+    expect(whisperKit.localPath, modelDir.path);
+    expect(whisperKit.installedFiles, 1);
+    expect(whisperKit.installedBytes, greaterThan(await modelFile.length()));
+  });
+
+  test('snapshot downloads retry transient file failures and install verified packs', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'local-whisper-model-retry-',
+    );
+    final payload = utf8.encode('{"model":"test"}');
+    var fileRequests = 0;
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((request) async {
+      if (request.uri.path.contains('/tree/')) {
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          jsonEncode([
+            {
+              'type': 'file',
+              'path': 'openai_whisper-large-v3-v20240930_626MB/config.json',
+              'size': payload.length,
+            },
+          ]),
+        );
+      } else if (request.uri.path.contains('/resolve/')) {
+        fileRequests += 1;
+        if (fileRequests == 1) {
+          request.response.statusCode = HttpStatus.internalServerError;
+          request.response.write('temporary failure');
+        } else {
+          request.response.add(payload);
+        }
+      } else {
+        request.response.statusCode = HttpStatus.notFound;
+      }
+      await request.response.close();
+    });
+    addTearDown(() async {
+      await server.close(force: true);
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+      SharedPreferences.resetStatic();
+    });
+
+    SharedPreferences.resetStatic();
+    SharedPreferences.setMockInitialValues({
+      'models.v1': jsonEncode([
+        for (final model in ModelStore.catalog) model.toJson(),
+      ]),
+    });
+
+    final store = ModelStore(
+      HistoryStore(),
+      modelDirectory: tempDir,
+      huggingFaceBaseUri: Uri(
+        scheme: 'http',
+        host: server.address.host,
+        port: server.port,
+      ),
+      downloadRetryDelay: Duration.zero,
+    );
+    final model = ModelStore.catalog.firstWhere(
+      (item) => item.id == 'whisperkit_large_v3_turbo',
+    );
+
+    final models = await store.downloadModel(
+      model,
+      onProgress: (_) {},
+      cancelToken: ModelDownloadCancelToken(),
+    );
+
+    expect(fileRequests, 2);
+    final whisperKit = models.firstWhere(
+      (item) => item.id == 'whisperkit_large_v3_turbo',
+    );
+    expect(whisperKit.state, ModelInstallState.installed);
+    expect(whisperKit.installedFiles, 1);
+    expect(whisperKit.installedBytes, payload.length);
+    expect(
+      await File('${whisperKit.localPath}/config.json').readAsString(),
+      '{"model":"test"}',
+    );
+
+    final loaded = await store.loadModels();
+    expect(
+      loaded.firstWhere((item) => item.id == 'whisperkit_large_v3_turbo').state,
+      ModelInstallState.installed,
+    );
+  });
+  for (final honorRange in [true, false]) {
+    test(
+      'pinned snapshot resumes after cancel (range supported: $honorRange)',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final root = await Directory.systemTemp.createTemp('fourier-range');
+        final http = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() async {
+          await http.close(force: true);
+          await root.delete(recursive: true);
+          SharedPreferences.resetStatic();
+        });
+        final payload = List<int>.generate(1048576, (i) => i % 251);
+        final ranges = <String?>[];
+        final interrupted = Completer<void>();
+        final model = ModelStore.catalog.firstWhere(
+          (m) => m.id == 'oruk_fourier_2b_sherpa',
+        );
+        http.listen((req) async {
+          final res = req.response;
+          try {
+            if (req.uri.path.contains('/tree/')) {
+              res.write(
+                jsonEncode([
+                  {
+                    'type': 'file',
+                    'path': '${model.snapshotPath}/model.onnx',
+                    'size': payload.length,
+                    'lfs': {'oid': sha256.convert(payload).toString()},
+                  },
+                ]),
+              );
+            } else {
+              final range = req.headers.value(HttpHeaders.rangeHeader);
+              ranges.add(range);
+              if (ranges.length == 1) {
+                res.bufferOutput = false;
+                res.contentLength = payload.length;
+                res.add(payload.sublist(0, 262144));
+                await res.flush();
+                await interrupted.future.timeout(const Duration(seconds: 10));
+                res.add(payload.sublist(262144));
+              } else if (range != null && honorRange) {
+                final start = int.parse(
+                  RegExp(r'bytes=(\d+)-').firstMatch(range)![1]!,
+                );
+                res.statusCode = 206;
+                res.headers.set(
+                  'Content-Range',
+                  'bytes $start-${payload.length - 1}/${payload.length}',
+                );
+                res.add(payload.sublist(start));
+              } else {
+                res.add(payload);
+              }
+            }
+            await res.close();
+          } on IOException {
+            // The first transfer is deliberately canceled by the client.
+          }
+        });
+        ModelStore store() => ModelStore(
+          HistoryStore(),
+          modelDirectory: root,
+          huggingFaceBaseUri: Uri.parse('http://127.0.0.1:${http.port}'),
+          downloadRetryDelay: Duration.zero,
+        );
+        final token = ModelDownloadCancelToken();
+        await expectLater(
+          store().downloadModel(
+            model,
+            onProgress: (p) {
+              if (p.installedBytes >= 8192 && !interrupted.isCompleted) {
+                token.cancel();
+                interrupted.complete();
+              }
+            },
+            cancelToken: token,
+          ),
+          throwsA(isA<ModelDownloadCanceledException>()),
+        );
+        final partial = await root
+            .list(recursive: true)
+            .where((f) => f is File && f.path.endsWith('.part'))
+            .cast<File>()
+            .single;
+        final retained = await partial.length();
+        expect(retained, greaterThan(0));
+        expect(retained, lessThan(payload.length));
+        final retry = store();
+        // A fresh process must preserve this pinned partial.
+        await retry.loadModels();
+        final items = await retry.downloadModel(
+          model,
+          onProgress: (_) {},
+          cancelToken: ModelDownloadCancelToken(),
+        );
+        final installed = items.firstWhere((m) => m.id == model.id);
+        expect(ranges, [null, 'bytes=$retained-']);
+        expect(
+          await File('${installed.localPath}/model.onnx').readAsBytes(),
+          payload,
+        );
+      },
+    );
   }
 }
