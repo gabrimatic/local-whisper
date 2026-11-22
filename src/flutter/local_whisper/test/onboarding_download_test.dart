@@ -9,6 +9,10 @@ import 'package:local_whisper_flutter/src/setup_service.dart';
 
 void main() {
   testWidgets('alternate setup install shows progress, errors, and a retry for the same pack', (tester) async {
+    tester.view.devicePixelRatio = 1.5;
+    tester.view.physicalSize = const Size(1080, 2200);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
     final defaultModel = ModelStore.catalog
         .firstWhere((model) => model.id == 'qwen3_asr_sherpa')
         .copyWith(state: ModelInstallState.installed);
