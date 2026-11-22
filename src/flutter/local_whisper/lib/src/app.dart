@@ -3048,9 +3048,10 @@ class _ModelCard extends StatelessWidget {
             model.state == ModelInstallState.installed &&
             model.runtime != ModelRuntime.sherpaOnnx
         ? 'Installed pack for another runtime. Choose a Sherpa ONNX pack for Android transcription.'
-        : !model.supportsIosMajor(iosMajorVersion)
+        : !Platform.isAndroid && !model.supportsIosMajor(iosMajorVersion)
         ? 'Requires iOS ${model.minimumIosMajor}+.'
-        : model.kind == ModelKind.transcription &&
+        : !Platform.isAndroid &&
+              model.kind == ModelKind.transcription &&
               model.state == ModelInstallState.installed &&
               model.runtime != ModelRuntime.whisperKit &&
               model.runtime != ModelRuntime.appleSpeech
