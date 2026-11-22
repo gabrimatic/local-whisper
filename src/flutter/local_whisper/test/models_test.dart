@@ -4,9 +4,39 @@ import 'dart:io';
 import 'package:local_whisper_flutter/src/history_store.dart';
 import 'package:local_whisper_flutter/src/model_store.dart';
 import 'package:local_whisper_flutter/src/models.dart';
+import 'package:local_whisper_flutter/src/sherpa_speech_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  test('Fourier installs the pinned sherpa snapshot from Oruk', () {
+    final model = ModelStore.catalog.singleWhere(
+      (item) => item.id == 'oruk_fourier_2b_sherpa',
+    );
+    expect(model.runtime, ModelRuntime.sherpaOnnx);
+    expect(model.repoId, 'oruk/oruk-fourier-2b');
+    expect(model.revision, '3fda023e157ce7986f137f76fcf326ed6e08fa73');
+    expect(model.snapshotPath, 'onnx/sherpa-int8');
+    expect(model.canDownload, isTrue);
+  });
+
+  test('Fourier reports a missing external graph before decoding', () async {
+    final pack = await Directory.systemTemp.createTemp('fourier-incomplete-');
+    addTearDown(() => pack.delete(recursive: true));
+    final audio = await File('${pack.path}/clip.wav').create();
+    await expectLater(
+      SherpaSpeechService().transcribeFile(
+        audioPath: audio.path,
+        model: 'oruk_fourier_2b_sherpa',
+        modelPath: pack.path,
+        locale: 'en-US',
+        duration: 1,
+      ),
+      throwsA(
+        predicate((e) => e.toString().contains('encoder.int8.onnx.data')),
+      ),
+    );
+  });
+
   test('Apple SpeechTranscriber is a native installable iOS model', () {
     final model = ModelStore.catalog.firstWhere(
       (item) => item.id == 'apple_speech',

@@ -10,7 +10,7 @@ Local Whisper is a local-first speech-to-text app and dictation service for macO
 
 On mobile, Local Whisper is both the recorder app and the keyboard. Record in the app, keep model packs and history on the device, then use the keyboard to bring modes, punctuation, and Local Whisper actions into other text fields. Large model-pack installs retry transient download failures and verify files before a pack is marked ready.
 
-iOS transcribes locally with WhisperKit/Core ML or Apple's SpeechTranscriber on supported iOS 26 devices. Android records local WAV audio and transcribes on-device through `sherpa_onnx`; Parakeet-TDT v3 INT8 ONNX is the default Android pack, and Qwen3-ASR 0.6B INT8 ONNX is the broader multilingual pack. There is no cloud speech fallback.
+iOS transcribes locally with WhisperKit/Core ML or Apple's SpeechTranscriber on supported iOS 26 devices. Android records local WAV audio and transcribes on-device through `sherpa_onnx`; Parakeet-TDT v3 INT8 ONNX is the default Android pack, and Qwen3-ASR 0.6B INT8 ONNX is the broader multilingual pack. [Oruk Fourier 2B](https://huggingface.co/oruk/oruk-fourier-2b) is an optional 2.41 GB pack for English transcription under CC BY-NC 4.0. There is no cloud speech fallback.
 
 Download the models once, then run them locally. Built-in runtime paths stay on-device or localhost. Configure LM Studio with a private LAN server only when you want that setup. No hosted speech API. No account. No telemetry. No transcript upload.
 

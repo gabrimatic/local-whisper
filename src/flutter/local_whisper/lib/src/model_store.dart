@@ -127,6 +127,20 @@ class ModelStore {
           'Use when broader language coverage matters. Transcript text is wired first; timestamp quality must be proven before exposing segments.',
     ),
     LocalModel(
+      id: 'oruk_fourier_2b_sherpa',
+      name: 'Oruk Fourier 2B',
+      kind: ModelKind.transcription,
+      description:
+          'English transcription on Android. The weights are licensed by Oruk for noncommercial use (CC BY-NC 4.0).',
+      sizeLabel: '2.41 GB ONNX pack',
+      state: ModelInstallState.notInstalled,
+      runtime: ModelRuntime.sherpaOnnx,
+      minimumIosMajor: 14,
+      repoId: 'oruk/oruk-fourier-2b',
+      revision: '3fda023e157ce7986f137f76fcf326ed6e08fa73',
+      snapshotPath: 'onnx/sherpa-int8',
+    ),
+    LocalModel(
       id: 'local_cleanup',
       name: 'Local Cleanup Engine',
       kind: ModelKind.cleanup,
