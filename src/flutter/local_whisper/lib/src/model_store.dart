@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'history_store.dart';
@@ -127,6 +128,28 @@ class ModelStore {
           'Use when broader language coverage matters. Transcript text is wired first; timestamp quality must be proven before exposing segments.',
     ),
     LocalModel(
+      id: 'oruk_fourier_2b_sherpa',
+      name: 'Oruk Fourier 2B',
+      kind: ModelKind.transcription,
+      description:
+          'English transcription on Android. The weights are licensed by Oruk for noncommercial use (CC BY-NC 4.0).',
+      sizeLabel: '2.41 GB ONNX pack',
+      state: ModelInstallState.notInstalled,
+      runtime: ModelRuntime.sherpaOnnx,
+      minimumIosMajor: 14,
+      repoId: 'oruk/oruk-fourier-2b',
+      revision: '3fda023e157ce7986f137f76fcf326ed6e08fa73',
+      snapshotPath: 'onnx/sherpa-int8',
+      extraSnapshotFiles: [
+        PinnedSnapshotFile(
+          path: 'config.json',
+          size: 2479,
+          sha256:
+              '5bc1d99c141fc866b61efca97dcbc6412a38db25ff0934c38bf7b46fa09485a2',
+        ),
+      ],
+    ),
+    LocalModel(
       id: 'local_cleanup',
       name: 'Local Cleanup Engine',
       kind: ModelKind.cleanup,
@@ -203,7 +226,26 @@ class ModelStore {
     return models;
   }
 
+  // An immutable revision identifies exactly which bytes may safely be reused.
+  static String? _resumeDirectoryName(LocalModel model) {
+    if (!RegExp(r'^[0-9a-f]{40}$').hasMatch(model.revision)) return null;
+    final identity = jsonEncode([
+      model.repoId,
+      model.revision,
+      model.snapshotPath,
+      if (model.extraSnapshotFiles.isNotEmpty)
+        [for (final extra in model.extraSnapshotFiles) extra.path],
+    ]);
+    return '${model.id}.${sha256.convert(utf8.encode(identity))}.resume';
+  }
+
   Future<List<LocalModel>> removeModel(LocalModel model) async {
+    final resumeName = _resumeDirectoryName(model);
+    if (resumeName != null) {
+      final root = await _modelDirectory();
+      final partial = Directory('${root.path}/$resumeName');
+      if (await partial.exists()) await partial.delete(recursive: true);
+    }
     if (model.localPath != null) {
       final type = await FileSystemEntity.type(model.localPath!);
       if (type == FileSystemEntityType.directory) {
@@ -319,8 +361,14 @@ class ModelStore {
 
     final modelRoot = await _modelDirectory();
     final target = Directory('${modelRoot.path}/${model.id}');
-    final partial = Directory('${target.path}.download');
-    if (await partial.exists()) {
+    final resumeName = _resumeDirectoryName(model);
+    final resumable = resumeName != null;
+    final partial = Directory(
+      resumeName == null
+          ? '${target.path}.download'
+          : '${modelRoot.path}/$resumeName',
+    );
+    if (!resumable && await partial.exists()) {
       await partial.delete(recursive: true);
     }
     await partial.create(recursive: true);
@@ -328,7 +376,7 @@ class ModelStore {
     final client = HttpClient();
     try {
       cancelToken.onCancel(client.close);
-      final files = await _fetchSnapshotFiles(
+      final snapshotFiles = await _fetchSnapshotFiles(
         client,
         repoId,
         model.revision,
@@ -336,9 +384,17 @@ class ModelStore {
         cancelToken: cancelToken,
       );
       cancelToken.throwIfCanceled();
-      if (files.isEmpty) {
+      if (snapshotFiles.isEmpty) {
         throw const LocalWhisperException('Model repository has no files.');
       }
+      // Download extra root metadata files last so canceled installs never
+      // fetch them before the model payload completes.
+      final files = <_SnapshotFile>[
+        ...snapshotFiles,
+        for (final extra in model.extraSnapshotFiles)
+          if (!snapshotFiles.any((file) => file.path == extra.path))
+            _SnapshotFile(extra.path, extra.size, extra.sha256),
+      ];
 
       final totalBytes = files.fold<int>(0, (sum, file) => sum + file.size);
       var receivedBytes = 0;
@@ -359,6 +415,8 @@ class ModelStore {
           path: file.path,
           destination: destination,
           declaredSize: file.size,
+          resumable: resumable,
+          digest: file.sha256,
           onChunk: (bytes) {
             onProgress(
               model.copyWith(
@@ -409,11 +467,11 @@ class ModelStore {
         }),
       );
 
+      cancelToken.throwIfCanceled();
       if (await target.exists()) {
         await target.delete(recursive: true);
       }
       await partial.rename(target.path);
-      cancelToken.throwIfCanceled();
 
       final models = (await loadModels())
           .map(
@@ -432,9 +490,10 @@ class ModelStore {
       await _historyStore.updateModelState(installed);
       return models;
     } catch (_) {
-      if (await partial.exists()) {
+      if (!resumable && await partial.exists()) {
         await partial.delete(recursive: true);
       }
+      cancelToken.throwIfCanceled();
       rethrow;
     } finally {
       client.close(force: true);
@@ -480,6 +539,9 @@ class ModelStore {
             (item) => _SnapshotFile(
               item['path'] as String? ?? '',
               (item['size'] as num?)?.toInt() ?? 0,
+              item['lfs'] is Map
+                  ? (item['lfs'] as Map)['oid'] as String?
+                  : null,
             ),
           )
           .where((file) => file.path.isNotEmpty)
@@ -495,79 +557,98 @@ class ModelStore {
     required String path,
     required File destination,
     required int declaredSize,
+    required bool resumable,
+    required String? digest,
     required void Function(int bytes) onChunk,
   }) async {
-    return _withDownloadRetries(
-      'Model file "$path"',
-      () async {
-        return _downloadFileOnce(
-          client: client,
-          cancelToken: cancelToken,
-          repoId: repoId,
-          revision: revision,
-          path: path,
-          destination: destination,
-          declaredSize: declaredSize,
-          onChunk: onChunk,
+    // Only completed, validated files have their final names in the staging
+    // directory. A .part file remains safe to resume after process death.
+    if (resumable &&
+        declaredSize > 0 &&
+        await destination.exists() &&
+        await destination.length() == declaredSize) {
+      return declaredSize;
+    }
+    final part = File('${destination.path}.part');
+    return _withDownloadRetries('Model file "$path"', () async {
+      cancelToken.throwIfCanceled();
+      var offset = resumable && declaredSize > 0 && await part.exists()
+          ? await part.length()
+          : 0;
+      if (offset > declaredSize) offset = 0;
+      if (offset == 0 || offset < declaredSize) {
+        final request = await client.getUrl(
+          _huggingFaceUri('/$repoId/resolve/$revision/$path'),
         );
-      },
-      cancelToken: cancelToken,
-      beforeRetry: () => _deleteIfExists(destination),
-    );
-  }
-
-  Future<int> _downloadFileOnce({
-    required HttpClient client,
-    required ModelDownloadCancelToken cancelToken,
-    required String repoId,
-    required String revision,
-    required String path,
-    required File destination,
-    required int declaredSize,
-    required void Function(int bytes) onChunk,
-  }) async {
-    cancelToken.throwIfCanceled();
-    final uri = _huggingFaceUri('/$repoId/resolve/$revision/$path');
-    final request = await client.getUrl(uri);
-    final response = await request.close();
-    cancelToken.throwIfCanceled();
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      await response.drain<void>();
-      final message =
-          'Model file "$path" failed with HTTP ${response.statusCode}.';
-      if (_isRetryableStatus(response.statusCode)) {
-        throw _RetryableModelDownloadException(message);
-      }
-      throw LocalWhisperException(message);
-    }
-    final sink = destination.openWrite(mode: FileMode.write);
-    var received = 0;
-    try {
-      await for (final chunk in response) {
+        // Validate byte ranges against the uncompressed bytes written to disk.
+        request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
+        if (offset > 0)
+          request.headers.set(HttpHeaders.rangeHeader, 'bytes=$offset-');
+        final response = await request.close();
         cancelToken.throwIfCanceled();
-        received += chunk.length;
-        sink.add(chunk);
-        onChunk(received);
+        if (response.statusCode == HttpStatus.partialContent) {
+          final range = response.headers.value(HttpHeaders.contentRangeHeader);
+          if (offset == 0 ||
+              range != 'bytes $offset-${declaredSize - 1}/$declaredSize') {
+            await response.drain<void>();
+            await _deleteIfExists(part);
+            throw _RetryableModelDownloadException(
+              'Unexpected byte range for "$path".',
+            );
+          }
+        } else if (response.statusCode == HttpStatus.ok) {
+          // A server is allowed to ignore Range and send the entire file.
+          offset = 0;
+        } else {
+          await response.drain<void>();
+          if (response.statusCode == HttpStatus.requestedRangeNotSatisfiable) {
+            await _deleteIfExists(part);
+            throw _RetryableModelDownloadException(
+              'Range expired for "$path".',
+            );
+          }
+          final message =
+              'Model file "$path" failed with HTTP ${response.statusCode}.';
+          if (_isRetryableStatus(response.statusCode)) {
+            throw _RetryableModelDownloadException(message);
+          }
+          throw LocalWhisperException(message);
+        }
+        final sink = part.openWrite(
+          mode: offset > 0 ? FileMode.append : FileMode.write,
+        );
+        try {
+          await for (final chunk in response) {
+            cancelToken.throwIfCanceled();
+            sink.add(chunk);
+            offset += chunk.length;
+            onChunk(offset);
+          }
+        } finally {
+          await sink.close();
+        }
       }
-    } finally {
-      await sink.close();
-    }
-    if (declaredSize > 0 && received != declaredSize) {
-      throw LocalWhisperException(
-        'Model file "$path" downloaded $received bytes, expected $declaredSize.',
-      );
-    }
-    if (received <= 0) {
-      throw LocalWhisperException('Model file "$path" downloaded empty.');
-    }
-    return received;
+      cancelToken.throwIfCanceled();
+      if (offset <= 0 || (declaredSize > 0 && offset != declaredSize)) {
+        throw _RetryableModelDownloadException(
+          'Model file "$path" has $offset bytes, expected $declaredSize.',
+        );
+      }
+      if (resumable &&
+          digest != null &&
+          (await sha256.bind(part.openRead()).first).toString() != digest) {
+        await _deleteIfExists(part);
+        throw _RetryableModelDownloadException('SHA-256 mismatch for "$path".');
+      }
+      await part.rename(destination.path);
+      return offset;
+    }, cancelToken: cancelToken);
   }
 
   Future<T> _withDownloadRetries<T>(
     String label,
     Future<T> Function() operation, {
     ModelDownloadCancelToken? cancelToken,
-    Future<void> Function()? beforeRetry,
   }) async {
     Object? lastError;
     for (var attempt = 1; attempt <= _maxDownloadAttempts; attempt += 1) {
@@ -588,7 +669,6 @@ class ModelStore {
 
       cancelToken?.throwIfCanceled();
       if (attempt >= _maxDownloadAttempts) break;
-      await beforeRetry?.call();
       cancelToken?.throwIfCanceled();
       if (_downloadRetryDelay > Duration.zero) {
         await Future<void>.delayed(_downloadRetryDelay * attempt);
@@ -660,6 +740,9 @@ class ModelStore {
       if (decoded['id'] != model.id || decoded['repoId'] != model.repoId) {
         return false;
       }
+      if (_resumeDirectoryName(model) != null && decoded['revision'] != model.revision) {
+        return false;
+      }
       final expectedSnapshot = model.snapshotPath;
       if (expectedSnapshot != null && expectedSnapshot.isNotEmpty) {
         final manifestSnapshot = decoded['snapshotPath'] as String?;
@@ -669,6 +752,9 @@ class ModelStore {
       }
       final files = decoded['files'];
       if (files is! List || files.isEmpty) return false;
+      final allowedExtraPaths = {
+        for (final extra in model.extraSnapshotFiles) extra.path,
+      };
       for (final item in files) {
         if (item is! Map) return false;
         final sourcePath = item['sourcePath'] as String?;
@@ -677,7 +763,9 @@ class ModelStore {
           final prefix = expectedSnapshot.endsWith('/')
               ? expectedSnapshot
               : '$expectedSnapshot/';
-          if (sourcePath == null || !sourcePath.startsWith(prefix)) {
+          if (sourcePath == null ||
+              (!sourcePath.startsWith(prefix) &&
+                  !allowedExtraPaths.contains(sourcePath))) {
             return false;
           }
         }
@@ -689,6 +777,12 @@ class ModelStore {
         if (expectedSize > 0 && await file.length() != expectedSize) {
           return false;
         }
+      }
+      for (final extra in model.extraSnapshotFiles) {
+        final hasExtra = files.any(
+          (item) => item is Map && item['sourcePath'] == extra.path,
+        );
+        if (!hasExtra) return false;
       }
       return true;
     } catch (_) {
@@ -753,7 +847,11 @@ class ModelStore {
     _didCleanOrphanedDownloads = true;
     if (!await modelRoot.exists()) return;
     await for (final entity in modelRoot.list()) {
-      if (entity.path.endsWith('.download')) {
+      final name = entity.path.split(Platform.pathSeparator).last;
+      final obsoleteResume =
+          name.endsWith('.resume') &&
+          !catalog.any((model) => _resumeDirectoryName(model) == name);
+      if (name.endsWith('.download') || obsoleteResume) {
         try {
           await entity.delete(recursive: true);
         } catch (_) {
@@ -781,10 +879,11 @@ class ModelStore {
 }
 
 class _SnapshotFile {
-  const _SnapshotFile(this.path, this.size);
+  const _SnapshotFile(this.path, this.size, this.sha256);
 
   final String path;
   final int size;
+  final String? sha256;
 }
 
 class _RetryableModelDownloadException implements Exception {

@@ -90,8 +90,8 @@ NativeSpeechResult _transcribeWithSherpa({
     );
   }
 
-  sherpa.initBindings();
   final config = _recognizerConfig(model: model, modelPath: modelPath);
+  sherpa.initBindings();
   final recognizer = sherpa.OfflineRecognizer(config);
   final stream = recognizer.createStream();
   final startedAt = DateTime.now();
@@ -134,6 +134,7 @@ sherpa.OfflineRecognizerConfig _recognizerConfig({
   return switch (model) {
     'parakeet_tdt_v3_sherpa' => _parakeetConfig(modelPath),
     'qwen3_asr_sherpa' => _qwen3Config(modelPath),
+    'oruk_fourier_2b_sherpa' => _qwen3Config(modelPath, externalData: true),
     _ => throw LocalWhisperException(
       '${_displayModelName(model)} is not wired for Android transcription.',
     ),
@@ -163,8 +164,17 @@ sherpa.OfflineRecognizerConfig _parakeetConfig(String modelPath) {
   );
 }
 
-sherpa.OfflineRecognizerConfig _qwen3Config(String modelPath) {
-  _requireFiles(modelPath, const [
+sherpa.OfflineRecognizerConfig _qwen3Config(
+  String modelPath, {
+  bool externalData = false,
+}) {
+  _requireFiles(modelPath, [
+    if (externalData) ...[
+      'encoder.int8.onnx.data',
+      'decoder.int8.onnx.data',
+      'tokenizer/config.json',
+      'tokenizer/tokenizer.json',
+    ],
     'conv_frontend.onnx',
     'encoder.int8.onnx',
     'decoder.int8.onnx',
@@ -206,6 +216,7 @@ String _displayModelName(String model) {
   return switch (model) {
     'parakeet_tdt_v3_sherpa' => 'Parakeet-TDT v3',
     'qwen3_asr_sherpa' => 'Qwen3-ASR 0.6B',
+    'oruk_fourier_2b_sherpa' => 'Oruk Fourier 2B',
     _ => model,
   };
 }

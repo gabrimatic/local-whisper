@@ -338,6 +338,18 @@ class AppSettings {
   };
 }
 
+class PinnedSnapshotFile {
+  const PinnedSnapshotFile({
+    required this.path,
+    required this.size,
+    this.sha256,
+  });
+
+  final String path;
+  final int size;
+  final String? sha256;
+}
+
 class LocalModel {
   const LocalModel({
     required this.id,
@@ -352,6 +364,7 @@ class LocalModel {
     this.repoId,
     this.revision = 'main',
     this.snapshotPath,
+    this.extraSnapshotFiles = const [],
     this.installNote = '',
     this.localPath,
     this.installedBytes = 0,
@@ -371,6 +384,7 @@ class LocalModel {
   final String? repoId;
   final String revision;
   final String? snapshotPath;
+  final List<PinnedSnapshotFile> extraSnapshotFiles;
   final String installNote;
   final String? localPath;
   final int installedBytes;
@@ -395,6 +409,7 @@ class LocalModel {
     int? installedBytes,
     int? installedFiles,
     double? progress,
+    List<PinnedSnapshotFile>? extraSnapshotFiles,
   }) {
     return LocalModel(
       id: id,
@@ -409,6 +424,7 @@ class LocalModel {
       repoId: repoId,
       revision: revision,
       snapshotPath: snapshotPath,
+      extraSnapshotFiles: extraSnapshotFiles ?? this.extraSnapshotFiles,
       installNote: installNote,
       localPath: localPath ?? this.localPath,
       installedBytes: installedBytes ?? this.installedBytes,

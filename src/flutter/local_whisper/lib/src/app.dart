@@ -827,11 +827,11 @@ class _AppControllerState extends State<AppController>
     });
   }
 
-  Future<void> _downloadModel(LocalModel model) async {
+  Future<String?> _downloadModel(LocalModel model) async {
     if (!model.canDownload ||
         !model.supportsIosMajor(_iosMajorVersion) ||
         _downloadingModels.contains(model.id)) {
-      return;
+      return null;
     }
     final cancelToken = ModelDownloadCancelToken();
     setState(() {
@@ -846,14 +846,14 @@ class _AppControllerState extends State<AppController>
         if (!status.installed) {
           throw LocalWhisperException(status.message);
         }
-        if (!mounted) return;
+        if (!mounted) return null;
         setState(() {
           _models = _withAppleSpeechStatus(_models, status);
           _settings = _settings.copyWith(selectedModelId: model.id);
         });
         await _historyStore.saveSettings(_settings);
         _toast('${model.name} installed');
-        return;
+        return null;
       }
       final models = await _modelStore.downloadModel(
         model,
@@ -869,7 +869,7 @@ class _AppControllerState extends State<AppController>
           });
         },
       );
-      if (!mounted) return;
+      if (!mounted) return null;
       setState(() {
         _models = _modelsForCurrentPlatform(models);
         if (((Platform.isAndroid && model.runtime == ModelRuntime.sherpaOnnx) ||
@@ -883,7 +883,7 @@ class _AppControllerState extends State<AppController>
       _toast('${model.name} installed');
     } on ModelDownloadCanceledException {
       final models = await _modelStore.loadModels();
-      if (!mounted) return;
+      if (!mounted) return null;
       setState(() => _models = models);
       _toast('${model.name} download canceled');
     } on Object catch (error) {
@@ -894,7 +894,9 @@ class _AppControllerState extends State<AppController>
       if (mounted) {
         setState(() => _models = _modelsForCurrentPlatform(models));
       }
-      _showError(_friendlyError(error));
+      final message = _friendlyError(error);
+      if (!_showOnboarding) _showError(message);
+      return message;
     } finally {
       if (mounted) {
         setState(() {
@@ -903,6 +905,7 @@ class _AppControllerState extends State<AppController>
         });
       }
     }
+    return null;
   }
 
   void _cancelModelDownload(LocalModel model) {
@@ -1135,7 +1138,7 @@ class OnboardingFlow extends StatefulWidget {
   final VoidCallback onRefreshKeyboardStatus;
   final VoidCallback onRequestMicrophone;
   final VoidCallback onOpenAppSettings;
-  final ValueChanged<LocalModel> onDownloadModel;
+  final Future<String?> Function(LocalModel) onDownloadModel;
   final VoidCallback onKeyboardPracticeVerified;
   final VoidCallback onFinish;
 
@@ -1148,13 +1151,43 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   final _practiceController = TextEditingController();
   bool _handlingPracticeVerification = false;
   int _index = 0;
+  String? _chosenModelId;
+  String? _installError;
+  bool _installPending = false;
+
+  LocalModel get _displayModel => widget.models.firstWhere(
+    (model) => model.id == _chosenModelId,
+    orElse: () => widget.selectedModel,
+  );
+
+  Future<void> _install(LocalModel model) async {
+    if (_installPending) return;
+    setState(() {
+      _chosenModelId = model.id;
+      _installPending = true;
+      _installError = null;
+    });
+    String? error;
+    try {
+      error = await widget.onDownloadModel(model);
+    } catch (exception) {
+      error = exception.toString();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _installPending = false;
+          _installError = error;
+        });
+      }
+    }
+  }
 
   bool get _modelReady =>
-      widget.selectedModel.state == ModelInstallState.installed ||
-      widget.selectedModel.state == ModelInstallState.bundled;
+      _displayModel.state == ModelInstallState.installed ||
+      _displayModel.state == ModelInstallState.bundled;
 
   bool get _modelDownloading =>
-      widget.selectedModel.state == ModelInstallState.downloading;
+      _installPending || _displayModel.state == ModelInstallState.downloading;
 
   @override
   void initState() {
@@ -1203,8 +1236,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       backgroundColor: AppPalette.surface,
       builder: (context) => _SetupModelChoicesSheet(
         models: widget.models,
-        selectedModelId: widget.selectedModel.id,
-        onDownloadModel: widget.onDownloadModel,
+        selectedModelId: _displayModel.id,
+        onDownloadModel: _install,
       ),
     );
   }
@@ -1234,20 +1267,27 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             : Icons.download_for_offline_rounded,
         title: _modelReady ? 'Model pack ready' : 'Install a model pack',
         body: _modelReady
-            ? '${widget.selectedModel.name} is ready for offline transcription.'
-            : 'Use the recommended local pack for the first offline transcription path. You can add more model families later.',
+            ? '${_displayModel.name} is ready for offline transcription.'
+            : 'Choose a model for offline transcription.',
         action: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (!_modelReady) ...[
               _SetupModelChoice(
-                model: widget.selectedModel,
+                model: _displayModel,
+                recommended: _chosenModelId == null,
+                error: _installError,
                 downloading: _modelDownloading,
-                onDownload: () => widget.onDownloadModel(widget.selectedModel),
+                onDownload: () => _install(_displayModel),
                 onOpenModels: _showModelChoices,
               ),
               const SizedBox(height: 16),
-            ],
+            ] else
+              TextButton.icon(
+                onPressed: _showModelChoices,
+                icon: const Icon(Icons.tune_rounded),
+                label: const Text('More choices'),
+              ),
             _SetupActions(
               primaryLabel: 'Continue',
               primaryIcon: Icons.arrow_forward_rounded,
@@ -1453,12 +1493,16 @@ class _SetupModelChoice extends StatelessWidget {
   const _SetupModelChoice({
     required this.model,
     required this.downloading,
+    required this.recommended,
+    required this.error,
     required this.onDownload,
     required this.onOpenModels,
   });
 
   final LocalModel model;
   final bool downloading;
+  final bool recommended;
+  final String? error;
   final VoidCallback onDownload;
   final VoidCallback onOpenModels;
 
@@ -1494,7 +1538,7 @@ class _SetupModelChoice extends StatelessWidget {
             runSpacing: 8,
             children: [
               _MetaChip(text: model.sizeLabel),
-              const _MetaChip(text: 'Recommended'),
+              if (recommended) const _MetaChip(text: 'Recommended'),
               const _MetaChip(text: 'Offline'),
             ],
           ),
@@ -1505,6 +1549,15 @@ class _SetupModelChoice extends StatelessWidget {
             LinearProgressIndicator(
               value: model.progress == 0 ? null : model.progress,
               semanticsLabel: '${model.name} download progress',
+            ),
+            if (model.installedBytes > 0)
+              Text('${(model.installedBytes / (1024 * 1024)).toStringAsFixed(1)} MiB downloaded'),
+          ],
+          if (error != null) ...[
+            const SizedBox(height: 12),
+            Semantics(
+              liveRegion: true,
+              child: Text(error!, style: TextStyle(color: AppPalette.danger)),
             ),
           ],
           const SizedBox(height: 12),
@@ -1519,10 +1572,10 @@ class _SetupModelChoice extends StatelessWidget {
                       ? Icons.downloading_rounded
                       : Icons.download_rounded,
                 ),
-                label: Text(downloading ? 'Installing' : 'Install'),
+                label: Text(downloading ? 'Installing' : error != null ? 'Retry' : 'Install'),
               ),
               TextButton.icon(
-                onPressed: onOpenModels,
+                onPressed: downloading ? null : onOpenModels,
                 icon: const Icon(Icons.tune_rounded),
                 label: const Text('More choices'),
               ),
@@ -3048,9 +3101,10 @@ class _ModelCard extends StatelessWidget {
             model.state == ModelInstallState.installed &&
             model.runtime != ModelRuntime.sherpaOnnx
         ? 'Installed pack for another runtime. Choose a Sherpa ONNX pack for Android transcription.'
-        : !model.supportsIosMajor(iosMajorVersion)
+        : !Platform.isAndroid && !model.supportsIosMajor(iosMajorVersion)
         ? 'Requires iOS ${model.minimumIosMajor}+.'
-        : model.kind == ModelKind.transcription &&
+        : !Platform.isAndroid &&
+              model.kind == ModelKind.transcription &&
               model.state == ModelInstallState.installed &&
               model.runtime != ModelRuntime.whisperKit &&
               model.runtime != ModelRuntime.appleSpeech
