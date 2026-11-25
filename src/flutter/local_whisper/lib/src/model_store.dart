@@ -140,6 +140,14 @@ class ModelStore {
       repoId: 'oruk/oruk-fourier-2b',
       revision: '3fda023e157ce7986f137f76fcf326ed6e08fa73',
       snapshotPath: 'onnx/sherpa-int8',
+      extraSnapshotFiles: [
+        PinnedSnapshotFile(
+          path: 'config.json',
+          size: 2479,
+          sha256:
+              '5bc1d99c141fc866b61efca97dcbc6412a38db25ff0934c38bf7b46fa09485a2',
+        ),
+      ],
     ),
     LocalModel(
       id: 'local_cleanup',
@@ -225,6 +233,8 @@ class ModelStore {
       model.repoId,
       model.revision,
       model.snapshotPath,
+      if (model.extraSnapshotFiles.isNotEmpty)
+        [for (final extra in model.extraSnapshotFiles) extra.path],
     ]);
     return '${model.id}.${sha256.convert(utf8.encode(identity))}.resume';
   }
@@ -366,7 +376,7 @@ class ModelStore {
     final client = HttpClient();
     try {
       cancelToken.onCancel(client.close);
-      final files = await _fetchSnapshotFiles(
+      final snapshotFiles = await _fetchSnapshotFiles(
         client,
         repoId,
         model.revision,
@@ -374,9 +384,17 @@ class ModelStore {
         cancelToken: cancelToken,
       );
       cancelToken.throwIfCanceled();
-      if (files.isEmpty) {
+      if (snapshotFiles.isEmpty) {
         throw const LocalWhisperException('Model repository has no files.');
       }
+      // Download extra root metadata files last so canceled installs never
+      // fetch them before the model payload completes.
+      final files = <_SnapshotFile>[
+        ...snapshotFiles,
+        for (final extra in model.extraSnapshotFiles)
+          if (!snapshotFiles.any((file) => file.path == extra.path))
+            _SnapshotFile(extra.path, extra.size, extra.sha256),
+      ];
 
       final totalBytes = files.fold<int>(0, (sum, file) => sum + file.size);
       var receivedBytes = 0;
@@ -734,6 +752,9 @@ class ModelStore {
       }
       final files = decoded['files'];
       if (files is! List || files.isEmpty) return false;
+      final allowedExtraPaths = {
+        for (final extra in model.extraSnapshotFiles) extra.path,
+      };
       for (final item in files) {
         if (item is! Map) return false;
         final sourcePath = item['sourcePath'] as String?;
@@ -742,7 +763,9 @@ class ModelStore {
           final prefix = expectedSnapshot.endsWith('/')
               ? expectedSnapshot
               : '$expectedSnapshot/';
-          if (sourcePath == null || !sourcePath.startsWith(prefix)) {
+          if (sourcePath == null ||
+              (!sourcePath.startsWith(prefix) &&
+                  !allowedExtraPaths.contains(sourcePath))) {
             return false;
           }
         }
@@ -754,6 +777,12 @@ class ModelStore {
         if (expectedSize > 0 && await file.length() != expectedSize) {
           return false;
         }
+      }
+      for (final extra in model.extraSnapshotFiles) {
+        final hasExtra = files.any(
+          (item) => item is Map && item['sourcePath'] == extra.path,
+        );
+        if (!hasExtra) return false;
       }
       return true;
     } catch (_) {
